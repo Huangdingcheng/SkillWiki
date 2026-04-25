@@ -1,0 +1,341 @@
+"""Skill 执行器 — 按执行计划运行 Skill，管理状态和错误处理。"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import datetime
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+
+from ...models.experience_model import ExecutionStatus, SkillExecutionRecord
+from ...models.skill_model import Skill
+from ...utils.llm_client import LLMClient, Message
+from ...utils.logger import get_logger
+from .planner import ExecutionPlan, PlanStep, StepStatus
+from .state_tracker import StateTracker
+
+logger = get_logger(__name__)
+
+# 执行事件类型（用于 WebSocket 实时推送）
+ExecutionEventCallback = Callable[[str, Dict[str, Any]], None]
+
+
+class SkillExecutor:
+    """Skill 执行引擎。
+
+    职责：
+    - 按执行计划顺序/并行执行 Skill
+    - 管理状态追踪（前/后快照）
+    - 错误处理和重试
+    - 实时事件推送（WebSocket）
+    - 执行记录持久化
+    """
+
+    def __init__(
+        self,
+        skill_registry: Optional[Any] = None,  # SkillWikiManager
+        llm_client: Optional[LLMClient] = None,
+        max_retries: int = 2,
+        step_timeout_s: float = 30.0,
+    ) -> None:
+        self._registry = skill_registry
+        self._llm = llm_client
+        self._max_retries = max_retries
+        self._step_timeout = step_timeout_s
+        self._event_callbacks: List[ExecutionEventCallback] = []
+
+    def add_event_callback(self, callback: ExecutionEventCallback) -> None:
+        """注册事件回调（用于 WebSocket 推送）。"""
+        self._event_callbacks.append(callback)
+
+    def remove_event_callback(self, callback: ExecutionEventCallback) -> None:
+        self._event_callbacks = [c for c in self._event_callbacks if c is not callback]
+
+    def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
+        for cb in self._event_callbacks:
+            try:
+                cb(event_type, data)
+            except Exception:
+                pass
+
+    async def execute_plan(
+        self,
+        plan: ExecutionPlan,
+        skill_map: Dict[str, Skill],
+        initial_state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """执行完整的执行计划。
+
+        Args:
+            plan: 执行计划
+            skill_map: skill_id → Skill 的映射
+            initial_state: 初始状态
+
+        Returns:
+            最终状态字典
+        """
+        tracker = StateTracker(plan.task_id, initial_state)
+        execution_records: List[SkillExecutionRecord] = []
+
+        self._emit("plan_started", {
+            "plan_id": plan.plan_id,
+            "task": plan.task_description,
+            "total_steps": plan.total_steps,
+        })
+
+        while not plan.is_complete and not plan.has_failures:
+            ready_steps = plan.get_ready_steps()
+            if not ready_steps:
+                break
+
+            # 并行执行无依赖的步骤
+            if len(ready_steps) > 1:
+                tasks = [
+                    self._execute_step(step, skill_map, tracker)
+                    for step in ready_steps
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for step, result in zip(ready_steps, results):
+                    if isinstance(result, Exception):
+                        step.status = StepStatus.FAILED
+                        step.error = str(result)
+                    else:
+                        record = result
+                        if record:
+                            execution_records.append(record)
+            else:
+                record = await self._execute_step(ready_steps[0], skill_map, tracker)
+                if record:
+                    execution_records.append(record)
+
+        final_state = tracker.current
+        self._emit("plan_completed", {
+            "plan_id": plan.plan_id,
+            "success": plan.is_complete and not plan.has_failures,
+            "summary": plan.to_summary(),
+            "final_state": final_state,
+        })
+
+        return final_state
+
+    async def _execute_step(
+        self,
+        step: PlanStep,
+        skill_map: Dict[str, Skill],
+        tracker: StateTracker,
+    ) -> Optional[SkillExecutionRecord]:
+        """执行单个步骤（含重试）。"""
+        skill = skill_map.get(step.skill_id)
+        if not skill:
+            step.status = StepStatus.FAILED
+            step.error = f"Skill 不存在: {step.skill_id}"
+            self._emit("step_failed", {"step_id": step.step_id, "error": step.error})
+            return None
+
+        step.status = StepStatus.RUNNING
+        step.started_at = datetime.utcnow()
+        self._emit("step_started", {
+            "step_id": step.step_id,
+            "step_index": step.step_index,
+            "skill_name": skill.name,
+            "input": step.input_mapping,
+        })
+
+        record = SkillExecutionRecord(
+            skill_id=skill.skill_id,
+            skill_version=skill.version,
+            task_id=tracker._task_id,
+            input_data=step.input_mapping,
+            state_before=tracker.current,
+        )
+        record.start()
+
+        # 拍摄执行前快照
+        tracker.snapshot_before(skill.skill_id, skill.name)
+        tracker.push_checkpoint()
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                output = await asyncio.wait_for(
+                    self._run_skill(skill, step.input_mapping, tracker.current),
+                    timeout=self._step_timeout,
+                )
+                # 执行成功
+                state_changes = output.get("_state_changes", {})
+                tracker.update(state_changes)
+                tracker.snapshot_after(skill.skill_id, skill.name)
+
+                step.status = StepStatus.SUCCESS
+                step.result = output
+                step.completed_at = datetime.utcnow()
+
+                record.complete(output, tracker.current)
+                self._emit("step_completed", {
+                    "step_id": step.step_id,
+                    "skill_name": skill.name,
+                    "output": output,
+                    "latency_ms": step.latency_ms,
+                })
+                return record
+
+            except asyncio.TimeoutError:
+                error = f"步骤超时 ({self._step_timeout}s)"
+                if attempt < self._max_retries:
+                    logger.warning(f"步骤超时，重试 {attempt + 1}/{self._max_retries}: {skill.name}")
+                    continue
+                tracker.rollback()
+                step.status = StepStatus.FAILED
+                step.error = error
+                step.completed_at = datetime.utcnow()
+                record.fail(error, "TimeoutError")
+                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                return record
+
+            except Exception as e:
+                error = str(e)
+                if attempt < self._max_retries:
+                    logger.warning(f"步骤失败，重试 {attempt + 1}/{self._max_retries}: {skill.name} - {error}")
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                tracker.rollback()
+                step.status = StepStatus.FAILED
+                step.error = error
+                step.completed_at = datetime.utcnow()
+                record.fail(error, type(e).__name__)
+                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                return record
+
+        return record
+
+    async def _run_skill(
+        self,
+        skill: Skill,
+        input_data: Dict[str, Any],
+        current_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """执行 Skill：prompt→LLM / code→exec / composite→递归。"""
+        if not skill.implementation:
+            raise RuntimeError(f"Skill {skill.name} 没有实现")
+
+        impl = skill.implementation
+
+        # 1. prompt_template → LLM 调用
+        if impl.prompt_template:
+            return await self._run_prompt_skill(skill, impl, input_data)
+
+        # 2. code → 受限沙箱执行
+        if impl.code:
+            return await self._run_code_skill(skill, impl, input_data, current_state)
+
+        # 3. composite/functional → 递归执行子 Skill
+        if impl.sub_skill_ids:
+            return await self._run_composite_skill(skill, impl, input_data, current_state)
+
+        raise RuntimeError(f"Skill {skill.name} 没有可执行的实现（无 prompt/code/sub_skills）")
+
+    async def _run_prompt_skill(self, skill: Skill, impl: Any, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """调用 LLM 执行 prompt 类型 Skill。"""
+        if not self._llm:
+            # 无 LLM 客户端时返回模拟结果（测试/离线模式）
+            return {
+                "result": f"[mock] {skill.name} executed",
+                "skill_name": skill.name,
+                "_state_changes": {f"{skill.name}_executed": True},
+            }
+        try:
+            prompt = impl.prompt_template.format(**input_data)
+        except KeyError as e:
+            raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
+
+        response = await asyncio.to_thread(
+            self._llm.chat,
+            [Message.system(f"你是 SkillOS 中的 {skill.name} Skill，请严格按照任务要求执行。"),
+             Message.user(prompt)],
+        )
+        result_text = response.content
+        return {
+            "result": result_text,
+            "skill_name": skill.name,
+            "_state_changes": {f"{skill.name}_result": result_text},
+        }
+
+    async def _run_code_skill(
+        self, skill: Skill, impl: Any, input_data: Dict[str, Any], current_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """在受限命名空间中执行 Python 代码 Skill。"""
+        import builtins
+        safe_builtins = {
+            k: getattr(builtins, k)
+            for k in ("len", "range", "enumerate", "zip", "map", "filter",
+                      "sorted", "reversed", "list", "dict", "set", "tuple",
+                      "str", "int", "float", "bool", "type", "isinstance",
+                      "print", "repr", "abs", "min", "max", "sum", "round",
+                      "any", "all", "next", "iter", "hasattr", "getattr")
+        }
+        namespace: Dict[str, Any] = {
+            "__builtins__": safe_builtins,
+            "input_data": input_data,
+            "state": current_state,
+            "output": {},
+        }
+        try:
+            exec(compile(impl.code, f"<skill:{skill.name}>", "exec"), namespace)  # noqa: S102
+        except Exception as e:
+            raise RuntimeError(f"Skill {skill.name} 代码执行失败: {e}") from e
+
+        output = namespace.get("output", {})
+        return {
+            **output,
+            "skill_name": skill.name,
+            "_state_changes": {f"{skill.name}_executed": True, **output},
+        }
+
+    async def _run_composite_skill(
+        self, skill: Skill, impl: Any, input_data: Dict[str, Any], current_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """递归执行 composite/functional Skill 的子 Skill。"""
+        if not self._registry:
+            raise RuntimeError(f"Skill {skill.name} 是 composite 类型但执行器未配置 registry")
+
+        sub_results: Dict[str, Any] = {}
+        merged_state = dict(current_state)
+
+        for sub_id in impl.sub_skill_ids:
+            sub_skill = await self._registry.get(sub_id)
+            if not sub_skill:
+                logger.warning(f"子 Skill 不存在，跳过: {sub_id}")
+                continue
+            sub_result = await self._run_skill(sub_skill, input_data, merged_state)
+            sub_results[sub_id] = sub_result
+            # 将子 Skill 的状态变更合并到当前状态
+            merged_state.update(sub_result.get("_state_changes", {}))
+
+        return {
+            "sub_results": sub_results,
+            "skill_name": skill.name,
+            "_state_changes": {"composite_executed": True, **merged_state},
+        }
+
+    async def execute_single(
+        self,
+        skill: Skill,
+        input_data: Dict[str, Any],
+        task_id: Optional[str] = None,
+    ) -> SkillExecutionRecord:
+        """执行单个 Skill（不需要完整计划）。"""
+        record = SkillExecutionRecord(
+            skill_id=skill.skill_id,
+            skill_version=skill.version,
+            task_id=task_id or str(uuid.uuid4()),
+            input_data=input_data,
+        )
+        record.start()
+        try:
+            output = await asyncio.wait_for(
+                self._run_skill(skill, input_data, {}),
+                timeout=self._step_timeout,
+            )
+            record.complete(output, output.get("_state_changes", {}))
+        except Exception as e:
+            record.fail(str(e), type(e).__name__)
+        return record
