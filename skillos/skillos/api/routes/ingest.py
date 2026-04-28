@@ -1,18 +1,21 @@
-"""知识导入路由 — 支持轨迹、文档、API文档、代码四种输入源。"""
+"""Knowledge ingest routes for trajectory, document, API doc, and script inputs."""
 
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
 
 from ..deps import AppState, get_app_state
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
+ALLOWED_SOURCE_TYPES = {"trajectory", "document", "api_doc", "script"}
+
 
 class IngestRequest(BaseModel):
-    source_type: str  # trajectory | document | api_doc | script
+    source_type: str
     content: str
     metadata: Optional[Dict[str, Any]] = None
 
@@ -50,11 +53,25 @@ class IngestResponse(BaseModel):
     created_skills: List[CreatedSkillOut] = Field(default_factory=list)
 
 
+def _validate_request(req: IngestRequest) -> str:
+    source_type = req.source_type.strip().lower()
+    if source_type not in ALLOWED_SOURCE_TYPES:
+        allowed = ", ".join(sorted(ALLOWED_SOURCE_TYPES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported source_type '{req.source_type}'. Expected one of: {allowed}.",
+        )
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="content must not be empty.")
+    return source_type
+
+
 def _unit_to_out(unit: Any) -> ExperienceUnitOut:
+    raw_content = getattr(unit, "raw_content", "") or ""
     return ExperienceUnitOut(
         unit_id=unit.unit_id,
         source_type=unit.source_type if isinstance(unit.source_type, str) else str(unit.source_type),
-        raw_content=unit.raw_content[:500],
+        raw_content=raw_content[:500],
         extracted_actions=getattr(unit, "extracted_actions", []) or [],
         normalized_actions=getattr(unit, "normalized_actions", []) or [],
         summary=getattr(unit, "summary", "") or "",
@@ -72,17 +89,18 @@ async def parse_input(
     req: IngestRequest,
     app: AppState = Depends(get_app_state),
 ) -> IngestResponse:
-    """通过 Experience Pipeline 解析原始输入。"""
+    """Parse raw input through the Experience Pipeline."""
     if not app.pipeline:
-        raise HTTPException(status_code=503, detail="Experience Pipeline 未初始化")
+        raise HTTPException(status_code=503, detail="Experience Pipeline is not initialized.")
+
+    source_type = _validate_request(req)
 
     import asyncio
+
     try:
-        result = await asyncio.to_thread(
-            app.pipeline.process, req.content, req.source_type.lower()
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        result = await asyncio.to_thread(app.pipeline.process, req.content, source_type)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return IngestResponse(
         success=result.success,
@@ -90,7 +108,7 @@ async def parse_input(
         unit_count=result.unit_count,
         token_usage=result.token_usage,
         errors=result.errors,
-        units=[_unit_to_out(u) for u in result.units],
+        units=[_unit_to_out(unit) for unit in result.units],
     )
 
 
@@ -99,63 +117,77 @@ async def parse_and_create_skills(
     req: IngestRequest,
     app: AppState = Depends(get_app_state),
 ) -> IngestResponse:
-    """解析输入并自动创建 Skill 草稿（S1 候选状态）。"""
+    """Parse raw input and create candidate Skills in the Wiki."""
     if not app.pipeline:
-        raise HTTPException(status_code=503, detail="Experience Pipeline 未初始化")
+        raise HTTPException(status_code=503, detail="Experience Pipeline is not initialized.")
+
+    source_type = _validate_request(req)
 
     import asyncio
-    from ...models.skill_model import Skill, SkillState, SkillType, SkillProvenance, SkillInterface, SkillImplementation
+
+    from ...models.skill_model import (
+        MetaSkillCategory,
+        Skill,
+        SkillImplementation,
+        SkillInterface,
+        SkillProvenance,
+        SkillState,
+        SkillType,
+    )
 
     try:
-        result = await asyncio.to_thread(
-            app.pipeline.process, req.content, req.source_type.lower()
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        result = await asyncio.to_thread(app.pipeline.process, req.content, source_type)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     created_skills: List[CreatedSkillOut] = []
+    errors = list(result.errors)
 
     for unit in result.units:
-        name = unit.proposed_skill_name or f"skill_from_{req.source_type}"
-        desc = unit.proposed_description or unit.raw_content[:100]
+        name = unit.proposed_skill_name or f"skill_from_{source_type}"
+        description = unit.proposed_description or unit.raw_content[:100] or name
         try:
+            skill_type = SkillType(unit.proposed_type or "atomic")
             skill = Skill(
                 name=name,
-                description=desc,
-                skill_type=SkillType(unit.proposed_type or "atomic"),
+                description=description,
+                skill_type=skill_type,
+                meta_category=MetaSkillCategory.GENERATION if skill_type == SkillType.STRATEGIC else None,
                 state=SkillState.SKILL_CANDIDATE,
-                tags=[req.source_type, "auto-imported"] + unit.index_keywords[:3],
+                tags=[source_type, "auto-imported"] + unit.index_keywords[:3],
                 interface=SkillInterface(
                     input_schema={"type": "object", "properties": {}},
                     output_schema={"type": "object", "properties": {}},
                 ),
                 implementation=SkillImplementation(
-                    prompt_template=unit.summary or desc,
+                    prompt_template=unit.summary or description,
                 ),
                 provenance=SkillProvenance(
-                    source_type=req.source_type,
+                    source_type=source_type,
                     source_ids=[unit.unit_id],
                     created_by_agent="ingest_pipeline",
-                    creation_context={"source_type": req.source_type},
+                    creation_context={"source_type": source_type},
                 ),
             )
             created = await app.wiki.create(skill)
-            created_skills.append(CreatedSkillOut(
-                skill_id=created.skill_id,
-                name=created.name,
-                skill_type=created.skill_type.value,
-                state=created.state.value,
-                version=created.version,
-            ))
-        except (ValueError, Exception):
-            pass
+            created_skills.append(
+                CreatedSkillOut(
+                    skill_id=created.skill_id,
+                    name=created.name,
+                    skill_type=created.skill_type.value,
+                    state=created.state.value,
+                    version=created.version,
+                )
+            )
+        except Exception as exc:
+            errors.append(f"Failed to create skill '{name}': {exc}")
 
     return IngestResponse(
-        success=result.success,
+        success=result.success and (len(result.units) == 0 or len(created_skills) > 0),
         source_type=result.source_type,
         unit_count=result.unit_count,
         token_usage=result.token_usage,
-        errors=result.errors,
-        units=[_unit_to_out(u) for u in result.units],
+        errors=errors,
+        units=[_unit_to_out(unit) for unit in result.units],
         created_skills=created_skills,
     )
