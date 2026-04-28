@@ -110,7 +110,7 @@ export default function Dashboard() {
         <Alert
           type="error"
           showIcon
-          message="Dashboard 数据加载失败"
+          title="Dashboard 数据加载失败"
           description={error || '请检查后端服务是否可用'}
           action={<Button size="small" onClick={() => loadDashboardData(true)}>重试</Button>}
         />
@@ -157,7 +157,7 @@ export default function Dashboard() {
           type="warning"
           showIcon
           closable
-          message="最近一次刷新失败"
+          title="最近一次刷新失败"
           description={error}
           style={{ marginBottom: 16 }}
           onClose={() => setError(null)}
@@ -174,12 +174,12 @@ export default function Dashboard() {
         ].map(({ title, value, icon, color, i }) => (
           <Col xs={24} sm={12} lg={6} key={title}>
             <motion.div custom={i} initial="hidden" animate="visible" variants={cardVariants}>
-              <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+              <Card variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
                 <Statistic
                   title={title}
                   value={value}
                   prefix={<span style={{ color }}>{icon}</span>}
-                  valueStyle={{ color, fontWeight: 700 }}
+                  styles={{ content: { color, fontWeight: 700 } }}
                 />
               </Card>
             </motion.div>
@@ -191,7 +191,7 @@ export default function Dashboard() {
         {/* 类型分布 */}
         <Col xs={24} md={8}>
           <motion.div custom={4} initial="hidden" animate="visible" variants={cardVariants}>
-            <Card title="Skill Types" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <Card title="Skill Types" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
               {Object.entries(stats.by_type).map(([type, count]) => (
                 <div key={type} style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -215,7 +215,7 @@ export default function Dashboard() {
         {/* 状态分布 */}
         <Col xs={24} md={8}>
           <motion.div custom={5} initial="hidden" animate="visible" variants={cardVariants}>
-            <Card title="State Distribution" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <Card title="State Distribution" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
               {Object.entries(stats.by_state).map(([state, count]) => (
                 <div key={state} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Tag color={stateColors[state] || 'default'}>{stateLabels[state] || state}</Tag>
@@ -229,7 +229,7 @@ export default function Dashboard() {
         {/* 健康度 */}
         <Col xs={24} md={8}>
           <motion.div custom={6} initial="hidden" animate="visible" variants={cardVariants}>
-            <Card title="System Health" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <Card title="System Health" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
                 <Progress
                   type="circle"
@@ -242,7 +242,7 @@ export default function Dashboard() {
                 title="Avg Success Rate"
                 value={(stats.avg_success_rate * 100).toFixed(1)}
                 suffix="%"
-                valueStyle={{ color: stats.avg_success_rate > 0.8 ? '#52c41a' : '#faad14' }}
+                styles={{ content: { color: stats.avg_success_rate > 0.8 ? '#52c41a' : '#faad14' } }}
               />
             </Card>
           </motion.div>
@@ -251,7 +251,7 @@ export default function Dashboard() {
 
       {/* 健康报告表格 */}
       <motion.div custom={7} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
-        <Card title="Skill Health Overview" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <Card title="Skill Health Overview" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           <Table
             dataSource={reports}
             rowKey="skill_id"
@@ -300,7 +300,7 @@ export default function Dashboard() {
         <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
           <Card
             title={<span><SyncOutlined style={{ color: '#1677ff', marginRight: 6 }} />Self-Evolution Metrics</span>}
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             <Row gutter={[16, 16]}>
@@ -310,7 +310,7 @@ export default function Dashboard() {
                     title="Auto-Generated Skills"
                     value={evoStats.auto_generated}
                     prefix={<BulbOutlined style={{ color: '#faad14' }} />}
-                    valueStyle={{ color: '#faad14', fontWeight: 700 }}
+                    styles={{ content: { color: '#faad14', fontWeight: 700 } }}
                   />
                 </div>
               </Col>
@@ -321,7 +321,7 @@ export default function Dashboard() {
                     value={evoStats.avg_reuse_rate.toFixed(1)}
                     suffix="x"
                     prefix={<StarOutlined style={{ color: '#722ed1' }} />}
-                    valueStyle={{ color: '#722ed1', fontWeight: 700 }}
+                    styles={{ content: { color: '#722ed1', fontWeight: 700 } }}
                   />
                 </div>
               </Col>
@@ -331,7 +331,7 @@ export default function Dashboard() {
                     title="Version Improved"
                     value={evoStats.version_improved_count}
                     prefix={<RocketOutlined style={{ color: '#52c41a' }} />}
-                    valueStyle={{ color: '#52c41a', fontWeight: 700 }}
+                    styles={{ content: { color: '#52c41a', fontWeight: 700 } }}
                   />
                 </div>
               </Col>
@@ -342,7 +342,7 @@ export default function Dashboard() {
                     value={(evoStats.avg_success_rate * 100).toFixed(1)}
                     suffix="%"
                     prefix={<CheckCircleOutlined style={{ color: '#1677ff' }} />}
-                    valueStyle={{ color: '#1677ff', fontWeight: 700 }}
+                    styles={{ content: { color: '#1677ff', fontWeight: 700 } }}
                   />
                 </div>
               </Col>
@@ -383,7 +383,7 @@ export default function Dashboard() {
       <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
         <Card
           title={<span><WifiOutlined style={{ color: '#52c41a', marginRight: 6 }} />Agent 实时动态</span>}
-          bordered={false}
+          variant="borderless"
           style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           extra={
             <Button size="small" icon={<ClearOutlined />} onClick={clearWsEvents}>

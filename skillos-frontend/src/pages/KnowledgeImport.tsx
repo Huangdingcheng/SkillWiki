@@ -171,7 +171,7 @@ export default function KnowledgeImport() {
           type="error"
           showIcon
           closable
-          message={mode === 'create' ? '解析并创建 Skill 失败' : '解析失败'}
+          title={mode === 'create' ? '解析并创建 Skill 失败' : '解析失败'}
           description={error}
           style={{ marginBottom: 16 }}
           onClose={() => setError(null)}
@@ -181,7 +181,7 @@ export default function KnowledgeImport() {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <Card
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             <Tabs
@@ -268,7 +268,7 @@ export default function KnowledgeImport() {
               >
                 <Card
                   title="解析结果"
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
                   extra={
                     <Badge
@@ -301,7 +301,7 @@ export default function KnowledgeImport() {
                   {result.errors.length > 0 && (
                     <Alert
                       type="warning"
-                      message={result.errors.join('; ')}
+                      title={result.errors.join('; ')}
                       style={{ marginBottom: 12 }}
                     />
                   )}
@@ -310,7 +310,7 @@ export default function KnowledgeImport() {
                     <Alert
                       type="success"
                       showIcon
-                      message={`已创建 ${result.created_skills?.length ?? 0} 个候选 Skill`}
+                      title={`已创建 ${result.created_skills?.length ?? 0} 个候选 Skill`}
                       description={
                         <Space wrap>
                           {result.created_skills?.map(skill => (
@@ -330,7 +330,7 @@ export default function KnowledgeImport() {
                 {result.units.length > 0 && (
                   <Card
                     title={`经验单元 (${result.units.length})`}
-                    bordered={false}
+                    variant="borderless"
                     style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                   >
                     <List
@@ -407,7 +407,7 @@ export default function KnowledgeImport() {
                 animate={{ opacity: 1 }}
               >
                 <Card
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: 40 }}
                 >
                   <CloudUploadOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 12 }} />

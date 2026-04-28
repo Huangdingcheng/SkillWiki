@@ -320,7 +320,7 @@ export default function SkillGraph() {
           showIcon
           closable
           onClose={() => setError(null)}
-          message={error}
+          title={error}
           style={{ marginBottom: 12 }}
         />
       )}
@@ -329,7 +329,7 @@ export default function SkillGraph() {
         <Alert
           type="info"
           showIcon
-          message={`当前子图中心：${centerNode.name}`}
+          title={`当前子图中心：${centerNode.name}`}
           description={`depth=${depth}，共 ${graphData?.nodes.length || 0} 个节点、${graphData?.edges.length || 0} 条边。`}
           action={(
             <Button size="small" icon={<RollbackOutlined />} onClick={returnToFullGraph}>
@@ -347,7 +347,7 @@ export default function SkillGraph() {
         >
           {loading && !graphData ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-              <Spin size="large" tip="加载图谱数据..." />
+              <Spin size="large" description="加载图谱数据..." />
             </div>
           ) : !hasNodes ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', padding: 24 }}>
@@ -371,7 +371,7 @@ export default function SkillGraph() {
           extra={selectedNode ? <Tag color={nodeColor(selectedNode)}>{selectedNode.skill_type}</Tag> : null}
         >
           {selectedNode ? (
-            <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={14} style={{ width: '100%' }}>
               <div>
                 <Text strong style={{ fontSize: 16 }}>{selectedNode.name}</Text>
                 <Paragraph copyable={{ text: selectedNode.id }} style={{ margin: '6px 0 0' }}>
@@ -407,13 +407,15 @@ export default function SkillGraph() {
               </div>
 
               <Space.Compact style={{ width: '100%' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 10px', border: '1px solid #d9d9d9', borderRight: 0, borderRadius: '6px 0 0 6px', color: '#666', background: '#fafafa' }}>
+                  Depth
+                </span>
                 <InputNumber
                   min={1}
                   max={5}
                   value={depth}
                   onChange={value => setDepth(value || 2)}
                   style={{ width: 92 }}
-                  addonBefore="Depth"
                 />
                 <Button
                   icon={<ShareAltOutlined />}

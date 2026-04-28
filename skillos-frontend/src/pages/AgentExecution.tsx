@@ -69,7 +69,7 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
         </div>
         {expanded && (
           <div style={{ marginTop: 8 }}>
-            {step.error && <Alert type="error" message={step.error} style={{ marginBottom: 8 }} />}
+            {step.error && <Alert type="error" title={step.error} style={{ marginBottom: 8 }} />}
             {Object.keys(stepResult).length > 0 && (
               <pre style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, fontSize: 11, overflow: 'auto' }}>
                 {JSON.stringify(stepResult, null, 2)}
@@ -134,7 +134,7 @@ export default function AgentExecution() {
           输入任务目标，SkillOS 将自动检索相关 Skill、生成执行计划并运行。
         </p>
 
-        <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
+        <Card variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
           <TextArea
             value={goal}
             onChange={e => setGoal(e.target.value)}
@@ -180,7 +180,7 @@ export default function AgentExecution() {
 
       <Card
         title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />最近执行历史</span>}
-        bordered={false}
+        variant="borderless"
         size="small"
         style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
         extra={
@@ -190,7 +190,7 @@ export default function AgentExecution() {
         }
       >
         {historyError && (
-          <Alert type="warning" showIcon message={historyError} style={{ marginBottom: 12 }} />
+          <Alert type="warning" showIcon title={historyError} style={{ marginBottom: 12 }} />
         )}
         {!historyLoading && history.length === 0 ? (
           <Empty description="暂无执行历史，完成一次任务后会自动显示在这里" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -243,12 +243,12 @@ export default function AgentExecution() {
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin size="large" tip="正在规划并执行..." />
+          <Spin size="large" description="正在规划并执行..." />
         </div>
       )}
 
       {error && (
-        <Alert type="error" message="执行失败" description={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert type="error" title="执行失败" description={error} showIcon style={{ marginBottom: 16 }} />
       )}
 
       <AnimatePresence>
@@ -258,7 +258,7 @@ export default function AgentExecution() {
             {retrieved.length > 0 && (
               <Card
                 title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
-                bordered={false}
+                variant="borderless"
                 size="small"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
               >
@@ -291,7 +291,7 @@ export default function AgentExecution() {
 
             {/* 执行摘要 */}
             <Card
-              bordered={false}
+              variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
             >
               <Row gutter={16}>
@@ -299,21 +299,21 @@ export default function AgentExecution() {
                   <Statistic
                     title="状态"
                     value={result.status}
-                    valueStyle={{ color: result.status === 'success' ? '#52c41a' : result.status === 'failed' ? '#ff4d4f' : '#faad14' }}
+                    styles={{ content: { color: result.status === 'success' ? '#52c41a' : result.status === 'failed' ? '#ff4d4f' : '#faad14' } }}
                   />
                 </Col>
                 <Col span={6}>
                   <Statistic title="总步骤" value={result.steps.length} />
                 </Col>
                 <Col span={6}>
-                  <Statistic title="成功" value={successCount} valueStyle={{ color: '#52c41a' }} />
+                  <Statistic title="成功" value={successCount} styles={{ content: { color: '#52c41a' } }} />
                 </Col>
                 <Col span={6}>
                   <Statistic
                     title="总耗时"
                     value={result.total_latency_ms.toFixed(0)}
                     suffix="ms"
-                    valueStyle={{ color: '#1677ff' }}
+                    styles={{ content: { color: '#1677ff' } }}
                   />
                 </Col>
               </Row>
@@ -322,11 +322,11 @@ export default function AgentExecution() {
             {/* 执行步骤 */}
             <Card
               title={<><ThunderboltOutlined /> 执行步骤</>}
-              bordered={false}
+              variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
             >
               {result.steps.length === 0 ? (
-                <Alert type="warning" message="未找到可执行的 Skill，请尝试更具体的任务描述" />
+                <Alert type="warning" title="未找到可执行的 Skill，请尝试更具体的任务描述" />
               ) : (
                 result.steps.map((step, i) => <StepCard key={step.step_id} step={step} index={i} />)
               )}
@@ -336,7 +336,7 @@ export default function AgentExecution() {
             {Object.keys(result.final_state).length > 0 && (
               <Card
                 title="最终状态"
-                bordered={false}
+                variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >
                 <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, fontSize: 12, overflow: 'auto' }}>
@@ -348,7 +348,7 @@ export default function AgentExecution() {
             {result.experience_recorded && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <Card
-                  bordered={false}
+                  variant="borderless"
                   size="small"
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderLeft: '3px solid #52c41a' }}
                 >

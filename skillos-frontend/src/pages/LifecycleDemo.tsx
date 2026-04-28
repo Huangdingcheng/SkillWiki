@@ -167,7 +167,7 @@ export default function LifecycleDemo() {
         <Col xs={24} lg={14}>
           <Card
             title="状态机可视化"
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
           >
             <div style={{ marginBottom: 16 }}>
@@ -251,7 +251,7 @@ export default function LifecycleDemo() {
           {/* 状态说明卡片 */}
           <Card
             title="SkillOS 状态机说明"
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             <Row gutter={[8, 8]}>
@@ -280,10 +280,10 @@ export default function LifecycleDemo() {
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
               <Card
                 title={`${selected.name} 信息`}
-                bordered={false}
+                variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
               >
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <div>
                     <Text type="secondary">类型：</Text>
                     <Tag color={selected.skill_type === 'atomic' ? 'blue' : selected.skill_type === 'functional' ? 'purple' : 'gold'}>
@@ -314,7 +314,7 @@ export default function LifecycleDemo() {
 
               <Card
                 title="状态转换历史"
-                bordered={false}
+                variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >
                 <AnimatePresence>

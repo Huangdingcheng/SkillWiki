@@ -197,7 +197,7 @@ export default function Evolution() {
   if (loading && !health) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
-        <Spin size="large" tip="加载健康报告..." />
+        <Spin size="large" description="加载健康报告..." />
       </div>
     )
   }
@@ -230,7 +230,7 @@ export default function Evolution() {
           type="error"
           showIcon
           closable
-          message={error}
+          title={error}
           onClose={() => setError(null)}
           style={{ marginBottom: 16 }}
         />
@@ -240,7 +240,7 @@ export default function Evolution() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
           <Alert
             type={countOf(cycleResult.errors) > 0 ? 'warning' : 'success'}
-            message="演化周期完成"
+            title="演化周期完成"
             description={(
               <Space wrap size={[8, 8]}>
                 <Tag color="blue">任务 {cycleResult.tasks_completed || 0}/{cycleResult.tasks_total || 0}</Tag>
@@ -269,15 +269,15 @@ export default function Evolution() {
             ].map(({ label, value, color }, index) => (
               <Col xs={12} sm={8} md={4} key={label}>
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }}>
-                  <Card bordered={false} style={{ borderRadius: 8, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                    <Statistic value={value} valueStyle={{ color, fontWeight: 700 }} />
+                  <Card variant="borderless" style={{ borderRadius: 8, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                    <Statistic value={value} styles={{ content: { color, fontWeight: 700 } }} />
                     <div style={{ color: '#666', fontSize: 12 }}>{label}</div>
                   </Card>
                 </motion.div>
               </Col>
             ))}
             <Col xs={12} sm={8} md={4}>
-              <Card bordered={false} style={{ borderRadius: 8, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+              <Card variant="borderless" style={{ borderRadius: 8, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
                 <Progress
                   type="circle"
                   percent={Math.round(health.health_ratio * 100)}
@@ -291,7 +291,7 @@ export default function Evolution() {
 
           <Card
             title={<><MedicineBoxOutlined /> 需要关注的 Skill ({needsAttention.length})</>}
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
           >
             {needsAttention.length > 0 ? (
@@ -309,7 +309,7 @@ export default function Evolution() {
 
           <Card
             title="全部 Skill 健康报告"
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             {health.skill_reports.length > 0 ? (
@@ -326,7 +326,7 @@ export default function Evolution() {
           </Card>
         </>
       ) : (
-        <Card bordered={false} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           <Empty description="暂时无法加载系统健康报告">
             <Button type="primary" onClick={loadHealth}>重试</Button>
           </Empty>

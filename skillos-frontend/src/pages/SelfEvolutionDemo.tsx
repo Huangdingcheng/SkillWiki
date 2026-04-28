@@ -104,7 +104,7 @@ function SuggestedSkill({ suggested }: { suggested: Record<string, unknown> }) {
       size="small"
       style={{ borderRadius: 8, marginTop: 12, borderLeft: '3px solid #faad14' }}
     >
-      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={6} style={{ width: '100%' }}>
         <Space>
           <Text strong>{name}</Text>
           <Tag color="gold">{type}</Tag>
@@ -195,7 +195,7 @@ export default function SelfEvolutionDemo() {
         </div>
       </motion.div>
 
-      <Card bordered={false} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
+      <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
         <TextArea
           value={task}
           onChange={event => setTask(event.target.value)}
@@ -239,7 +239,7 @@ export default function SelfEvolutionDemo() {
 
       {phase !== 'idle' && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-          <Card bordered={false} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
             <Steps
               current={currentStep}
               status={phase === 'done' ? 'finish' : 'process'}
@@ -261,7 +261,7 @@ export default function SelfEvolutionDemo() {
       {error && (
         <Alert
           type="error"
-          message={error}
+          title={error}
           showIcon
           style={{ marginBottom: 16 }}
           closable
@@ -278,7 +278,7 @@ export default function SelfEvolutionDemo() {
                   <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
                     <Card
                       title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
-                      bordered={false}
+                      variant="borderless"
                       size="small"
                       style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
                     >
@@ -333,12 +333,12 @@ export default function SelfEvolutionDemo() {
                 <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
                   <Card
                     title={<span><ThunderboltOutlined style={{ color: '#722ed1', marginRight: 6 }} />执行步骤</span>}
-                    bordered={false}
+                    variant="borderless"
                     size="small"
                     style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                   >
                     {result.steps.length === 0 ? (
-                      <Alert type="warning" showIcon message="未找到可执行的 Skill，请尝试更具体的任务描述。" />
+                      <Alert type="warning" showIcon title="未找到可执行的 Skill，请尝试更具体的任务描述。" />
                     ) : (
                       result.steps.slice(0, visibleSteps).map((step, index) => (
                         <motion.div
@@ -385,7 +385,7 @@ export default function SelfEvolutionDemo() {
               <Col xs={24} lg={10}>
                 <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}>
                   <Card
-                    bordered={false}
+                    variant="borderless"
                     size="small"
                     style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
                   >
@@ -418,7 +418,7 @@ export default function SelfEvolutionDemo() {
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
                       <Card
                         title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />经验记录</span>}
-                        bordered={false}
+                        variant="borderless"
                         size="small"
                         style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #52c41a' }}
                       >
@@ -448,7 +448,7 @@ export default function SelfEvolutionDemo() {
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
                       <Card
                         title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />演化学习</span>}
-                        bordered={false}
+                        variant="borderless"
                         size="small"
                         style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #faad14' }}
                       >
@@ -483,9 +483,9 @@ export default function SelfEvolutionDemo() {
                       <Alert
                         type="success"
                         icon={<CheckCircleFilled />}
-                        message="自演化闭环完成"
+                        title="自演化闭环完成"
                         description={(
-                          <Space direction="vertical" size={8}>
+                          <Space orientation="vertical" size={8}>
                             <Text style={{ fontSize: 12 }}>
                               SkillOS 已完成本次任务的完整闭环：检索、规划、执行、记录和学习。
                             </Text>
@@ -507,7 +507,7 @@ export default function SelfEvolutionDemo() {
 
       {phase === 'idle' && !result && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-          <Card bordered={false} style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: '32px 0' }}>
+          <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: '32px 0' }}>
             <Empty
               image={<RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />}
               description={(
