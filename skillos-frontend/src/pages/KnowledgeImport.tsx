@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { ingestApi } from '@/api/client'
+import { getApiErrorMessage } from '@/api/errors'
 import type { IngestResponse } from '@/api/client'
 
 const { TextArea } = Input
@@ -107,6 +108,7 @@ export default function KnowledgeImport() {
   const [loading, setLoading] = useState(false)
   const [pipelineStage, setPipelineStage] = useState(-1)
   const [result, setResult] = useState<IngestResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'parse' | 'create'>('parse')
 
   const currentSource = SOURCE_TYPES.find(s => s.key === activeTab)!
@@ -121,6 +123,7 @@ export default function KnowledgeImport() {
     setMode(submitMode)
     setLoading(true)
     setResult(null)
+    setError(null)
     setPipelineStage(0)
 
     try {
@@ -145,7 +148,9 @@ export default function KnowledgeImport() {
         message.warning('解析完成，但存在错误')
       }
     } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '解析失败')
+      const msg = getApiErrorMessage(e, '解析失败')
+      setError(msg)
+      message.error(msg)
       setPipelineStage(-1)
     } finally {
       setLoading(false)
@@ -160,6 +165,18 @@ export default function KnowledgeImport() {
           从轨迹、文档、API 文档或代码脚本中提取结构化经验，生成 Skill 候选。
         </p>
       </motion.div>
+
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message={mode === 'create' ? '解析并创建 Skill 失败' : '解析失败'}
+          description={error}
+          style={{ marginBottom: 16 }}
+          onClose={() => setError(null)}
+        />
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>

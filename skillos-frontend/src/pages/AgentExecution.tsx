@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Card, Input, Button, Tag, Alert, Spin, Divider,
-  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip,
+  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip, Table, Empty,
 } from 'antd'
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
-  CloseCircleOutlined, SearchOutlined, DatabaseOutlined,
+  CloseCircleOutlined, SearchOutlined, DatabaseOutlined, ReloadOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
 import { executionApi } from '@/api/client'
-import type { ExecutionResult, ExecutionStepResult, RetrievedSkill } from '@/api/types'
+import { getApiErrorMessage } from '@/api/errors'
+import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, RetrievedSkill } from '@/api/types'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -24,6 +25,11 @@ const STATUS_COLOR: Record<string, string> = {
 
 const SKILL_TYPE_COLOR: Record<string, string> = {
   atomic: '#1677ff', functional: '#722ed1', strategic: '#faad14',
+}
+
+function formatHistoryTime(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 function StepCard({ step, index }: { step: ExecutionStepResult; index: number }) {
@@ -81,6 +87,25 @@ export default function AgentExecution() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [history, setHistory] = useState<ExecutionHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      setHistory(await executionApi.history())
+    } catch (e: unknown) {
+      setHistoryError(getApiErrorMessage(e, '执行历史加载失败'))
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadHistory()
+  }, [loadHistory])
 
   const handleExecute = async () => {
     if (!goal.trim()) return
@@ -90,9 +115,9 @@ export default function AgentExecution() {
     try {
       const res = await executionApi.executePlan(goal)
       setResult(res)
+      void loadHistory()
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string; error?: string } }; message?: string }
-      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || '执行失败')
+      setError(getApiErrorMessage(e, '执行失败'))
     } finally {
       setLoading(false)
     }
@@ -152,6 +177,69 @@ export default function AgentExecution() {
           ))}
         </div>
       </motion.div>
+
+      <Card
+        title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />最近执行历史</span>}
+        bordered={false}
+        size="small"
+        style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+        extra={
+          <Button size="small" icon={<ReloadOutlined />} loading={historyLoading} onClick={loadHistory}>
+            刷新
+          </Button>
+        }
+      >
+        {historyError && (
+          <Alert type="warning" showIcon message={historyError} style={{ marginBottom: 12 }} />
+        )}
+        {!historyLoading && history.length === 0 ? (
+          <Empty description="暂无执行历史，完成一次任务后会自动显示在这里" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Table
+            rowKey="execution_id"
+            dataSource={history}
+            loading={historyLoading}
+            size="small"
+            pagination={{ pageSize: 5, size: 'small' }}
+            columns={[
+              {
+                title: 'Goal',
+                dataIndex: 'goal',
+                ellipsis: true,
+                render: (goalText: string) => <Text style={{ maxWidth: 240 }}>{goalText}</Text>,
+              },
+              {
+                title: 'Status',
+                dataIndex: 'status',
+                width: 90,
+                render: (status: string) => <Tag color={STATUS_COLOR[status] || 'default'}>{status}</Tag>,
+              },
+              {
+                title: 'Steps',
+                width: 90,
+                render: (_: unknown, item: ExecutionHistoryItem) => `${item.success_count}/${item.step_count}`,
+              },
+              {
+                title: 'Skills',
+                dataIndex: 'retrieved_skill_count',
+                width: 80,
+              },
+              {
+                title: 'Latency',
+                dataIndex: 'total_latency_ms',
+                width: 90,
+                render: (ms: number) => `${ms.toFixed(0)}ms`,
+              },
+              {
+                title: 'Created',
+                dataIndex: 'created_at',
+                width: 170,
+                render: formatHistoryTime,
+              },
+            ]}
+          />
+        )}
+      </Card>
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
