@@ -172,12 +172,13 @@ class ExecutePlanRequest(BaseModel):
 
 class ExecutionStepResult(BaseModel):
     step_id: str
+    step_index: int
     skill_id: str
     skill_name: str
     status: str
-    outputs: Dict[str, Any]
-    latency_ms: float
+    result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    latency_ms: Optional[float] = None
 
 
 class RetrievedSkill(BaseModel):

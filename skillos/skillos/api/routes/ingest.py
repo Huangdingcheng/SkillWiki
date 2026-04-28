@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
 from ..deps import AppState, get_app_state
@@ -22,10 +22,22 @@ class ExperienceUnitOut(BaseModel):
     source_type: str
     raw_content: str
     extracted_actions: List[str]
+    normalized_actions: List[Dict[str, Any]]
+    summary: str
     proposed_skill_name: Optional[str]
     proposed_description: Optional[str]
     proposed_type: Optional[str]
     confidence: float
+    index_keywords: List[str]
+    index_embedding_hint: str
+
+
+class CreatedSkillOut(BaseModel):
+    skill_id: str
+    name: str
+    skill_type: str
+    state: str
+    version: str
 
 
 class IngestResponse(BaseModel):
@@ -35,6 +47,7 @@ class IngestResponse(BaseModel):
     token_usage: int
     errors: List[str]
     units: List[ExperienceUnitOut]
+    created_skills: List[CreatedSkillOut] = Field(default_factory=list)
 
 
 def _unit_to_out(unit: Any) -> ExperienceUnitOut:
@@ -43,10 +56,14 @@ def _unit_to_out(unit: Any) -> ExperienceUnitOut:
         source_type=unit.source_type if isinstance(unit.source_type, str) else str(unit.source_type),
         raw_content=unit.raw_content[:500],
         extracted_actions=getattr(unit, "extracted_actions", []) or [],
+        normalized_actions=getattr(unit, "normalized_actions", []) or [],
+        summary=getattr(unit, "summary", "") or "",
         proposed_skill_name=getattr(unit, "proposed_skill_name", None),
         proposed_description=getattr(unit, "proposed_description", None),
         proposed_type=getattr(unit, "proposed_type", None),
         confidence=getattr(unit, "confidence", 0.5),
+        index_keywords=getattr(unit, "index_keywords", []) or [],
+        index_embedding_hint=getattr(unit, "index_embedding_hint", "") or "",
     )
 
 
@@ -96,6 +113,8 @@ async def parse_and_create_skills(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    created_skills: List[CreatedSkillOut] = []
+
     for unit in result.units:
         name = unit.proposed_skill_name or f"skill_from_{req.source_type}"
         desc = unit.proposed_description or unit.raw_content[:100]
@@ -115,11 +134,19 @@ async def parse_and_create_skills(
                 ),
                 provenance=SkillProvenance(
                     source_type=req.source_type,
-                    author="ingest_pipeline",
-                    source_id=unit.unit_id,
+                    source_ids=[unit.unit_id],
+                    created_by_agent="ingest_pipeline",
+                    creation_context={"source_type": req.source_type},
                 ),
             )
-            await app.wiki.create(skill)
+            created = await app.wiki.create(skill)
+            created_skills.append(CreatedSkillOut(
+                skill_id=created.skill_id,
+                name=created.name,
+                skill_type=created.skill_type.value,
+                state=created.state.value,
+                version=created.version,
+            ))
         except (ValueError, Exception):
             pass
 
@@ -130,4 +157,5 @@ async def parse_and_create_skills(
         token_usage=result.token_usage,
         errors=result.errors,
         units=[_unit_to_out(u) for u in result.units],
+        created_skills=created_skills,
     )

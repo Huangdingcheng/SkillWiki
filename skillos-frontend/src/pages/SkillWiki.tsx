@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Table, Tag, Input, Select, Button, Drawer, Descriptions, Badge,
   Space, Tooltip, Popconfirm, message, Tabs, Typography, Progress,
@@ -8,6 +8,7 @@ import {
   CheckOutlined, StopOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
+import { useLocation } from 'react-router-dom'
 import { skillsApi, lifecycleApi } from '@/api/client'
 import type { SkillFull, SkillState, SkillSummary, SkillType } from '@/api/types'
 
@@ -26,6 +27,8 @@ const TYPE_COLOR: Record<string, string> = {
 }
 
 export default function SkillWiki() {
+  const location = useLocation()
+  const openedFromQuery = useRef<string | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -52,6 +55,13 @@ export default function SkillWiki() {
     setSelected(full)
     setDrawerOpen(true)
   }
+
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('skill_id')
+    if (!id || openedFromQuery.current === id) return
+    openedFromQuery.current = id
+    openDetail(id).catch(() => message.error('Skill 不存在或暂不可访问'))
+  }, [location.search])
 
   const handleRelease = async (id: string) => {
     try {

@@ -275,7 +275,7 @@ export default function SelfEvolutionDemo() {
                               <div style={{ fontSize: 11, color: '#ff4d4f' }}>{step.error}</div>
                             )}
                           </div>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{step.latency_ms.toFixed(0)}ms</Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{(step.latency_ms ?? 0).toFixed(0)}ms</Text>
                           <Tag color={step.status === 'success' ? 'green' : 'red'} style={{ fontSize: 10 }}>
                             {step.status}
                           </Tag>
@@ -330,7 +330,6 @@ export default function SelfEvolutionDemo() {
                         style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #52c41a' }}
                       >
                         <Timeline
-                          size="small"
                           items={[
                             { color: 'green', children: <Text style={{ fontSize: 12 }}>执行轨迹已捕获（{result.steps.length} 个步骤）</Text> },
                             { color: 'green', children: <Text style={{ fontSize: 12 }}>状态变更已记录（{Object.keys(result.final_state).length} 个字段）</Text> },

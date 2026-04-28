@@ -46,17 +46,18 @@ async def execute_skill(
 
     step = ExecutionStepResult(
         step_id="single",
+        step_index=0,
         skill_id=skill.skill_id,
         skill_name=skill.name,
         status=record.status.value,
-        outputs=record.output_data or {},
+        result=record.output_data or {},
         latency_ms=record.latency_ms or latency,
         error=record.error_message,
     )
     return ExecutionResult(
         plan_id="single",
         goal=f"执行 {skill.name}",
-        status=step.status,
+        status="success" if step.status == "success" else "failed",
         steps=[step],
         total_latency_ms=latency,
         final_state=app.state_tracker.current,
@@ -95,7 +96,7 @@ async def execute_plan(
             description=r.skill.description,
             skill_type=r.skill.skill_type.value,
             score=round(r.score, 3),
-            match_reason=r.match_reason,
+            match_reason="; ".join(r.match_reasons),
         )
         for r in search_results
     ]
@@ -126,19 +127,27 @@ async def execute_plan(
         skill = skill_map.get(step.skill_id)
         steps.append(ExecutionStepResult(
             step_id=step.step_id,
+            step_index=step.step_index,
             skill_id=step.skill_id,
             skill_name=skill.name if skill else step.skill_id,
             status=step.status.value if hasattr(step.status, "value") else str(step.status),
-            outputs=step.result or {},
+            result=step.result or {},
             latency_ms=step.latency_ms or 0.0,
             error=step.error,
         ))
 
     success_count = sum(1 for s in steps if s.status == "success")
+    if steps and success_count == len(steps) and plan.is_complete:
+        overall_status = "success"
+    elif success_count == 0:
+        overall_status = "failed"
+    else:
+        overall_status = "partial"
+
     result = ExecutionResult(
         plan_id=plan.plan_id,
         goal=req.goal,
-        status="completed" if plan.is_complete else "partial",
+        status=overall_status,
         steps=steps,
         total_latency_ms=total_latency,
         final_state=app.state_tracker.current,
@@ -154,7 +163,7 @@ async def execute_plan(
         "success_count": success_count,
         "total_latency_ms": total_latency,
         "retrieved_skill_count": len(retrieved),
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.utcnow(),
     })
     if len(_execution_history) > 50:
         _execution_history.pop(0)
@@ -162,8 +171,8 @@ async def execute_plan(
     return result
 
 
-@router.get("/history", response_model=list)
-async def get_execution_history() -> list:
+@router.get("/history", response_model=List[ExecutionHistoryItem])
+async def get_execution_history() -> List[ExecutionHistoryItem]:
     return list(reversed(_execution_history[-20:]))
 
 
