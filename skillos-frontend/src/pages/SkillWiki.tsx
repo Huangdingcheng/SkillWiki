@@ -27,7 +27,7 @@ import { motion } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { skillsApi, lifecycleApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { SkillFull, SkillState, SkillSummary, SkillType } from '@/api/types'
+import type { SkillFull, SkillParameter, SkillState, SkillSummary, SkillType } from '@/api/types'
 
 const { Text, Paragraph } = Typography
 
@@ -57,6 +57,28 @@ const TYPE_COLOR: Record<string, string> = {
   atomic: 'blue',
   functional: 'purple',
   strategic: 'gold',
+}
+
+function schemaToParameters(schema: SkillFull['interface']['input_schema'] | SkillFull['interface']['output_schema']): SkillParameter[] {
+  const properties = schema?.properties ?? {}
+  const required = new Set(schema?.required ?? [])
+
+  return Object.entries(properties).map(([name, field]) => ({
+    name,
+    type: field.type ?? 'unknown',
+    description: field.description ?? '',
+    required: required.has(name),
+    default: field.default,
+  }))
+}
+
+function getInterfaceParameters(skill: SkillFull, direction: 'input' | 'output'): SkillParameter[] {
+  const skillInterface = skill.interface
+  if (!skillInterface) return []
+  if (direction === 'input') {
+    return Array.isArray(skillInterface.inputs) ? skillInterface.inputs : schemaToParameters(skillInterface.input_schema)
+  }
+  return Array.isArray(skillInterface.outputs) ? skillInterface.outputs : schemaToParameters(skillInterface.output_schema)
 }
 
 export default function SkillWiki() {
@@ -190,6 +212,12 @@ export default function SkillWiki() {
     },
   ]
 
+  const selectedTags = selected?.tags ?? []
+  const selectedInputParams = selected ? getInterfaceParameters(selected, 'input') : []
+  const selectedOutputParams = selected ? getInterfaceParameters(selected, 'output') : []
+  const selectedPreconditions = selected?.interface?.preconditions ?? []
+  const selectedSubSkillIds = selected?.implementation?.sub_skill_ids ?? []
+
   return (
     <div style={{ padding: 24 }}>
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
@@ -243,7 +271,7 @@ export default function SkillWiki() {
         title={selected?.name}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={600}
+        size="large"
         extra={selected && (
           <Space>
             <Button size="small" onClick={() => navigate(`/graph?skill_id=${encodeURIComponent(selected.skill_id)}`)}>
@@ -266,8 +294,8 @@ export default function SkillWiki() {
                     <Descriptions.Item label="版本"><Text code>{selected.version}</Text></Descriptions.Item>
                     <Descriptions.Item label="描述"><Paragraph>{selected.description}</Paragraph></Descriptions.Item>
                     <Descriptions.Item label="标签">
-                      {selected.tags.length > 0
-                        ? selected.tags.map(tag => <Tag key={tag}>{tag}</Tag>)
+                      {selectedTags.length > 0
+                        ? selectedTags.map(tag => <Tag key={tag}>{tag}</Tag>)
                         : <Text type="secondary">暂无标签</Text>}
                     </Descriptions.Item>
                     <Descriptions.Item label="粒度级别">{selected.granularity_level}</Descriptions.Item>
@@ -282,26 +310,30 @@ export default function SkillWiki() {
                 children: selected.interface && (
                   <div>
                     <h4>输入参数</h4>
-                    {selected.interface.inputs.map(param => (
-                      <div key={param.name} style={{ marginBottom: 8 }}>
-                        <Text code>{param.name}</Text>
-                        <Tag style={{ marginLeft: 8 }}>{param.type}</Tag>
-                        {param.required && <Tag color="red">必填</Tag>}
-                        <div style={{ color: '#666', fontSize: 12 }}>{param.description}</div>
-                      </div>
-                    ))}
+                    {selectedInputParams.length > 0
+                      ? selectedInputParams.map(param => (
+                        <div key={param.name} style={{ marginBottom: 8 }}>
+                          <Text code>{param.name}</Text>
+                          <Tag style={{ marginLeft: 8 }}>{param.type}</Tag>
+                          {param.required && <Tag color="red">必填</Tag>}
+                          <div style={{ color: '#666', fontSize: 12 }}>{param.description}</div>
+                        </div>
+                      ))
+                      : <Text type="secondary">暂无输入参数</Text>}
                     <h4 style={{ marginTop: 16 }}>输出参数</h4>
-                    {selected.interface.outputs.map(param => (
-                      <div key={param.name} style={{ marginBottom: 8 }}>
-                        <Text code>{param.name}</Text>
-                        <Tag style={{ marginLeft: 8 }}>{param.type}</Tag>
-                        <div style={{ color: '#666', fontSize: 12 }}>{param.description}</div>
-                      </div>
-                    ))}
-                    {selected.interface.preconditions.length > 0 && (
+                    {selectedOutputParams.length > 0
+                      ? selectedOutputParams.map(param => (
+                        <div key={param.name} style={{ marginBottom: 8 }}>
+                          <Text code>{param.name}</Text>
+                          <Tag style={{ marginLeft: 8 }}>{param.type}</Tag>
+                          <div style={{ color: '#666', fontSize: 12 }}>{param.description}</div>
+                        </div>
+                      ))
+                      : <Text type="secondary">暂无输出参数</Text>}
+                    {selectedPreconditions.length > 0 && (
                       <>
                         <h4 style={{ marginTop: 16 }}>前置条件</h4>
-                        {selected.interface.preconditions.map((condition, index) => <div key={index}>- {condition}</div>)}
+                        {selectedPreconditions.map((condition, index) => <div key={index}>- {condition}</div>)}
                       </>
                     )}
                   </div>
@@ -323,10 +355,10 @@ export default function SkillWiki() {
                         {selected.implementation.prompt_template}
                       </div>
                     )}
-                    {selected.implementation.sub_skill_ids.length > 0 && (
+                    {selectedSubSkillIds.length > 0 && (
                       <div style={{ marginTop: 8 }}>
                         <strong>子 Skill：</strong>
-                        {selected.implementation.sub_skill_ids.map(id => <Tag key={id}>{id}</Tag>)}
+                        {selectedSubSkillIds.map(id => <Tag key={id}>{id}</Tag>)}
                       </div>
                     )}
                   </div>
