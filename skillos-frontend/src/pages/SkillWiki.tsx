@@ -81,6 +81,10 @@ function getInterfaceParameters(skill: SkillFull, direction: 'input' | 'output')
   return Array.isArray(skillInterface.outputs) ? skillInterface.outputs : schemaToParameters(skillInterface.output_schema)
 }
 
+function uniqueTags(tags?: string[]): string[] {
+  return Array.from(new Set((tags ?? []).filter(Boolean)))
+}
+
 export default function SkillWiki() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -177,7 +181,7 @@ export default function SkillWiki() {
     {
       title: 'Tags',
       dataIndex: 'tags',
-      render: (tags: string[]) => tags.slice(0, 3).map(tag => <Tag key={tag}>{tag}</Tag>),
+      render: (tags: string[]) => uniqueTags(tags).slice(0, 3).map(tag => <Tag key={tag}>{tag}</Tag>),
     },
     {
       title: 'Success Rate',
@@ -212,7 +216,7 @@ export default function SkillWiki() {
     },
   ]
 
-  const selectedTags = selected?.tags ?? []
+  const selectedTags = uniqueTags(selected?.tags)
   const selectedInputParams = selected ? getInterfaceParameters(selected, 'input') : []
   const selectedOutputParams = selected ? getInterfaceParameters(selected, 'output') : []
   const selectedPreconditions = selected?.interface?.preconditions ?? []

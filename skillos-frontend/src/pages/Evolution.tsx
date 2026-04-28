@@ -281,7 +281,7 @@ export default function Evolution() {
                 <Progress
                   type="circle"
                   percent={Math.round(health.health_ratio * 100)}
-                  width={60}
+                  size={60}
                   strokeColor="#52c41a"
                 />
                 <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>Health Ratio</div>

@@ -85,6 +85,10 @@ function nodeColor(node?: GraphNodeData) {
   return TYPE_COLOR[node.skill_type] || '#8c8c8c'
 }
 
+function uniqueTags(tags?: string[]): string[] {
+  return Array.from(new Set((tags ?? []).filter(Boolean)))
+}
+
 export default function SkillGraph() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -288,6 +292,7 @@ export default function SkillGraph() {
   }
 
   const hasNodes = Boolean(graphData?.nodes.length)
+  const selectedNodeTags = uniqueTags(selectedNode?.tags)
 
   return (
     <div style={{ padding: 24, minHeight: 'calc(100vh - 120px)' }}>
@@ -400,8 +405,8 @@ export default function SkillGraph() {
               <div>
                 <Text type="secondary">标签</Text>
                 <div style={{ marginTop: 6 }}>
-                  {selectedNode.tags.length > 0
-                    ? selectedNode.tags.map(tag => <Tag key={tag}>{tag}</Tag>)
+                  {selectedNodeTags.length > 0
+                    ? selectedNodeTags.map(tag => <Tag key={tag}>{tag}</Tag>)
                     : <Text type="secondary">暂无标签</Text>}
                 </div>
               </div>
