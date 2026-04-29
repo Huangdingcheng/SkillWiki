@@ -1,20 +1,29 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { ConfigProvider, theme } from 'antd'
+import { ConfigProvider, Spin, theme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { useAppStore } from '@/store/appStore'
 import AppLayout from '@/components/AppLayout'
-import Dashboard from '@/pages/Dashboard'
-import SkillWiki from '@/pages/SkillWiki'
-import SkillGraph from '@/pages/SkillGraph'
-import AgentExecution from '@/pages/AgentExecution'
-import Evolution from '@/pages/Evolution'
-import LifecycleDemo from '@/pages/LifecycleDemo'
-import KnowledgeImport from '@/pages/KnowledgeImport'
-import VersionControl from '@/pages/VersionControl'
-import SelfEvolutionDemo from '@/pages/SelfEvolutionDemo'
 import './index.css'
+
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const SkillWiki = lazy(() => import('@/pages/SkillWiki'))
+const SkillGraph = lazy(() => import('@/pages/SkillGraph'))
+const AgentExecution = lazy(() => import('@/pages/AgentExecution'))
+const Evolution = lazy(() => import('@/pages/Evolution'))
+const LifecycleDemo = lazy(() => import('@/pages/LifecycleDemo'))
+const KnowledgeImport = lazy(() => import('@/pages/KnowledgeImport'))
+const VersionControl = lazy(() => import('@/pages/VersionControl'))
+const SelfEvolutionDemo = lazy(() => import('@/pages/SelfEvolutionDemo'))
+
+function PageFallback() {
+  return (
+    <div style={{ minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Spin size="large" description="加载页面..." />
+    </div>
+  )
+}
 
 function App() {
   const darkMode = useAppStore(s => s.darkMode)
@@ -33,17 +42,19 @@ function App() {
     >
       <BrowserRouter>
         <AppLayout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/wiki" element={<SkillWiki />} />
-            <Route path="/graph" element={<SkillGraph />} />
-            <Route path="/execution" element={<AgentExecution />} />
-            <Route path="/evolution" element={<Evolution />} />
-            <Route path="/lifecycle" element={<LifecycleDemo />} />
-            <Route path="/ingest" element={<KnowledgeImport />} />
-            <Route path="/versions" element={<VersionControl />} />
-            <Route path="/demo" element={<SelfEvolutionDemo />} />
-          </Routes>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/wiki" element={<SkillWiki />} />
+              <Route path="/graph" element={<SkillGraph />} />
+              <Route path="/execution" element={<AgentExecution />} />
+              <Route path="/evolution" element={<Evolution />} />
+              <Route path="/lifecycle" element={<LifecycleDemo />} />
+              <Route path="/ingest" element={<KnowledgeImport />} />
+              <Route path="/versions" element={<VersionControl />} />
+              <Route path="/demo" element={<SelfEvolutionDemo />} />
+            </Routes>
+          </Suspense>
         </AppLayout>
       </BrowserRouter>
     </ConfigProvider>

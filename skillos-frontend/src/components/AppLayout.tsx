@@ -67,7 +67,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { darkMode, toggleDark, wsEvents } = useAppStore()
   useWebSocket()
 
-  const unreadEvents = wsEvents.filter(e => e.event !== 'pong' && e.event !== 'connected').length
+  const unreadEvents = wsEvents.filter(e => e.type !== 'pong' && e.type !== 'connected').length
 
   return (
     <Layout style={{ minHeight: '100vh' }}>

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type {
   ExecutionResult,
+  ExecutionHistoryItem,
   GraphData,
   HealthReport,
   OverviewStats,
@@ -90,7 +91,7 @@ export const executionApi = {
     http.delete('/execution/state').then(r => r.data),
 
   history: () =>
-    http.get<Record<string, unknown>[]>('/execution/history').then(r => r.data),
+    http.get<ExecutionHistoryItem[]>('/execution/history').then(r => r.data),
 }
 
 // ── Evolution ─────────────────────────────────────────────────────────────────
@@ -122,10 +123,21 @@ export interface IngestResponse {
     source_type: string
     raw_content: string
     extracted_actions: string[]
+    normalized_actions: Record<string, unknown>[]
+    summary: string
     proposed_skill_name?: string
     proposed_description?: string
     proposed_type?: string
     confidence: number
+    index_keywords: string[]
+    index_embedding_hint: string
+  }[]
+  created_skills?: {
+    skill_id: string
+    name: string
+    skill_type: string
+    state: string
+    version: string
   }[]
 }
 

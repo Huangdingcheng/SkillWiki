@@ -1,5 +1,30 @@
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/store/appStore'
+import type { WsEvent } from '@/store/appStore'
+
+type RawWsMessage = {
+  type?: unknown
+  payload?: unknown
+  timestamp?: unknown
+  event?: unknown
+  data?: unknown
+}
+
+function normalizeWsMessage(raw: RawWsMessage): WsEvent | null {
+  const type = typeof raw.type === 'string'
+    ? raw.type
+    : typeof raw.event === 'string'
+      ? raw.event
+      : ''
+
+  if (!type) return null
+
+  return {
+    type,
+    payload: 'payload' in raw ? raw.payload : raw.data,
+    timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : new Date().toISOString(),
+  }
+}
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
@@ -12,8 +37,8 @@ export function useWebSocket() {
 
     ws.onmessage = (e) => {
       try {
-        const msg = JSON.parse(e.data)
-        pushWsEvent(msg.event, msg.data)
+        const msg = normalizeWsMessage(JSON.parse(e.data))
+        if (msg) pushWsEvent(msg)
       } catch {
         // ignore
       }
