@@ -10,13 +10,17 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import {
+  AimOutlined,
   ExportOutlined,
   ReloadOutlined,
   RollbackOutlined,
   ShareAltOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { graphApi } from '@/api/client'
@@ -71,8 +75,10 @@ type GraphEvent = {
 
 type GraphInstance = {
   destroy: () => void
+  fitView: (options?: unknown, animation?: unknown) => void | Promise<void>
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
+  zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
 }
 
 function formatPercent(value: number) {
@@ -204,10 +210,15 @@ export default function SkillGraph() {
             lineWidth: selected || centered ? 3 : 1,
             size: Math.max(28, Math.min(56, 28 + node.usage_count * 0.5)),
             labelText: node.name,
-            labelFill: '#fff',
-            labelFontSize: 10,
+            labelFill: '#111827',
+            labelFontSize: 8,
             labelFontWeight: selected || centered ? 700 : 600,
-            labelPlacement: 'center' as const,
+            labelMaxWidth: '260%',
+            labelPlacement: 'bottom' as const,
+            labelOffsetY: 5,
+            labelStroke: '#fff',
+            labelLineWidth: 3,
+            labelWordWrap: true,
             cursor: 'pointer',
           },
         }
@@ -234,6 +245,8 @@ export default function SkillGraph() {
         width: containerRef.current.clientWidth || 800,
         height: containerRef.current.clientHeight || 600,
         data: { nodes, edges },
+        autoFit: 'view',
+        padding: [48, 48, 72, 48],
         layout: {
           type: 'force',
           preventOverlap: true,
@@ -245,6 +258,11 @@ export default function SkillGraph() {
           'drag-canvas',
           'zoom-canvas',
           'drag-element',
+          {
+            type: 'auto-adapt-label',
+            padding: 8,
+            throttle: 64,
+          },
           {
             type: 'click-select',
             degree: 0,
@@ -293,6 +311,12 @@ export default function SkillGraph() {
 
   const hasNodes = Boolean(graphData?.nodes.length)
   const selectedNodeTags = uniqueTags(selectedNode?.tags)
+  const zoomGraph = (ratio: number) => {
+    void graphRef.current?.zoomBy(ratio, { duration: 180 })
+  }
+  const fitGraph = () => {
+    void graphRef.current?.fitView({ when: 'always' }, { duration: 180 })
+  }
 
   return (
     <div style={{ padding: 24, minHeight: 'calc(100vh - 120px)' }}>
@@ -365,7 +389,20 @@ export default function SkillGraph() {
               </Empty>
             </div>
           ) : (
-            <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 560 }} />
+            <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 560 }}>
+              <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 560 }} />
+              <Space.Compact style={{ position: 'absolute', right: 12, top: 12, zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                <Tooltip title="放大图谱">
+                  <Button size="small" icon={<ZoomInOutlined />} aria-label="放大图谱" onClick={() => zoomGraph(1.2)} />
+                </Tooltip>
+                <Tooltip title="缩小图谱">
+                  <Button size="small" icon={<ZoomOutOutlined />} aria-label="缩小图谱" onClick={() => zoomGraph(0.8)} />
+                </Tooltip>
+                <Tooltip title="适配视图">
+                  <Button size="small" icon={<AimOutlined />} aria-label="适配视图" onClick={fitGraph} />
+                </Tooltip>
+              </Space.Compact>
+            </div>
           )}
         </Card>
 
