@@ -1,54 +1,54 @@
-# Graph UI Review Notes
+# Graph UI 审查说明
 
-## Purpose
+## 目的
 
-This note summarizes the local Graph UI polish added after the first E-task handoff. It is intended for PR review and team synchronization. The changes are frontend-only unless explicitly noted, and they do not change the Feishu interface contract.
+这份说明用于补充本次 PR 中 Graph 界面的 UI 与交互改动，方便组长审查，也方便后续组内同步。除特别说明外，这些改动都属于前端展示和本地演示辅助，不改变飞书接口契约。
 
-## What Changed
+## 本次改了什么
 
-- Improved node label readability while keeping the original circular/ring node visual style.
-- Added Graph zoom controls and a fit-view control beside the existing graph canvas.
-- Added layout controls for force-directed graph tuning:
-  - repulsion
-  - attraction
-  - link distance
-  - node spacing
-  - compact / balanced / open presets
-- Added deterministic initial node positioning so unrelated nodes are scattered inside the visible canvas instead of stacking in the center.
-- Added five local demo graph skills and weighted demo edges so the layout can be reviewed when real graph relation data is still sparse.
-- Tuned edge labels:
-  - relationship text is displayed beside the arrow, not directly on the line.
-  - labels use a format such as `depends on · 0.85`.
-  - relationship labels appear when zoomed in and disappear when zoomed out.
+- 优化节点名称显示，在保留原有圆形/圆环节点视觉的前提下，让节点文字更容易读。
+- 在 Graph 画布右上角增加缩放按钮和适配视图按钮，方便检查大图和局部关系。
+- 增加力导向布局设置：
+  - 排斥力度
+  - 吸引力度
+  - 连接距离
+  - 节点间距
+  - 紧凑 / 均衡 / 开放 三组预设
+- 增加确定性的初始节点分布逻辑，让没有关系边的节点也能在可视画面内均匀散开，避免堆在中心。
+- 新增 5 个本地演示用 `test_graph_*` Skill 和加权关系边，方便在真实关系数据还不足时审查吸引/排斥效果。
+- 优化边关系文字：
+  - 关系文字显示在箭头旁边，不再直接压在线上。
+  - 文字格式类似 `depends on · 0.85`。
+  - 放大图谱时显示关系文字，缩小图谱时自动隐藏，减少视觉拥挤。
 
-## Review Path
+## 建议审查路径
 
-Use this route for the most complete local review:
+本地启动前后端后，优先打开这个页面：
 
 ```text
 http://127.0.0.1:5173/graph?skill_id=test_graph_design_plan
 ```
 
-Suggested checks:
+建议重点检查：
 
-- Confirm the five-node test subgraph loads.
-- Click nodes and confirm the right-side detail panel still works.
-- Open layout settings and adjust repulsion, attraction, link distance, and node spacing.
-- Zoom in and confirm edge relationship labels appear beside arrows.
-- Zoom out and confirm edge relationship labels disappear.
-- Click "return full graph" and confirm the full graph still loads.
+- 是否能加载 5 个节点、5 条边的小型测试子图。
+- 点击节点后，右侧节点详情面板是否仍然正常。
+- 打开“布局设置”，调整排斥力度、吸引力度、连接距离、节点间距后，图谱布局是否有变化。
+- 放大图谱后，边关系文字是否出现在箭头旁边。
+- 缩小图谱后，边关系文字是否自动消失。
+- 点击“返回全图”后，完整图谱是否还能正常加载。
 
-## Interface Impact
+## 对接口的影响
 
-- No Feishu contract changes.
-- No new frontend dependency.
-- No new required backend API.
-- Existing `/graph` and `/graph/subgraph` usage is preserved.
-- The demo graph seed data is only for local review while real relation data is limited.
+- 不修改飞书接口契约。
+- 不新增前端依赖。
+- 不新增强制后端接口。
+- 继续沿用现有 `/graph` 和 `/graph/subgraph` 能力。
+- 本地测试图谱数据只用于当前真实关系数据较少时的审查和演示。
 
-## Validation
+## 已验证内容
 
-Latest validation completed locally:
+本地已完成基础检查：
 
 ```bash
 npm run build
@@ -57,17 +57,18 @@ python -m compileall -q skillos\api
 python -m pytest skillos\tests\test_layers.py -q
 ```
 
-Browser smoke also passed for:
+浏览器冒烟检查通过：
 
 ```text
 /graph
 /graph?skill_id=test_graph_design_plan
 ```
 
-The browser console showed no runtime errors during the Graph smoke. The known local WebSocket warning remains non-blocking and is not introduced by these Graph UI changes.
+Graph 页面检查时，浏览器控制台没有新增运行时错误。当前仍存在的本地 WebSocket warning 是既有非阻塞问题，不是这次 Graph UI 改动引入的。
 
-## Notes For Reviewer
+## 给审查人的说明
 
-- The Graph UI changes are meant to improve reviewability and demo stability, not to redefine the final visual design.
-- Real graph richness still depends on A/D or backend relation data. The seeded test graph exists so layout behavior can be inspected before real relation edges are complete.
-- Current PR can be reviewed as frontend/API/pipeline readiness plus Graph demo polish. If the team wants Graph demo seed data kept out of `main`, it can be split or removed in a follow-up commit.
+- 这次 Graph UI 改动的目标是让图谱更容易演示和审查，不是重新设计最终视觉风格。
+- Graph 的真实丰富度仍然依赖 A/D 或后端后续补齐真实 Skill 关系边。
+- 本地演示种子数据只是为了在真实关系边不足时也能检查布局、缩放、边权重和关系文字显示效果。
+- 如果团队认为测试图谱种子数据不适合进入 `main`，可以在后续提交中拆出或删除，不影响前端 Graph 交互本身。
