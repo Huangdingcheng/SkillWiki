@@ -89,10 +89,13 @@ type GraphEvent = {
 }
 
 type GraphInstance = {
+  draw: () => void | Promise<void>
   destroy: () => void
   fitView: (options?: unknown, animation?: unknown) => void | Promise<void>
+  getZoom: () => number
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
+  updateEdgeData: (edges: Array<{ id: string; style: { badgeText: string } }>) => void
   zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
 }
 
@@ -102,6 +105,7 @@ type ForceEdgeDatum = {
 }
 
 const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v1'
+const EDGE_LABEL_ZOOM_THRESHOLD = 0.85
 const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
   repulsion: 180,
   attraction: 0.35,
@@ -193,6 +197,14 @@ function weightedLinkDistance(edge: ForceEdgeDatum | undefined, baseDistance: nu
 function weightedEdgeStrength(edge: ForceEdgeDatum | undefined, baseAttraction: number) {
   const weight = edgeWeight(edge)
   return baseAttraction * (0.45 + weight * 0.75) * 80
+}
+
+function formatEdgeLabel(edge: GraphEdgeData) {
+  return `${edge.edge_type.replace(/_/g, ' ')} \u00b7 ${edge.weight.toFixed(2)}`
+}
+
+function shouldShowEdgeLabels(zoom: number) {
+  return zoom >= EDGE_LABEL_ZOOM_THRESHOLD
 }
 
 function calculateInitialNodePositions(
@@ -443,6 +455,22 @@ export default function SkillGraph() {
           labelText: `${edge.edge_type.replace(/_/g, ' ')} · ${edge.weight.toFixed(2)}`,
           labelFontSize: 9,
           labelFill: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
+          label: false,
+          labelStroke: '#fff',
+          labelLineWidth: 3,
+          labelPlacement: 'center' as const,
+          labelOffsetX: 0,
+          labelOffsetY: -18,
+          badgeText: formatEdgeLabel(edge),
+          badgeFontSize: 9,
+          badgeFill: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
+          badgeBackgroundFill: '#fff',
+          badgeBackgroundOpacity: 0.9,
+          badgeBackgroundRadius: 4,
+          badgePadding: [1, 4, 1, 4],
+          badgePlacement: 'suffix' as const,
+          badgeOffsetX: 0,
+          badgeOffsetY: -18,
         },
       }))
 
@@ -477,6 +505,23 @@ export default function SkillGraph() {
         },
       }) as GraphInstance
 
+      let graphReady = false
+      let edgeLabelsVisible: boolean | null = null
+      const syncEdgeLabelVisibility = () => {
+        if (disposed || !graphReady || filteredEdges.length === 0) return
+        const visible = shouldShowEdgeLabels(g.getZoom())
+        if (edgeLabelsVisible === visible) return
+
+        edgeLabelsVisible = visible
+        g.updateEdgeData(filteredEdges.map(edge => ({
+          id: edge.id,
+          style: {
+            badgeText: visible ? formatEdgeLabel(edge) : '',
+          },
+        })))
+        void Promise.resolve(g.draw())
+      }
+
       g.on('node:click', (event) => {
         const id = event.target?.id
         if (id) setSelectedNodeId(id)
@@ -488,7 +533,14 @@ export default function SkillGraph() {
 
       graphRef.current = g
       void Promise.resolve(g.render()).then(() => {
-        if (!disposed) void g.fitView({ when: 'always' }, { duration: 160 })
+        if (!disposed) {
+          graphReady = true
+          syncEdgeLabelVisibility()
+          void Promise.resolve(g.fitView({ when: 'always' }, { duration: 160 })).then(() => {
+            syncEdgeLabelVisibility()
+            g.on('aftertransform', syncEdgeLabelVisibility)
+          })
+        }
       })
     })
 
