@@ -6,7 +6,9 @@ import {
   Descriptions,
   Empty,
   InputNumber,
+  Popover,
   Select,
+  Slider,
   Space,
   Spin,
   Tag,
@@ -18,6 +20,7 @@ import {
   ExportOutlined,
   ReloadOutlined,
   RollbackOutlined,
+  SettingOutlined,
   ShareAltOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
@@ -25,7 +28,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { graphApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { GraphData, GraphNodeData } from '@/api/types'
+import type { GraphData, GraphEdgeData, GraphNodeData } from '@/api/types'
 
 const { Text, Paragraph } = Typography
 
@@ -68,6 +71,18 @@ const EDGE_COLOR: Record<string, string> = {
 
 type GraphMode = 'full' | 'subgraph'
 
+type GraphLayoutSettings = {
+  repulsion: number
+  attraction: number
+  linkDistance: number
+  nodeSpacing: number
+}
+
+type GraphCanvasSize = {
+  width: number
+  height: number
+}
+
 type GraphEvent = {
   target?: { id?: string }
   targetType?: string
@@ -79,6 +94,63 @@ type GraphInstance = {
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
   zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
+}
+
+const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v1'
+const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
+  repulsion: 180,
+  attraction: 0.35,
+  linkDistance: 150,
+  nodeSpacing: 56,
+}
+const GRAPH_LAYOUT_PRESETS: Record<string, GraphLayoutSettings> = {
+  compact: {
+    repulsion: 100,
+    attraction: 0.6,
+    linkDistance: 100,
+    nodeSpacing: 44,
+  },
+  balanced: DEFAULT_GRAPH_LAYOUT,
+  open: {
+    repulsion: 300,
+    attraction: 0.2,
+    linkDistance: 220,
+    nodeSpacing: 76,
+  },
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(max, Math.max(min, numeric))
+}
+
+function normalizeLayoutSettings(value: Partial<GraphLayoutSettings> = {}): GraphLayoutSettings {
+  return {
+    repulsion: clampNumber(value.repulsion, 40, 400, DEFAULT_GRAPH_LAYOUT.repulsion),
+    attraction: clampNumber(value.attraction, 0.05, 1, DEFAULT_GRAPH_LAYOUT.attraction),
+    linkDistance: clampNumber(value.linkDistance, 60, 280, DEFAULT_GRAPH_LAYOUT.linkDistance),
+    nodeSpacing: clampNumber(value.nodeSpacing, 36, 96, DEFAULT_GRAPH_LAYOUT.nodeSpacing),
+  }
+}
+
+function loadLayoutSettings(): GraphLayoutSettings {
+  if (typeof window === 'undefined') return DEFAULT_GRAPH_LAYOUT
+  try {
+    const stored = window.localStorage.getItem(GRAPH_LAYOUT_STORAGE_KEY)
+    return stored ? normalizeLayoutSettings(JSON.parse(stored)) : DEFAULT_GRAPH_LAYOUT
+  } catch {
+    return DEFAULT_GRAPH_LAYOUT
+  }
+}
+
+function saveLayoutSettings(settings: GraphLayoutSettings) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(GRAPH_LAYOUT_STORAGE_KEY, JSON.stringify(settings))
+  } catch {
+    // Ignore storage failures; the graph should still remain usable.
+  }
 }
 
 function formatPercent(value: number) {
@@ -95,9 +167,72 @@ function uniqueTags(tags?: string[]): string[] {
   return Array.from(new Set((tags ?? []).filter(Boolean)))
 }
 
+function stableRandom(seed: string) {
+  let hash = 2166136261
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) / 4294967295
+}
+
+function calculateInitialNodePositions(
+  nodes: GraphNodeData[],
+  edges: GraphEdgeData[],
+  canvasSize: GraphCanvasSize,
+  settings: GraphLayoutSettings,
+) {
+  const positions = new Map<string, { x: number; y: number }>()
+  if (nodes.length === 0) return positions
+
+  const width = Math.max(320, canvasSize.width || 800)
+  const height = Math.max(360, canvasSize.height || 560)
+  const padding = Math.max(48, settings.nodeSpacing + 18)
+  const spreadRatio = 0.72 + ((settings.repulsion - 40) / 360) * 0.28
+  const contentWidth = Math.max(120, (width - padding * 2) * spreadRatio)
+  const contentHeight = Math.max(120, (height - padding * 2) * spreadRatio)
+  const offsetX = (width - contentWidth) / 2
+  const offsetY = (height - contentHeight) / 2
+  const ratio = contentWidth / contentHeight
+  const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length * ratio)))
+  const rows = Math.max(1, Math.ceil(nodes.length / columns))
+  const cellWidth = contentWidth / columns
+  const cellHeight = contentHeight / rows
+  const connected = new Set<string>()
+
+  edges.forEach(edge => {
+    connected.add(edge.source)
+    connected.add(edge.target)
+  })
+
+  const orderedNodes = [...nodes].sort((a, b) => {
+    const connectionDelta = Number(connected.has(b.id)) - Number(connected.has(a.id))
+    if (connectionDelta !== 0) return connectionDelta
+    return stableRandom(a.id) - stableRandom(b.id)
+  })
+
+  orderedNodes.forEach((node, index) => {
+    const column = index % columns
+    const row = Math.floor(index / columns)
+    const jitterScale = connected.has(node.id) ? 0.28 : 0.42
+    const jitterX = (stableRandom(`${node.id}:x`) - 0.5) * cellWidth * jitterScale
+    const jitterY = (stableRandom(`${node.id}:y`) - 0.5) * cellHeight * jitterScale
+    const x = offsetX + cellWidth * (column + 0.5) + jitterX
+    const y = offsetY + cellHeight * (row + 0.5) + jitterY
+
+    positions.set(node.id, {
+      x: Math.min(width - padding, Math.max(padding, x)),
+      y: Math.min(height - padding, Math.max(padding, y)),
+    })
+  })
+
+  return positions
+}
+
 export default function SkillGraph() {
   const navigate = useNavigate()
   const location = useLocation()
+  const graphShellRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<GraphInstance | null>(null)
   const openedFromQuery = useRef<string | null>(null)
@@ -111,6 +246,10 @@ export default function SkillGraph() {
   const [mode, setMode] = useState<GraphMode>('full')
   const [centerSkillId, setCenterSkillId] = useState<string | null>(null)
   const [depth, setDepth] = useState(2)
+  const [layoutSettings, setLayoutSettings] = useState<GraphLayoutSettings>(loadLayoutSettings)
+  const [layoutDraft, setLayoutDraft] = useState<GraphLayoutSettings>(loadLayoutSettings)
+  const [layoutPanelOpen, setLayoutPanelOpen] = useState(false)
+  const [canvasSize, setCanvasSize] = useState<GraphCanvasSize>({ width: 800, height: 560 })
 
   const selectedNode = useMemo(
     () => graphData?.nodes.find(node => node.id === selectedNodeId) || null,
@@ -174,6 +313,36 @@ export default function SkillGraph() {
   }, [depth, graphData, loadFullGraph, loadSubgraph, location.search])
 
   useEffect(() => {
+    if (!graphData?.nodes.length || !graphShellRef.current) return
+
+    const target = graphShellRef.current
+    const updateSize = () => {
+      const next = {
+        width: Math.max(320, Math.round(target.clientWidth || 800)),
+        height: Math.max(360, Math.round(target.clientHeight || 560)),
+      }
+
+      setCanvasSize(previous => {
+        if (Math.abs(previous.width - next.width) < 8 && Math.abs(previous.height - next.height) < 8) {
+          return previous
+        }
+        return next
+      })
+    }
+
+    updateSize()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize)
+      return () => window.removeEventListener('resize', updateSize)
+    }
+
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [graphData?.nodes.length])
+
+  useEffect(() => {
     if (!graphData || !containerRef.current || graphData.nodes.length === 0) return
 
     let disposed = false
@@ -189,11 +358,28 @@ export default function SkillGraph() {
       const filteredEdges = edgeFilter.length > 0
         ? graphData.edges.filter(edge => edgeFilter.includes(edge.edge_type))
         : graphData.edges
+      const graphWidth = canvasSize.width || containerRef.current.clientWidth || 800
+      const graphHeight = canvasSize.height || containerRef.current.clientHeight || 560
+      const forceLayout = {
+        type: 'force',
+        preventOverlap: true,
+        nodeSize: layoutSettings.nodeSpacing,
+        linkDistance: layoutSettings.linkDistance,
+        nodeStrength: -layoutSettings.repulsion,
+        edgeStrength: layoutSettings.attraction,
+      }
+      const initialPositions = calculateInitialNodePositions(
+        graphData.nodes,
+        filteredEdges,
+        { width: graphWidth, height: graphHeight },
+        layoutSettings,
+      )
 
       const nodes = graphData.nodes.map(node => {
         const color = nodeColor(node)
         const selected = node.id === selectedNodeId
         const centered = node.id === centerSkillId
+        const position = initialPositions.get(node.id)
         return {
           id: node.id,
           states: selected ? ['selected'] : [],
@@ -203,6 +389,8 @@ export default function SkillGraph() {
             state: node.state,
           },
           style: {
+            x: position?.x,
+            y: position?.y,
             fill: color,
             fillOpacity: STATE_OPACITY[node.state] || 0.65,
             stroke: centered ? '#111827' : color,
@@ -242,18 +430,12 @@ export default function SkillGraph() {
 
       const g = new G6.Graph({
         container: containerRef.current,
-        width: containerRef.current.clientWidth || 800,
-        height: containerRef.current.clientHeight || 600,
+        width: graphWidth,
+        height: graphHeight,
         data: { nodes, edges },
         autoFit: 'view',
         padding: [48, 48, 72, 48],
-        layout: {
-          type: 'force',
-          preventOverlap: true,
-          nodeSize: 44,
-          linkDistance: 120,
-          nodeStrength: -80,
-        },
+        ...(filteredEdges.length > 0 ? { layout: forceLayout } : {}),
         behaviors: [
           'drag-canvas',
           'zoom-canvas',
@@ -285,8 +467,10 @@ export default function SkillGraph() {
         setSelectedNodeId(null)
       })
 
-      void g.render()
       graphRef.current = g
+      void Promise.resolve(g.render()).then(() => {
+        if (!disposed) void g.fitView({ when: 'always' }, { duration: 160 })
+      })
     })
 
     return () => {
@@ -296,7 +480,7 @@ export default function SkillGraph() {
         graphRef.current = null
       }
     }
-  }, [centerSkillId, edgeFilter, graphData, selectedNodeId])
+  }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, selectedNodeId])
 
   const returnToFullGraph = () => {
     openedFromQuery.current = null
@@ -317,6 +501,75 @@ export default function SkillGraph() {
   const fitGraph = () => {
     void graphRef.current?.fitView({ when: 'always' }, { duration: 180 })
   }
+  const updateLayoutDraft = (field: keyof GraphLayoutSettings, value: number) => {
+    setLayoutDraft(previous => normalizeLayoutSettings({ ...previous, [field]: value }))
+  }
+  const applyLayoutSettings = () => {
+    const next = normalizeLayoutSettings(layoutDraft)
+    setLayoutSettings(next)
+    setLayoutDraft(next)
+    saveLayoutSettings(next)
+    setLayoutPanelOpen(false)
+  }
+  const resetLayoutSettings = () => {
+    const next = DEFAULT_GRAPH_LAYOUT
+    setLayoutSettings(next)
+    setLayoutDraft(next)
+    saveLayoutSettings(next)
+  }
+  const applyLayoutPreset = (preset: keyof typeof GRAPH_LAYOUT_PRESETS) => {
+    setLayoutDraft(normalizeLayoutSettings(GRAPH_LAYOUT_PRESETS[preset]))
+  }
+  const handleLayoutPanelOpenChange = (open: boolean) => {
+    setLayoutPanelOpen(open)
+    if (open) setLayoutDraft(layoutSettings)
+  }
+  const renderLayoutSlider = (
+    label: string,
+    field: keyof GraphLayoutSettings,
+    min: number,
+    max: number,
+    step = 1,
+  ) => {
+    const value = layoutDraft[field]
+    const displayValue = field === 'attraction' ? value.toFixed(2) : Math.round(value)
+
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <Text>{label}</Text>
+          <Text code>{displayValue}</Text>
+        </div>
+        <Slider
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={next => updateLayoutDraft(field, Number(next))}
+        />
+      </div>
+    )
+  }
+  const layoutSettingsContent = (
+    <div style={{ width: 292 }}>
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <Text strong>布局设置</Text>
+        <Space.Compact block>
+          <Button size="small" onClick={() => applyLayoutPreset('compact')}>紧凑</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('balanced')}>均衡</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('open')}>开阔</Button>
+        </Space.Compact>
+        {renderLayoutSlider('排斥力度', 'repulsion', 40, 400)}
+        {renderLayoutSlider('吸引力度', 'attraction', 0.05, 1, 0.05)}
+        {renderLayoutSlider('连接距离', 'linkDistance', 60, 280)}
+        {renderLayoutSlider('节点间距', 'nodeSpacing', 36, 96)}
+        <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
+          <Button size="small" onClick={resetLayoutSettings}>恢复默认</Button>
+          <Button size="small" type="primary" onClick={applyLayoutSettings}>应用布局</Button>
+        </Space>
+      </Space>
+    </div>
+  )
 
   return (
     <div style={{ padding: 24, minHeight: 'calc(100vh - 120px)' }}>
@@ -389,9 +642,18 @@ export default function SkillGraph() {
               </Empty>
             </div>
           ) : (
-            <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 560 }}>
+            <div ref={graphShellRef} style={{ position: 'relative', width: '100%', height: '100%', minHeight: 560 }}>
               <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 560 }} />
               <Space.Compact style={{ position: 'absolute', right: 12, top: 12, zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                <Popover
+                  content={layoutSettingsContent}
+                  trigger="click"
+                  placement="bottomRight"
+                  open={layoutPanelOpen}
+                  onOpenChange={handleLayoutPanelOpenChange}
+                >
+                  <Button size="small" icon={<SettingOutlined />} aria-label="布局设置" />
+                </Popover>
                 <Tooltip title="放大图谱">
                   <Button size="small" icon={<ZoomInOutlined />} aria-label="放大图谱" onClick={() => zoomGraph(1.2)} />
                 </Tooltip>
