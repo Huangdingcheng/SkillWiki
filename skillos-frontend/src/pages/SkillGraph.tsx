@@ -96,6 +96,11 @@ type GraphInstance = {
   zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
 }
 
+type ForceEdgeDatum = {
+  data?: { weight?: number }
+  weight?: number
+}
+
 const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v1'
 const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
   repulsion: 180,
@@ -174,6 +179,20 @@ function stableRandom(seed: string) {
     hash = Math.imul(hash, 16777619)
   }
   return (hash >>> 0) / 4294967295
+}
+
+function edgeWeight(edge?: ForceEdgeDatum) {
+  return clampNumber(edge?.data?.weight ?? edge?.weight, 0, 1, 1)
+}
+
+function weightedLinkDistance(edge: ForceEdgeDatum | undefined, baseDistance: number) {
+  const weight = edgeWeight(edge)
+  return Math.round(baseDistance * (1.4 - weight * 0.7))
+}
+
+function weightedEdgeStrength(edge: ForceEdgeDatum | undefined, baseAttraction: number) {
+  const weight = edgeWeight(edge)
+  return baseAttraction * (0.45 + weight * 0.75) * 80
 }
 
 function calculateInitialNodePositions(
@@ -364,9 +383,9 @@ export default function SkillGraph() {
         type: 'force',
         preventOverlap: true,
         nodeSize: layoutSettings.nodeSpacing,
-        linkDistance: layoutSettings.linkDistance,
-        nodeStrength: -layoutSettings.repulsion,
-        edgeStrength: layoutSettings.attraction,
+        linkDistance: (edge?: ForceEdgeDatum) => weightedLinkDistance(edge, layoutSettings.linkDistance),
+        nodeStrength: layoutSettings.repulsion,
+        edgeStrength: (edge?: ForceEdgeDatum) => weightedEdgeStrength(edge, layoutSettings.attraction),
       }
       const initialPositions = calculateInitialNodePositions(
         graphData.nodes,
@@ -382,7 +401,6 @@ export default function SkillGraph() {
         const position = initialPositions.get(node.id)
         return {
           id: node.id,
-          states: selected ? ['selected'] : [],
           data: {
             label: node.name,
             skillType: node.skill_type,
@@ -393,7 +411,7 @@ export default function SkillGraph() {
             y: position?.y,
             fill: color,
             fillOpacity: STATE_OPACITY[node.state] || 0.65,
-            stroke: centered ? '#111827' : color,
+            stroke: selected || centered ? '#111827' : color,
             strokeOpacity: 1,
             lineWidth: selected || centered ? 3 : 1,
             size: Math.max(28, Math.min(56, 28 + node.usage_count * 0.5)),
@@ -416,13 +434,13 @@ export default function SkillGraph() {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        data: { edgeType: edge.edge_type },
+        data: { edgeType: edge.edge_type, weight: edge.weight },
         style: {
           stroke: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
           strokeOpacity: 0.85,
           lineWidth: Math.max(1, edge.weight * 2),
           endArrow: true,
-          labelText: edge.edge_type.replace(/_/g, ' '),
+          labelText: `${edge.edge_type.replace(/_/g, ' ')} · ${edge.weight.toFixed(2)}`,
           labelFontSize: 9,
           labelFill: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
         },
@@ -435,6 +453,7 @@ export default function SkillGraph() {
         data: { nodes, edges },
         autoFit: 'view',
         padding: [48, 48, 72, 48],
+        zoomRange: [0.25, 1.25],
         ...(filteredEdges.length > 0 ? { layout: forceLayout } : {}),
         behaviors: [
           'drag-canvas',

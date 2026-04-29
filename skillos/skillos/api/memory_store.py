@@ -191,8 +191,29 @@ class MemoryGraphManager:
         self._edges.append(edge)
 
     async def get_subgraph(self, skill_ids: List[str], depth: int = 2) -> SkillSubgraph:
-        id_set = set(skill_ids)
-        edges = [e for e in self._edges if e.source_id in id_set or e.target_id in id_set]
+        frontier = set(skill_ids)
+        visited = set(skill_ids)
+        edges: List[SkillEdge] = []
+        seen_edge_ids = set()
+        max_depth = max(1, depth)
+
+        for _ in range(max_depth):
+            layer_edges = [
+                e for e in self._edges
+                if e.source_id in frontier or e.target_id in frontier
+            ]
+            next_frontier = set()
+            for edge in layer_edges:
+                if edge.edge_id not in seen_edge_ids:
+                    edges.append(edge)
+                    seen_edge_ids.add(edge.edge_id)
+                for node_id in (edge.source_id, edge.target_id):
+                    if node_id not in visited:
+                        visited.add(node_id)
+                        next_frontier.add(node_id)
+            if not next_frontier:
+                break
+            frontier = next_frontier
         return SkillSubgraph(root_ids=skill_ids, edges=edges)
 
     async def get_dependency_chain(self, skill_id: str) -> List[Skill]:

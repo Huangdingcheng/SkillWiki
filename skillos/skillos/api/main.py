@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
 
     # 预加载 demo 数据
-    await _seed_demo_skills(wiki)
+    await _seed_demo_skills(wiki, graph_mgr)
 
     # 注入 WebSocket 广播到 executor
     from .routes.ws import broadcast
@@ -39,12 +39,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
+async def _seed_demo_skills(wiki: MemoryWikiManager, graph: MemoryGraphManager) -> None:
     """预加载 demo Skill + 12 个 Meta-Skill（Strategic）。"""
     from ..models.skill_model import (
         Skill, SkillInterface, SkillImplementation,
         SkillState, SkillType, SkillProvenance,
     )
+    from ..models.graph_model import SkillEdge
+    from ..models.skill_model import EdgeType
 
     def iface(inputs: list, outputs: list, pre: list = [], post: list = []) -> SkillInterface:
         return SkillInterface(
@@ -370,7 +372,79 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
         ),
     ]
 
-    all_skills = demos + meta_skills
+    test_graph_skills = [
+        dict(
+            skill_id="test_graph_collect_requirements",
+            name="test_graph_collect_requirements",
+            description="Test graph node: collect task requirements before planning.",
+            skill_type=SkillType.ATOMIC,
+            tags=["test", "graph", "requirements"],
+            interface=iface(
+                [{"name": "brief", "type": "string", "required": True}],
+                [{"name": "requirements", "type": "array"}],
+            ),
+            implementation=SkillImplementation(language="python", code='output["requirements"] = []'),
+        ),
+        dict(
+            skill_id="test_graph_parse_requirements",
+            name="test_graph_parse_requirements",
+            description="Test graph node: normalize requirements into actionable tasks.",
+            skill_type=SkillType.FUNCTIONAL,
+            tags=["test", "graph", "analysis"],
+            interface=iface(
+                [{"name": "requirements", "type": "array", "required": True}],
+                [{"name": "tasks", "type": "array"}],
+            ),
+            implementation=SkillImplementation(language="python", code='output["tasks"] = []'),
+        ),
+        dict(
+            skill_id="test_graph_design_plan",
+            name="test_graph_design_plan",
+            description="Test graph node: create an implementation plan from parsed tasks.",
+            skill_type=SkillType.STRATEGIC,
+            meta_category="generation",
+            tags=["test", "graph", "planning"],
+            interface=iface(
+                [{"name": "tasks", "type": "array", "required": True}],
+                [{"name": "plan", "type": "object"}],
+            ),
+            implementation=SkillImplementation(language="python", code='output["plan"] = {}'),
+        ),
+        dict(
+            skill_id="test_graph_build_demo",
+            name="test_graph_build_demo",
+            description="Test graph node: build a runnable demo from the plan.",
+            skill_type=SkillType.FUNCTIONAL,
+            tags=["test", "graph", "demo"],
+            interface=iface(
+                [{"name": "plan", "type": "object", "required": True}],
+                [{"name": "demo_ready", "type": "boolean"}],
+            ),
+            implementation=SkillImplementation(language="python", code='output["demo_ready"] = True'),
+        ),
+        dict(
+            skill_id="test_graph_review_output",
+            name="test_graph_review_output",
+            description="Test graph node: review demo output and record feedback.",
+            skill_type=SkillType.FUNCTIONAL,
+            tags=["test", "graph", "review"],
+            interface=iface(
+                [{"name": "demo_ready", "type": "boolean", "required": True}],
+                [{"name": "review_passed", "type": "boolean"}],
+            ),
+            implementation=SkillImplementation(language="python", code='output["review_passed"] = True'),
+        ),
+    ]
+
+    test_graph_edges = [
+        ("test_graph_parse_requirements", "test_graph_collect_requirements", EdgeType.DEPENDS_ON, 0.95),
+        ("test_graph_design_plan", "test_graph_parse_requirements", EdgeType.DEPENDS_ON, 0.85),
+        ("test_graph_build_demo", "test_graph_design_plan", EdgeType.COMPOSES_WITH, 0.65),
+        ("test_graph_review_output", "test_graph_build_demo", EdgeType.DEPENDS_ON, 0.45),
+        ("test_graph_review_output", "test_graph_design_plan", EdgeType.SIMILAR_TO, 0.25),
+    ]
+
+    all_skills = demos + meta_skills + test_graph_skills
     for d in all_skills:
         skill = Skill(
             **d,
@@ -386,6 +460,17 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             await wiki.create(skill)
         except ValueError:
             pass
+
+    for source_id, target_id, edge_type, weight in test_graph_edges:
+        await graph.create_edge(SkillEdge(
+            source_id=source_id,
+            target_id=target_id,
+            edge_type=edge_type,
+            weight=weight,
+            description="Demo edge for testing graph attraction and repulsion controls.",
+            metadata={"demo": True, "test_graph": True},
+            created_by="demo_seed",
+        ))
 
 
 def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
