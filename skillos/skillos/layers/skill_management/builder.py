@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ...models.skill_model import Skill, SkillImplementation, SkillInterface, SkillProvenance, SkillType
+from ...models.skill_model import (
+    MetaSkillCategory,
+    Skill,
+    SkillImplementation,
+    SkillInterface,
+    SkillProvenance,
+    SkillType,
+)
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 
@@ -23,28 +30,35 @@ class SkillDraft:
     build_notes: str = ""
 
 
-_BUILD_FROM_TASK_PROMPT = """
-你是 SkillOS 的 Skill Builder Agent，负责从任务描述中提取并生成 Skill。
+DEFAULT_OBJECT_SCHEMA: Dict[str, Any] = {"type": "object", "properties": {}}
+ALLOWED_SKILL_TYPES = {item.value for item in SkillType}
 
-## 输入任务
+
+_BUILD_FROM_TASK_PROMPT = """
+You are the SkillOS Skill Builder Agent.
+
+Input task:
 {task_description}
 
-## 上下文
+Context:
 {context}
 
-## 要求
-从任务中识别可复用的原子操作，生成 Skill 定义。
+Task:
+- Identify one reusable Skill from the task.
+- Prefer a small atomic Skill unless the task clearly needs composition.
+- Use stable snake_case for the skill name.
+- Keep all fields concise and useful for a future agent.
 
-## 输出格式（严格 JSON）
+Return only valid JSON with this shape:
 {{
   "name": "skill_name_snake_case",
-  "description": "Skill 功能描述（一句话）",
+  "description": "One sentence skill description",
   "skill_type": "atomic",
   "tags": ["tag1", "tag2"],
   "input_schema": {{
     "type": "object",
     "properties": {{
-      "param1": {{"type": "string", "description": "参数描述"}}
+      "param1": {{"type": "string", "description": "Parameter description"}}
     }},
     "required": ["param1"]
   }},
@@ -54,37 +68,35 @@ _BUILD_FROM_TASK_PROMPT = """
       "result": {{"type": "string"}}
     }}
   }},
-  "prompt_template": "请执行以下操作：{{param1}}",
+  "prompt_template": "Execute the requested action using {{param1}}.",
   "confidence": 0.85,
-  "build_notes": "构建说明"
+  "build_notes": "Why this reusable skill was created"
 }}
-
-只输出 JSON。
 """
 
 _BUILD_FROM_TRAJECTORY_PROMPT = """
-你是 SkillOS 的 Skill Builder Agent，负责从执行轨迹中提取 Skill。
+You are the SkillOS Skill Builder Agent.
 
-## 执行轨迹
+Execution trajectory:
 {trajectory}
 
-## 要求
-分析轨迹中的操作模式，提取可复用的 Skill。
+Task:
+- Extract one reusable Skill from the trajectory.
+- Use stable snake_case for the skill name.
+- Keep schemas valid JSON Schema objects.
 
-## 输出格式（严格 JSON）
+Return only valid JSON with this shape:
 {{
   "name": "skill_name_snake_case",
-  "description": "Skill 功能描述",
+  "description": "One sentence skill description",
   "skill_type": "atomic",
   "tags": ["tag1"],
   "input_schema": {{"type": "object", "properties": {{}}, "required": []}},
   "output_schema": {{"type": "object", "properties": {{}}}},
-  "prompt_template": "基于轨迹的执行模板",
+  "prompt_template": "Execute the reusable trajectory workflow.",
   "confidence": 0.75,
-  "build_notes": "从轨迹提取"
+  "build_notes": "Extracted from trajectory"
 }}
-
-只输出 JSON。
 """
 
 
@@ -112,54 +124,91 @@ class SkillBuilderAgent:
     def _build(self, prompt: str, source_type: str, raw_input: str) -> SkillDraft:
         try:
             response = self._llm.chat([
-                Message.system("你是 SkillOS Skill Builder Agent，严格输出 JSON。"),
+                Message.system("You are the SkillOS Skill Builder Agent. Return JSON only."),
                 Message.user(prompt),
             ])
             data = self._extract_json(response.content)
             if data:
-                skill_type_str = data.get("skill_type", "atomic")
-                try:
-                    skill_type = SkillType(skill_type_str)
-                except ValueError:
-                    skill_type = SkillType.ATOMIC
-
-                skill = Skill(
-                    name=data.get("name", "unnamed_skill"),
-                    description=data.get("description", ""),
-                    skill_type=skill_type,
-                    tags=data.get("tags", []),
-                    interface=SkillInterface(
-                        input_schema=data.get("input_schema", {"type": "object", "properties": {}}),
-                        output_schema=data.get("output_schema", {"type": "object", "properties": {}}),
-                    ),
-                    implementation=SkillImplementation(
-                        prompt_template=data.get("prompt_template"),
-                    ),
-                    provenance=SkillProvenance(source_type=source_type, author="skill_builder"),
-                )
-                return SkillDraft(
-                    skill=skill,
-                    confidence=float(data.get("confidence", 0.7)),
-                    source_type=source_type,
-                    raw_input=raw_input[:200],
-                    build_notes=data.get("build_notes", ""),
-                )
+                return self._draft_from_data(data, source_type, raw_input)
         except Exception as exc:
-            logger.warning(f"SkillBuilder LLM 调用失败: {exc}")
+            logger.warning("SkillBuilder LLM call failed: %s", exc)
 
-        # 降级：生成占位 Skill
-        skill = Skill(
-            name="unnamed_skill",
-            description=f"从 {source_type} 自动生成（LLM 失败）",
-            skill_type=SkillType.ATOMIC,
-            tags=[source_type],
-            interface=SkillInterface(
-                input_schema={"type": "object", "properties": {}},
-                output_schema={"type": "object", "properties": {}},
-            ),
-            provenance=SkillProvenance(source_type=source_type, author="skill_builder"),
+        return self._fallback_draft(source_type, raw_input)
+
+    def _draft_from_data(
+        self,
+        data: Dict[str, Any],
+        source_type: str,
+        raw_input: str,
+    ) -> SkillDraft:
+        name = _safe_skill_name(data.get("name"), fallback=f"skill_from_{source_type}")
+        description = _safe_text(
+            data.get("description"),
+            fallback=f"Execute a reusable workflow derived from {source_type}.",
         )
-        return SkillDraft(skill=skill, confidence=0.1, source_type=source_type, raw_input=raw_input[:200])
+        skill_type = _safe_skill_type(data.get("skill_type"))
+        input_schema = _safe_schema(data.get("input_schema"))
+        output_schema = _safe_schema(data.get("output_schema"))
+        prompt_template = _safe_text(
+            data.get("prompt_template"),
+            fallback=f"Execute the reusable {name.replace('_', ' ')} workflow.",
+        )
+
+        skill = Skill(
+            name=name,
+            description=description,
+            skill_type=skill_type,
+            meta_category=MetaSkillCategory.GENERATION
+            if skill_type == SkillType.STRATEGIC
+            else None,
+            tags=_safe_tags(data.get("tags"), source_type),
+            interface=SkillInterface(
+                input_schema=input_schema,
+                output_schema=output_schema,
+            ),
+            implementation=SkillImplementation(prompt_template=prompt_template),
+            provenance=SkillProvenance(
+                source_type=source_type,
+                created_by_agent="skill_builder",
+                creation_context={"builder_source": source_type},
+            ),
+        )
+        return SkillDraft(
+            skill=skill,
+            confidence=_clamp_float(data.get("confidence"), default=0.7),
+            source_type=source_type,
+            raw_input=raw_input[:200],
+            build_notes=_safe_text(data.get("build_notes"), fallback="Generated by SkillBuilderAgent."),
+        )
+
+    def _fallback_draft(self, source_type: str, raw_input: str) -> SkillDraft:
+        name = _safe_skill_name("", fallback=f"skill_from_{source_type}")
+        description = f"Execute a reusable workflow derived from {source_type} input."
+        skill = Skill(
+            name=name,
+            description=description,
+            skill_type=SkillType.ATOMIC,
+            tags=_safe_tags([source_type], source_type),
+            interface=SkillInterface(
+                input_schema=dict(DEFAULT_OBJECT_SCHEMA),
+                output_schema=dict(DEFAULT_OBJECT_SCHEMA),
+            ),
+            implementation=SkillImplementation(
+                prompt_template=f"Execute the reusable {name.replace('_', ' ')} workflow."
+            ),
+            provenance=SkillProvenance(
+                source_type=source_type,
+                created_by_agent="skill_builder",
+                creation_context={"fallback": True},
+            ),
+        )
+        return SkillDraft(
+            skill=skill,
+            confidence=0.1,
+            source_type=source_type,
+            raw_input=raw_input[:200],
+            build_notes="Fallback draft generated because the LLM response was unavailable or invalid.",
+        )
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
         text = text.strip()
@@ -180,3 +229,56 @@ class SkillBuilderAgent:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _safe_text(value: Any, *, fallback: str) -> str:
+    text = str(value or "").strip()
+    return text if text else fallback
+
+
+def _safe_skill_name(value: Any, *, fallback: str) -> str:
+    raw = str(value or fallback or "").strip().lower()
+    raw = re.sub(r"[^a-z0-9_]+", "_", raw)
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    if not raw:
+        raw = "generated_skill"
+    if not re.match(r"^[a-z]", raw):
+        raw = f"skill_{raw}"
+    return raw[:128]
+
+
+def _safe_skill_type(value: Any) -> SkillType:
+    skill_type = str(value or "").strip().lower()
+    return SkillType(skill_type) if skill_type in ALLOWED_SKILL_TYPES else SkillType.ATOMIC
+
+
+def _safe_schema(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return dict(DEFAULT_OBJECT_SCHEMA)
+    schema = dict(value)
+    if schema.get("type") != "object":
+        schema["type"] = "object"
+    if not isinstance(schema.get("properties"), dict):
+        schema["properties"] = {}
+    if "required" in schema and not isinstance(schema["required"], list):
+        schema["required"] = []
+    return schema
+
+
+def _safe_tags(value: Any, source_type: str) -> List[str]:
+    raw_tags = value if isinstance(value, list) else []
+    tags: List[str] = []
+    for tag in [source_type, *raw_tags]:
+        slug = re.sub(r"[^a-z0-9_]+", "_", str(tag or "").strip().lower())
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        if slug and slug not in tags:
+            tags.append(slug)
+    return tags[:8]
+
+
+def _clamp_float(value: Any, *, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(0.0, min(1.0, number))

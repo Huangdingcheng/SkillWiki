@@ -35,62 +35,65 @@ class MaintenanceResult:
 
 
 _REPAIR_PROMPT = """
-你是 SkillOS 的 Skill Maintainer Agent，负责修复有问题的 Skill。
+You are the SkillOS Skill Maintainer Agent.
 
-## 问题 Skill
-名称: {name}
-描述: {description}
-当前实现: {implementation}
+Problem Skill:
+- name: {name}
+- description: {description}
+- current_implementation: {implementation}
 
-## 失败信息
+Failure information:
 {failure_info}
 
-## 审计问题
+Audit issues:
 {audit_issues}
 
-## 要求
-生成修复后的 prompt_template 或 code 实现。
+Task:
+- Identify a small repair.
+- Return either a repaired prompt_template or repaired code.
+- Keep the repaired implementation compatible with the existing interface.
 
-## 输出格式（严格 JSON）
+Return only valid JSON with this shape:
 {{
-  "repaired_prompt_template": "修复后的 prompt 模板（如适用）",
+  "repaired_prompt_template": "Repaired prompt template, if applicable",
   "repaired_code": null,
-  "repair_notes": "修复说明",
+  "repair_notes": "Short repair notes",
   "confidence": 0.8
 }}
-
-只输出 JSON。
 """
 
 _SPLIT_PROMPT = """
-你是 SkillOS 的 Skill Maintainer Agent，负责将过大的 Skill 拆分为多个子 Skill。
+You are the SkillOS Skill Maintainer Agent.
 
-## 待拆分 Skill
-名称: {name}
-描述: {description}
-实现: {implementation}
+Skill to split:
+- name: {name}
+- description: {description}
+- implementation: {implementation}
 
-## 拆分原因
+Reason:
 {reason}
 
-## 输出格式（严格 JSON）
+Task:
+- Split the skill into a small set of atomic child skills.
+- Use stable snake_case names.
+- Keep each child prompt concise.
+
+Return only valid JSON with this shape:
 {{
   "sub_skills": [
     {{
       "name": "sub_skill_1",
-      "description": "子 Skill 1 描述",
-      "prompt_template": "子 Skill 1 的 prompt"
+      "description": "Child skill 1 description",
+      "prompt_template": "Child skill 1 prompt"
     }},
     {{
       "name": "sub_skill_2",
-      "description": "子 Skill 2 描述",
-      "prompt_template": "子 Skill 2 的 prompt"
+      "description": "Child skill 2 description",
+      "prompt_template": "Child skill 2 prompt"
     }}
   ],
-  "split_notes": "拆分说明"
+  "split_notes": "Short split notes"
 }}
-
-只输出 JSON。
 """
 
 
@@ -118,57 +121,71 @@ class SkillMaintainerAgent:
         prompt = _REPAIR_PROMPT.format(
             name=skill.name,
             description=skill.description,
-            implementation=impl_str or "（无实现）",
-            failure_info=failure_info or "（无失败信息）",
+            implementation=impl_str or "(no implementation)",
+            failure_info=failure_info or "(no failure information)",
             audit_issues=json.dumps(audit_issues or [], ensure_ascii=False),
         )
 
         try:
             response = self._llm.chat([
-                Message.system("你是 SkillOS Skill Maintainer Agent，严格输出 JSON。"),
+                Message.system("You are the SkillOS Skill Maintainer Agent. Return JSON only."),
                 Message.user(prompt),
             ])
             data = self._extract_json(response.content)
             if data:
                 updated = skill.model_copy(deep=True)
+                repaired_prompt = str(data.get("repaired_prompt_template") or "").strip()
+                repaired_code = str(data.get("repaired_code") or "").strip()
+                if not repaired_prompt and not repaired_code:
+                    return MaintenanceResult(
+                        action=MaintenanceAction.REPAIR,
+                        skill_id=skill.skill_id,
+                        success=False,
+                        reason="repair response did not include repaired_prompt_template or repaired_code",
+                    )
                 if updated.implementation is None:
-                    updated.implementation = SkillImplementation()
-                if data.get("repaired_prompt_template"):
-                    updated.implementation.prompt_template = data["repaired_prompt_template"]
-                if data.get("repaired_code"):
-                    updated.implementation.code = data["repaired_code"]
+                    updated.implementation = SkillImplementation(
+                        prompt_template=repaired_prompt or None,
+                        code=repaired_code or None,
+                    )
+                else:
+                    if repaired_prompt:
+                        updated.implementation.prompt_template = repaired_prompt
+                    if repaired_code:
+                        updated.implementation.code = repaired_code
                 return MaintenanceResult(
                     action=MaintenanceAction.REPAIR,
                     skill_id=skill.skill_id,
                     success=True,
                     updated_skill=updated,
-                    reason=data.get("repair_notes", "LLM 修复"),
+                    reason=str(data.get("repair_notes") or "LLM repair"),
+                    details={"confidence": _clamp_float(data.get("confidence"), default=0.5)},
                 )
         except Exception as exc:
-            logger.warning(f"Maintainer repair LLM 失败: {exc}")
+            logger.warning("Maintainer repair LLM call failed: %s", exc)
 
         return MaintenanceResult(
             action=MaintenanceAction.REPAIR,
             skill_id=skill.skill_id,
             success=False,
-            reason=f"修复失败: {failure_info}",
+            reason=f"Repair failed: {failure_info}",
         )
 
     def split(self, skill: Skill, reason: str = "") -> MaintenanceResult:
         """将过大的 Skill 拆分为多个子 Skill。"""
         impl = skill.implementation
-        impl_str = impl.prompt_template[:150] if impl and impl.prompt_template else "（无实现）"
+        impl_str = impl.prompt_template[:150] if impl and impl.prompt_template else "(no implementation)"
 
         prompt = _SPLIT_PROMPT.format(
             name=skill.name,
             description=skill.description,
             implementation=impl_str,
-            reason=reason or "Skill 功能过于复杂",
+            reason=reason or "Skill is too broad or complex",
         )
 
         try:
             response = self._llm.chat([
-                Message.system("你是 SkillOS Skill Maintainer Agent，严格输出 JSON。"),
+                Message.system("You are the SkillOS Skill Maintainer Agent. Return JSON only."),
                 Message.user(prompt),
             ])
             data = self._extract_json(response.content)
@@ -176,9 +193,16 @@ class SkillMaintainerAgent:
                 from ...models.skill_model import SkillInterface, SkillProvenance, SkillType
                 new_skills = []
                 for sub in data["sub_skills"]:
+                    sub_name = _safe_skill_name(sub.get("name"), fallback=f"{skill.name}_sub")
+                    sub_description = str(sub.get("description") or "").strip()
+                    if not sub_description:
+                        sub_description = f"Child skill split from {skill.name}."
+                    sub_prompt = str(sub.get("prompt_template") or "").strip()
+                    if not sub_prompt:
+                        sub_prompt = f"Execute the {sub_name.replace('_', ' ')} step."
                     s = Skill(
-                        name=sub.get("name", f"{skill.name}_sub"),
-                        description=sub.get("description", ""),
+                        name=sub_name,
+                        description=sub_description,
                         skill_type=SkillType.ATOMIC,
                         tags=skill.tags,
                         interface=SkillInterface(
@@ -186,11 +210,11 @@ class SkillMaintainerAgent:
                             output_schema=skill.interface.output_schema,
                         ),
                         implementation=SkillImplementation(
-                            prompt_template=sub.get("prompt_template"),
+                            prompt_template=sub_prompt,
                         ),
                         provenance=SkillProvenance(
                             source_type="split",
-                            author="skill_maintainer",
+                            created_by_agent="skill_maintainer",
                             parent_skill_ids=[skill.skill_id],
                         ),
                     )
@@ -203,13 +227,13 @@ class SkillMaintainerAgent:
                     reason=data.get("split_notes", reason),
                 )
         except Exception as exc:
-            logger.warning(f"Maintainer split LLM 失败: {exc}")
+            logger.warning("Maintainer split LLM call failed: %s", exc)
 
         return MaintenanceResult(
             action=MaintenanceAction.SPLIT,
             skill_id=skill.skill_id,
             success=False,
-            reason=f"拆分失败: {reason}",
+            reason=f"Split failed: {reason}",
         )
 
     def deprecate(self, skill: Skill, reason: str) -> MaintenanceResult:
@@ -240,3 +264,22 @@ class SkillMaintainerAgent:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _safe_skill_name(value: Any, *, fallback: str) -> str:
+    raw = str(value or fallback or "").strip().lower()
+    raw = re.sub(r"[^a-z0-9_]+", "_", raw)
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    if not raw:
+        raw = "child_skill"
+    if not re.match(r"^[a-z]", raw):
+        raw = f"skill_{raw}"
+    return raw[:128]
+
+
+def _clamp_float(value: Any, *, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(0.0, min(1.0, number))

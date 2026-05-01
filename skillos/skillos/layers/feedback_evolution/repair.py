@@ -15,50 +15,47 @@ from .monitor import SkillHealthReport
 logger = get_logger(__name__)
 
 _REPAIR_PROMPT = """
-以下 Skill 在运行时出现了问题，请分析原因并提供修复方案。
+You are the SkillOS Skill Repair Agent.
 
-## Skill 信息
-名称: {name}
-描述: {description}
-类型: {skill_type}
-当前实现:
+Problem Skill:
+- name: {name}
+- description: {description}
+- type: {skill_type}
+- current implementation:
 {implementation}
 
-## 健康报告
-成功率: {success_rate:.1%}
-使用次数: {usage_count}
-平均延迟: {avg_latency_ms:.0f}ms
-问题列表:
+Health report:
+- success_rate: {success_rate:.1%}
+- usage_count: {usage_count}
+- avg_latency_ms: {avg_latency_ms:.0f}
+- issues:
 {issues}
 
-## 失败案例（最近 5 次）
+Recent failure cases:
 {failure_cases}
 
-## 修复任务
-1. 分析失败原因
-2. 提供修复后的实现（code 或 prompt_template）
-3. 更新前置/后置条件（如有必要）
-4. 添加错误处理逻辑
+Task:
+1. Identify the root cause.
+2. Provide a repaired implementation when possible.
+3. Update preconditions or postconditions only when needed.
+4. If the skill cannot be safely repaired, set fix_type to "deprecate".
 
-## 输出格式（严格 JSON）
+Return only valid JSON with this shape:
 {{
-  "root_cause": "失败根本原因分析",
+  "root_cause": "Root cause analysis",
   "fix_type": "code_fix|prompt_fix|interface_fix|deprecate",
   "fixed_implementation": {{
     "language": "python",
-    "code": "修复后的代码（如适用）",
-    "prompt_template": "修复后的 prompt（如适用）",
+    "code": null,
+    "prompt_template": "Repaired prompt if applicable",
     "tool_calls": [],
     "sub_skill_ids": []
   }},
   "updated_preconditions": [],
   "updated_postconditions": [],
   "confidence": 0.8,
-  "repair_notes": "修复说明"
+  "repair_notes": "Short repair notes"
 }}
-
-如果 fix_type 为 deprecate，说明该 Skill 无法修复，应该废弃。
-只输出 JSON，不要其他内容。
 """
 
 
@@ -91,7 +88,7 @@ class SkillRepair:
         """尝试自动修复退化的 Skill。"""
         result = RepairResult(skill_id=skill.skill_id)
 
-        impl_info = "无实现"
+        impl_info = "No implementation"
         if skill.implementation:
             impl = skill.implementation
             if impl.code:
@@ -99,15 +96,15 @@ class SkillRepair:
             elif impl.prompt_template:
                 impl_info = f"Prompt: {impl.prompt_template[:400]}"
             elif impl.sub_skill_ids:
-                impl_info = f"组合子 Skill: {impl.sub_skill_ids}"
+                impl_info = f"Composed child skills: {impl.sub_skill_ids}"
 
-        failure_summary = "无失败案例记录"
+        failure_summary = "No failure cases recorded"
         if failure_cases:
             lines = []
             for i, case in enumerate(failure_cases[:5]):
                 lines.append(
-                    f"{i+1}. 输入: {json.dumps(case.get('input', {}), ensure_ascii=False)[:100]}\n"
-                    f"   错误: {case.get('error', '未知')}"
+                    f"{i+1}. Input: {json.dumps(case.get('input', {}), ensure_ascii=False)[:100]}\n"
+                    f"   Error: {case.get('error', 'unknown')}"
                 )
             failure_summary = "\n".join(lines)
 
@@ -123,28 +120,33 @@ class SkillRepair:
             failure_cases=failure_summary,
         )
 
-        response = self._llm.chat([
-            Message.system(
-                "你是 SkillOS 的 Skill 修复专家，擅长分析 Skill 失败原因并提供修复方案。"
-                "严格按照 JSON 格式输出。"
-            ),
-            Message.user(prompt),
-        ])
+        try:
+            response = self._llm.chat([
+                Message.system("You are the SkillOS Skill Repair Agent. Return JSON only."),
+                Message.user(prompt),
+            ])
+        except Exception as exc:
+            result.error = f"LLM repair call failed: {exc}"
+            result.root_cause = "repair_llm_unavailable"
+            result.repair_notes = "Repair could not run because the LLM call failed."
+            logger.warning("Skill repair LLM failed: %s", exc)
+            return result
 
         data = self._extract_json(response.content)
         if not data:
-            result.error = "LLM 返回无效响应"
+            result.error = "LLM returned invalid JSON"
+            result.root_cause = "invalid_repair_response"
             return result
 
-        result.root_cause = data.get("root_cause", "")
-        result.fix_type = data.get("fix_type", "")
-        result.confidence = data.get("confidence", 0.5)
-        result.repair_notes = data.get("repair_notes", "")
+        result.root_cause = str(data.get("root_cause") or "")
+        result.fix_type = _safe_fix_type(data.get("fix_type"))
+        result.confidence = _clamp_float(data.get("confidence"), default=0.5)
+        result.repair_notes = str(data.get("repair_notes") or "")
 
         if result.fix_type == "deprecate":
             result.should_deprecate = True
             result.success = True
-            logger.info(f"Skill 建议废弃: {skill.name} - {result.root_cause}")
+            logger.info("Skill should be deprecated: %s - %s", skill.name, result.root_cause)
             return result
 
         # 应用修复
@@ -155,13 +157,22 @@ class SkillRepair:
 
             impl_data = data.get("fixed_implementation", {})
             if impl_data:
+                code = impl_data.get("code") or None
+                prompt_template = impl_data.get("prompt_template") or None
+                sub_skill_ids = impl_data.get("sub_skill_ids", []) or []
+                if not code and not prompt_template and not sub_skill_ids:
+                    result.error = "fixed_implementation is empty"
+                    return result
                 repaired.implementation = SkillImplementation(
                     language=impl_data.get("language", "python"),
-                    code=impl_data.get("code"),
-                    prompt_template=impl_data.get("prompt_template"),
+                    code=code,
+                    prompt_template=prompt_template,
                     tool_calls=impl_data.get("tool_calls", []),
-                    sub_skill_ids=impl_data.get("sub_skill_ids", []),
+                    sub_skill_ids=sub_skill_ids,
                 )
+            else:
+                result.error = "missing fixed_implementation"
+                return result
 
             if data.get("updated_preconditions"):
                 repaired.interface.preconditions = data["updated_preconditions"]
@@ -171,12 +182,12 @@ class SkillRepair:
             result.repaired_skill = repaired
             result.success = True
             logger.info(
-                f"Skill 修复成功: {skill.name} v{skill.version} → v{repaired.version} "
-                f"(置信度={result.confidence:.2f})"
+                f"Skill repair succeeded: {skill.name} v{skill.version} -> v{repaired.version} "
+                f"(confidence={result.confidence:.2f})"
             )
         except Exception as e:
             result.error = str(e)
-            logger.error(f"Skill 修复失败: {skill.name} - {e}")
+            logger.error("Skill repair failed: %s - %s", skill.name, e)
 
         return result
 
@@ -199,3 +210,17 @@ class SkillRepair:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _safe_fix_type(value: Any) -> str:
+    fix_type = str(value or "").strip()
+    allowed = {"code_fix", "prompt_fix", "interface_fix", "deprecate"}
+    return fix_type if fix_type in allowed else "prompt_fix"
+
+
+def _clamp_float(value: Any, *, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(0.0, min(1.0, number))

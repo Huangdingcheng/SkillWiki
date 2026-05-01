@@ -259,4 +259,79 @@ skillos/skillos/layers/
 
 ---
 
+## 第一阶段完成内容（agents-dev）
+
+第一阶段目标是先稳定 D 模块底座，不扩张跨组接口，不改变飞书锁定结构。当前已完成：
+
+### Prompt 与 fallback 清理
+
+- `builder.py`、`auditor.py`、`maintainer.py`、`repair.py` 的 LLM-facing prompt 已改为稳定英文 ASCII prompt。
+- 所有 prompt 都明确要求只返回 JSON，减少 LLM 额外解释导致的解析失败。
+- Builder 和 Repair 在 LLM 调用失败或返回无效内容时，会返回可读、结构清楚的 fallback 结果，不再让乱码或异常直接污染接口输出。
+
+### Builder 输出归一化
+
+`SkillBuilderAgent` 当前会对 LLM 输出做轻量归一化：
+
+- `name` 为空或非法时生成安全 snake_case 名称。
+- 非法 `skill_type` 回退为 `atomic`。
+- `confidence` clamp 到 `[0, 1]`。
+- 缺失或非法 schema 补为 `{ "type": "object", "properties": {} }`。
+- 缺失 `prompt_template` 时补可读的默认 prompt。
+- Strategic Skill 会自动补 `MetaSkillCategory.GENERATION`，避免模型校验失败。
+
+### Auditor 第一批规则增强
+
+`SkillAuditorAgent` 保留原有本地规则，并新增：
+
+- `input_schema.required` 必须是 list。
+- `required` 中的字段必须存在于 `input_schema.properties`。
+- `prompt_template` 中出现的 `{xxx}` 或 `{{xxx}}` 变量必须存在于 `input_schema.properties`。
+- Skill 名称必须符合 snake_case 并以小写字母开头。
+- 审计分数保持 `[0, 1]`，失败项写入 `issues`，修复建议写入 `recommendations`。
+
+### Maintainer / Repair 稳定性
+
+- `SkillMaintainerAgent.repair()` 不再创建空 `SkillImplementation`，避免 Pydantic 校验失败。
+- repair 输出如果没有可用 prompt/code，会返回清楚的失败原因。
+- `SkillMaintainerAgent.split()` 会归一化子 Skill 名称，并补默认 description / prompt。
+- `SkillRepair.repair()` 捕获 LLM 调用失败，返回稳定 `RepairResult`，不让 `/evolution/repair/{id}` 因 LLM 不可用直接崩溃。
+- `RepairResult`、`MaintenanceResult` 字段未变。
+
+### Evolution API 契约保持不变
+
+本阶段不修改这些对外响应字段：
+
+| API | 响应结构 |
+| --- | --- |
+| `GET /api/v1/evolution/health` | `SystemHealthResponse` |
+| `GET /api/v1/evolution/health/{id}` | `HealthReportResponse` |
+| `POST /api/v1/evolution/repair/{id}` | 现有 repair dict |
+| `POST /api/v1/evolution/cycle` | `EvolutionCycleResponse` |
+
+新增测试覆盖了 Evolution API response model 字段，防止后续误改字段名。
+
+### 第一阶段新增测试
+
+新增 `tests/test_skill_management_phase1.py`，覆盖：
+
+- Builder：LLM 返回非法 `skill_type`、空描述、非法 name、confidence 越界时能归一化。
+- Builder：LLM 失败时 fallback Skill 可读且结构完整。
+- Auditor：`required` 字段不存在于 `properties` 时审计失败。
+- Auditor：`prompt_template` 使用 schema 中不存在的变量时审计失败。
+- Repair：LLM 调用失败时返回清楚错误，不抛出到 API 层。
+- Evolution：健康报告、系统健康、演化周期响应字段保持稳定。
+
+### 暂未完成项
+
+以下内容不属于第一阶段，放到后续阶段：
+
+- `merge_redundant_skills` 的完整合并流程。
+- 演化周期自动定时触发。
+- WebSocket 健康告警：`health_degraded` / `health_critical` / `evolution_cycle_done`。
+- D 与 C 的 Reflection → Maintainer 自动修复闭环真实联调。
+- D 与 A 的图谱关系写入、合并/拆分边同步真实联调。
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Self-Management Flow 部分（联系负责人）*
