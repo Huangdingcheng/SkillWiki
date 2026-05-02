@@ -53,3 +53,6 @@ htmlcov/
 *.tmp
 *.bak
 idea.txt
+
+skillos/skillos/storage/skill_repo/
+**/storage/skill_repo/

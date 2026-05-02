@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -13,49 +14,108 @@ from fastapi.responses import JSONResponse
 
 from ..utils.llm_client import LLMClient
 from .deps import app_state
-from .memory_store import MemoryGraphManager, MemoryWikiManager
+from .memory_store import MemoryGraphManager
 from .routes import evolution, execution, graph, ingest, lifecycle, skills, ws
+
+
+def _default_skill_repo_dir() -> Path:
+    """
+    main.py 路径通常是：
+
+        outer-skillos/
+            skillos/
+                api/
+                    main.py
+            layers/
+                storage/
+                    skill_repo/
+                        SkillStorage/
+
+    所以 Path(__file__).resolve().parents[2] 指向 outer-skillos。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    return repo_root / "layers" / "storage" / "skill_repo" / "SkillStorage"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     llm_cfg = app.state.llm_cfg
     llm = LLMClient(llm_cfg)
-    wiki = MemoryWikiManager()
+
+    skill_repo_dir: Path = app.state.skill_repo_dir
+
+    # 这里接入你负责的 repository-backed wiki manager。
+    #
+    # 你需要在 skillos/api/repository_store.py 里实现 RepositoryWikiManager，
+    # 并保证它至少兼容 MemoryWikiManager 被 routes 使用到的方法。
+    from .repository_store import RepositoryWikiManager
+
+    wiki = RepositoryWikiManager(base_dir=skill_repo_dir)
+
+    # Graph 先保留内存版，降低改动面。
+    # 如果后续你也有 GraphRepository，再把这里替换掉。
     graph_mgr = MemoryGraphManager()
 
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
 
-    # 预加载 demo 数据
-    await _seed_demo_skills(wiki)
+    # 持久化 repository 默认不 seed demo，避免每次启动重复写入。
+    if app.state.seed_demo:
+        await _seed_demo_skills(wiki)
 
     # 注入 WebSocket 广播到 executor
     from .routes.ws import broadcast
+
     if app_state.executor:
+
         async def ws_callback(event_type: str, data: Dict[str, Any]) -> None:
             await broadcast(event_type, data)
+
         app_state.executor.add_event_callback(ws_callback)
 
     yield
 
 
-async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
+async def _seed_demo_skills(wiki: Any) -> None:
     """预加载 demo Skill + 12 个 Meta-Skill（Strategic）。"""
     from ..models.skill_model import (
-        Skill, SkillInterface, SkillImplementation,
-        SkillState, SkillType, SkillProvenance,
+        Skill,
+        SkillImplementation,
+        SkillInterface,
+        SkillProvenance,
+        SkillState,
+        SkillType,
     )
 
-    def iface(inputs: list, outputs: list, pre: list = [], post: list = []) -> SkillInterface:
+    def iface(
+        inputs: list,
+        outputs: list,
+        pre: Optional[list] = None,
+        post: Optional[list] = None,
+    ) -> SkillInterface:
+        pre = pre or []
+        post = post or []
+
         return SkillInterface(
             input_schema={
                 "type": "object",
-                "properties": {p["name"]: {"type": p["type"], "description": p.get("description", "")} for p in inputs},
+                "properties": {
+                    p["name"]: {
+                        "type": p["type"],
+                        "description": p.get("description", ""),
+                    }
+                    for p in inputs
+                },
                 "required": [p["name"] for p in inputs if p.get("required")],
             },
             output_schema={
                 "type": "object",
-                "properties": {p["name"]: {"type": p["type"], "description": p.get("description", "")} for p in outputs},
+                "properties": {
+                    p["name"]: {
+                        "type": p["type"],
+                        "description": p.get("description", ""),
+                    }
+                    for p in outputs
+                },
             },
             preconditions=pre,
             postconditions=post,
@@ -69,9 +129,23 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             skill_type=SkillType.ATOMIC,
             tags=["web", "ui", "interaction"],
             interface=iface(
-                [{"name": "selector", "type": "string", "description": "CSS 选择器", "required": True}],
-                [{"name": "success", "type": "boolean", "description": "是否成功"}],
-                pre=["页面已加载"], post=["元素已被点击"],
+                [
+                    {
+                        "name": "selector",
+                        "type": "string",
+                        "description": "CSS 选择器",
+                        "required": True,
+                    }
+                ],
+                [
+                    {
+                        "name": "success",
+                        "type": "boolean",
+                        "description": "是否成功",
+                    }
+                ],
+                pre=["页面已加载"],
+                post=["元素已被点击"],
             ),
             implementation=SkillImplementation(
                 language="python",
@@ -84,10 +158,29 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             skill_type=SkillType.ATOMIC,
             tags=["web", "ui", "input"],
             interface=iface(
-                [{"name": "selector", "type": "string", "required": True}, {"name": "text", "type": "string", "required": True}],
-                [{"name": "success", "type": "boolean"}],
+                [
+                    {
+                        "name": "selector",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "text",
+                        "type": "string",
+                        "required": True,
+                    },
+                ],
+                [
+                    {
+                        "name": "success",
+                        "type": "boolean",
+                    }
+                ],
             ),
-            implementation=SkillImplementation(language="python", code='output["success"] = True'),
+            implementation=SkillImplementation(
+                language="python",
+                code='output["success"] = True',
+            ),
         ),
         dict(
             name="fill_form",
@@ -95,10 +188,25 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             skill_type=SkillType.FUNCTIONAL,
             tags=["web", "form", "functional"],
             interface=iface(
-                [{"name": "form_data", "type": "object", "description": "表单字段字典", "required": True}],
-                [{"name": "submitted", "type": "boolean"}],
+                [
+                    {
+                        "name": "form_data",
+                        "type": "object",
+                        "description": "表单字段字典",
+                        "required": True,
+                    }
+                ],
+                [
+                    {
+                        "name": "submitted",
+                        "type": "boolean",
+                    }
+                ],
             ),
-            implementation=SkillImplementation(language="python", sub_skill_ids=["click_element", "type_text"]),
+            implementation=SkillImplementation(
+                language="python",
+                sub_skill_ids=["click_element", "type_text"],
+            ),
         ),
         dict(
             name="locate_element",
@@ -106,12 +214,26 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             skill_type=SkillType.ATOMIC,
             tags=["web", "ui", "query"],
             interface=iface(
-                [{"name": "description", "type": "string", "required": True}],
-                [{"name": "selector", "type": "string"}],
+                [
+                    {
+                        "name": "description",
+                        "type": "string",
+                        "required": True,
+                    }
+                ],
+                [
+                    {
+                        "name": "selector",
+                        "type": "string",
+                    }
+                ],
             ),
             implementation=SkillImplementation(
                 language="python",
-                prompt_template="在页面上找到描述为 '{description}' 的元素，返回其 CSS 选择器。只输出选择器字符串，不要其他内容。",
+                prompt_template=(
+                    "在页面上找到描述为 '{description}' 的元素，"
+                    "返回其 CSS 选择器。只输出选择器字符串，不要其他内容。"
+                ),
             ),
         ),
     ]
@@ -125,16 +247,31 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="generation",
             tags=["meta", "generation", "strategic"],
             interface=iface(
-                [{"name": "task_description", "type": "string", "description": "任务描述", "required": True},
-                 {"name": "context", "type": "object", "description": "上下文信息"}],
-                [{"name": "skill_name", "type": "string"}, {"name": "skill_draft", "type": "object"},
-                 {"name": "confidence", "type": "number"}],
+                [
+                    {
+                        "name": "task_description",
+                        "type": "string",
+                        "description": "任务描述",
+                        "required": True,
+                    },
+                    {
+                        "name": "context",
+                        "type": "object",
+                        "description": "上下文信息",
+                    },
+                ],
+                [
+                    {"name": "skill_name", "type": "string"},
+                    {"name": "skill_draft", "type": "object"},
+                    {"name": "confidence", "type": "number"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
                     "你是 SkillOS Skill Builder。从以下任务描述中提取可复用的 Skill：\n\n"
                     "任务：{task_description}\n\n"
-                    "请生成一个 JSON 格式的 Skill 定义，包含 name、description、input_schema、output_schema、prompt_template。"
+                    "请生成一个 JSON 格式的 Skill 定义，包含 "
+                    "name、description、input_schema、output_schema、prompt_template。"
                 ),
             ),
         ),
@@ -145,12 +282,23 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="generation",
             tags=["meta", "generation", "trajectory", "strategic"],
             interface=iface(
-                [{"name": "trajectory", "type": "string", "description": "执行轨迹文本", "required": True}],
-                [{"name": "skill_name", "type": "string"}, {"name": "skill_draft", "type": "object"}],
+                [
+                    {
+                        "name": "trajectory",
+                        "type": "string",
+                        "description": "执行轨迹文本",
+                        "required": True,
+                    }
+                ],
+                [
+                    {"name": "skill_name", "type": "string"},
+                    {"name": "skill_draft", "type": "object"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "你是 SkillOS Skill Builder。分析以下执行轨迹，提取可复用的操作模式并生成 Skill：\n\n"
+                    "你是 SkillOS Skill Builder。分析以下执行轨迹，"
+                    "提取可复用的操作模式并生成 Skill：\n\n"
                     "轨迹：{trajectory}\n\n"
                     "输出 JSON 格式的 Skill 定义。"
                 ),
@@ -163,8 +311,17 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="knowledge_management",
             tags=["meta", "schema", "formalization", "strategic"],
             interface=iface(
-                [{"name": "informal_description", "type": "string", "required": True}],
-                [{"name": "input_schema", "type": "object"}, {"name": "output_schema", "type": "object"}],
+                [
+                    {
+                        "name": "informal_description",
+                        "type": "string",
+                        "required": True,
+                    }
+                ],
+                [
+                    {"name": "input_schema", "type": "object"},
+                    {"name": "output_schema", "type": "object"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -181,10 +338,26 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="quality_assurance",
             tags=["meta", "testing", "quality", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "skill_description", "type": "string", "required": True},
-                 {"name": "input_schema", "type": "object"}],
-                [{"name": "test_cases", "type": "array"}, {"name": "test_count", "type": "integer"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "skill_description",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "input_schema",
+                        "type": "object",
+                    },
+                ],
+                [
+                    {"name": "test_cases", "type": "array"},
+                    {"name": "test_count", "type": "integer"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -192,7 +365,8 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
                     "Skill 名称：{skill_name}\n"
                     "描述：{skill_description}\n"
                     "输入 Schema：{input_schema}\n\n"
-                    "生成 3-5 个测试用例，包含正常情况、边界情况和异常情况。输出 JSON 数组。"
+                    "生成 3-5 个测试用例，包含正常情况、边界情况和异常情况。"
+                    "输出 JSON 数组。"
                 ),
             ),
         ),
@@ -203,10 +377,22 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="quality_assurance",
             tags=["meta", "safety", "audit", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "implementation_code", "type": "string"}],
-                [{"name": "is_safe", "type": "boolean"}, {"name": "risks", "type": "array"},
-                 {"name": "audit_score", "type": "number"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "implementation_code",
+                        "type": "string",
+                    },
+                ],
+                [
+                    {"name": "is_safe", "type": "boolean"},
+                    {"name": "risks", "type": "array"},
+                    {"name": "audit_score", "type": "number"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -225,10 +411,27 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="quality_assurance",
             tags=["meta", "verification", "postcondition", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "postconditions", "type": "array", "required": True},
-                 {"name": "execution_output", "type": "object", "required": True}],
-                [{"name": "satisfied", "type": "boolean"}, {"name": "violations", "type": "array"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "postconditions",
+                        "type": "array",
+                        "required": True,
+                    },
+                    {
+                        "name": "execution_output",
+                        "type": "object",
+                        "required": True,
+                    },
+                ],
+                [
+                    {"name": "satisfied", "type": "boolean"},
+                    {"name": "violations", "type": "array"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -246,17 +449,34 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="maintenance",
             tags=["meta", "repair", "maintenance", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "failure_info", "type": "string", "required": True},
-                 {"name": "current_implementation", "type": "string"}],
-                [{"name": "repaired_implementation", "type": "string"}, {"name": "repair_notes", "type": "string"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "failure_info",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "current_implementation",
+                        "type": "string",
+                    },
+                ],
+                [
+                    {"name": "repaired_implementation", "type": "string"},
+                    {"name": "repair_notes", "type": "string"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
                     "修复失败的 Skill '{skill_name}'：\n\n"
                     "失败信息：{failure_info}\n"
                     "当前实现：{current_implementation}\n\n"
-                    "分析根因并提供修复后的实现。输出 JSON：{{repaired_implementation, repair_notes}}"
+                    "分析根因并提供修复后的实现。"
+                    "输出 JSON：{{repaired_implementation, repair_notes}}"
                 ),
             ),
         ),
@@ -267,10 +487,26 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="maintenance",
             tags=["meta", "split", "decomposition", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "skill_description", "type": "string", "required": True},
-                 {"name": "split_reason", "type": "string"}],
-                [{"name": "sub_skills", "type": "array"}, {"name": "split_count", "type": "integer"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "skill_description",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "split_reason",
+                        "type": "string",
+                    },
+                ],
+                [
+                    {"name": "sub_skills", "type": "array"},
+                    {"name": "split_count", "type": "integer"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -289,9 +525,22 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="maintenance",
             tags=["meta", "merge", "deduplication", "strategic"],
             interface=iface(
-                [{"name": "skill_names", "type": "array", "description": "待合并的 Skill 名称列表", "required": True},
-                 {"name": "skill_descriptions", "type": "array"}],
-                [{"name": "merged_skill", "type": "object"}, {"name": "merge_notes", "type": "string"}],
+                [
+                    {
+                        "name": "skill_names",
+                        "type": "array",
+                        "description": "待合并的 Skill 名称列表",
+                        "required": True,
+                    },
+                    {
+                        "name": "skill_descriptions",
+                        "type": "array",
+                    },
+                ],
+                [
+                    {"name": "merged_skill", "type": "object"},
+                    {"name": "merge_notes", "type": "string"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -309,11 +558,31 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="lifecycle",
             tags=["meta", "deprecation", "maintenance", "strategic"],
             interface=iface(
-                [{"name": "skill_name", "type": "string", "required": True},
-                 {"name": "usage_count", "type": "integer", "required": True},
-                 {"name": "success_rate", "type": "number", "required": True},
-                 {"name": "last_used_days_ago", "type": "integer"}],
-                [{"name": "should_deprecate", "type": "boolean"}, {"name": "reason", "type": "string"}],
+                [
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "usage_count",
+                        "type": "integer",
+                        "required": True,
+                    },
+                    {
+                        "name": "success_rate",
+                        "type": "number",
+                        "required": True,
+                    },
+                    {
+                        "name": "last_used_days_ago",
+                        "type": "integer",
+                    },
+                ],
+                [
+                    {"name": "should_deprecate", "type": "boolean"},
+                    {"name": "reason", "type": "string"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -332,11 +601,30 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="knowledge_management",
             tags=["meta", "wiki", "documentation", "strategic"],
             interface=iface(
-                [{"name": "skill_id", "type": "string", "required": True},
-                 {"name": "update_reason", "type": "string", "required": True},
-                 {"name": "new_description", "type": "string"},
-                 {"name": "new_tags", "type": "array"}],
-                [{"name": "updated", "type": "boolean"}, {"name": "wiki_url", "type": "string"}],
+                [
+                    {
+                        "name": "skill_id",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "update_reason",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "new_description",
+                        "type": "string",
+                    },
+                    {
+                        "name": "new_tags",
+                        "type": "array",
+                    },
+                ],
+                [
+                    {"name": "updated", "type": "boolean"},
+                    {"name": "wiki_url", "type": "string"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
@@ -354,15 +642,37 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             meta_category="graph",
             tags=["meta", "graph", "relations", "strategic"],
             interface=iface(
-                [{"name": "source_skill", "type": "string", "required": True},
-                 {"name": "target_skill", "type": "string", "required": True},
-                 {"name": "relation_type", "type": "string", "description": "depends_on/composes/replaces", "required": True},
-                 {"name": "weight", "type": "number"}],
-                [{"name": "edge_added", "type": "boolean"}, {"name": "graph_updated", "type": "boolean"}],
+                [
+                    {
+                        "name": "source_skill",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "target_skill",
+                        "type": "string",
+                        "required": True,
+                    },
+                    {
+                        "name": "relation_type",
+                        "type": "string",
+                        "description": "depends_on/composes/replaces",
+                        "required": True,
+                    },
+                    {
+                        "name": "weight",
+                        "type": "number",
+                    },
+                ],
+                [
+                    {"name": "edge_added", "type": "boolean"},
+                    {"name": "graph_updated", "type": "boolean"},
+                ],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "分析 Skill '{source_skill}' 和 '{target_skill}' 之间的 '{relation_type}' 关系：\n\n"
+                    "分析 Skill '{source_skill}' 和 '{target_skill}' 之间的 "
+                    "'{relation_type}' 关系：\n\n"
                     "验证这个关系是否合理，并说明理由。"
                     "输出 JSON：{{valid: bool, reasoning: string}}"
                 ),
@@ -371,6 +681,7 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
     ]
 
     all_skills = demos + meta_skills
+
     for d in all_skills:
         skill = Skill(
             **d,
@@ -378,17 +689,25 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
         )
         skill.transition_to(SkillState.VERIFIED)
         skill.transition_to(SkillState.RELEASED)
+
         for _ in range(20):
             skill.record_execution(success=True, latency_ms=120.0)
+
         for _ in range(2):
             skill.record_execution(success=False, latency_ms=500.0)
+
         try:
             await wiki.create(skill)
         except ValueError:
             pass
 
 
-def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
+def create_app(
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+    seed_demo: bool = False,
+    skill_repo_dir: Optional[Path] = None,
+) -> FastAPI:
     from ..config.llm_config import LLMConfig
 
     llm_cfg = LLMConfig(api_key=api_key, model=model)
@@ -401,7 +720,10 @@ def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
     app.state.llm_cfg = llm_cfg
+    app.state.seed_demo = seed_demo
+    app.state.skill_repo_dir = (skill_repo_dir or _default_skill_repo_dir()).resolve()
 
     app.add_middleware(
         CORSMiddleware,
@@ -412,8 +734,17 @@ def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
     )
 
     @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+    async def global_exception_handler(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": str(exc),
+            },
+        )
 
     app.include_router(skills.router, prefix="/api/v1")
     app.include_router(lifecycle.router, prefix="/api/v1")
@@ -425,11 +756,17 @@ def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
 
     @app.get("/")
     async def root() -> Dict[str, str]:
-        return {"name": "SkillOS", "version": "1.0.0", "status": "running"}
+        return {
+            "name": "SkillOS",
+            "version": "1.0.0",
+            "status": "running",
+        }
 
     @app.get("/health")
     async def health() -> Dict[str, str]:
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+        }
 
     return app
 
@@ -441,10 +778,37 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
+    parser.add_argument(
+        "--seed-demo",
+        action="store_true",
+        help="启动时向 repository 写入 demo skills。默认关闭。",
+    )
+    parser.add_argument(
+        "--skill-repo-dir",
+        default=None,
+        help=(
+            "Skill repository 路径。"
+            "默认使用 outer-skillos/layers/storage/skill_repo/SkillStorage。"
+        ),
+    )
+
     args = parser.parse_args()
 
-    app = create_app(api_key=args.api_key, model=args.model)
-    uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+    skill_repo_dir = Path(args.skill_repo_dir).resolve() if args.skill_repo_dir else None
+
+    app = create_app(
+        api_key=args.api_key,
+        model=args.model,
+        seed_demo=args.seed_demo,
+        skill_repo_dir=skill_repo_dir,
+    )
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
 
 
 if __name__ == "__main__":
