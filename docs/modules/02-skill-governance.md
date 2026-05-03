@@ -1,179 +1,141 @@
 # Module 02: Skill Governance Layer
 
-**负责人分支：`governance-dev`**
+**负责分支：`governance-dev`**
 
 ---
 
-## 职责概述
+## 职责概览
 
-Skill Governance Layer 负责 Skill 的全生命周期治理，包括：
-- Git 式版本控制（branch/commit/PR/review/merge）
-- 状态机驱动的生命周期管理（S0-S7）
-- Skill 构建与验证（从候选到草稿）
-- 变更历史与 diff 视图
+Skill Governance Layer 负责 Skill 的生命周期治理与版本治理，包括：
 
----
+- Skill 生命周期状态流转：S0-S7。
+- Skill 审核、发布、废弃、修复后的治理记录。
+- Skill 版本历史、diff、breaking change 判断。
+- 基于 Git 的 branch / commit / history / diff / rollback / PR 工作流封装。
 
-## 子模块
-
-### 2.1 Version Control（`layers/skill_governance/version_control.py`）
-
-实现 Git 式版本管理，每次 `new-version` 操作创建新的 Skill 实例（不可变版本）。
-
-**版本号规则（Semantic Versioning）：**
-- `patch`：1.0.0 → 1.0.1（bug 修复、小调整）
-- `minor`：1.0.0 → 1.1.0（新功能、向后兼容）
-- `major`：1.0.0 → 2.0.0（破坏性变更）
-
-**变更记录（ChangeRecord）：**
-```python
-@dataclass
-class ChangeRecord:
-    record_id: str
-    skill_id: str
-    from_version: str
-    to_version: str
-    change_type: str        # "patch" / "minor" / "major"
-    summary: str
-    author: str
-    created_at: datetime
-    diff: Dict[str, Any]    # {field: {old: ..., new: ...}}
-    is_breaking: bool
-```
-
-### 2.2 Lifecycle Management（`api/routes/lifecycle.py`）
-
-状态转换的 API 层，封装了所有合法的状态迁移操作。
-
-**合法转换路径：**
-```
-S0 → S1 (ingest)
-S1 → S2 (review)
-S2 → S3 (verify/audit)
-S3 → S4 (release)
-S4 → S5 (degrade, 自动触发)
-S5 → S4 (repair)
-S4/S5 → S6 (deprecate)
-S6 → S7 (archive)
-```
-
-**Skill 模型上的状态方法：**
-```python
-class Skill:
-    def transition_to(self, new_state: SkillState, reason: str = "")
-    def record_execution(self, success: bool, latency_ms: float)
-    # 自动降级：success_rate < 0.6 且 total_executions >= 10 → S5
-```
-
-### 2.3 Reviewer（`layers/skill_governance/reviewer.py`）
-
-LLM 驱动的 Skill 审核，检查描述完整性、接口合理性、实现安全性。
-
-### 2.4 Merger（`layers/skill_governance/merger.py`）
-
-将功能重复的多个 Skill 合并为一个统一版本。
-
-### 2.5 Skill Construction（`layers/skill_construction/`）
-
-从候选经验构建正式 Skill：
-
-| 文件 | 职责 |
-|------|------|
-| `candidate_miner.py` | 从经验单元中挖掘 Skill 候选 |
-| `formalizer.py` | 将非正式描述规范化为标准 JSON Schema |
-| `validator.py` | 验证 Skill 定义的完整性和合法性 |
+当前方向不是重新实现一个 Git-like 系统，而是把 Git 作为底层版本事实来源。SkillOS 只在 Git 之上增加 Skill 语义，例如“某次 commit 对应哪个 Skill 版本”“某个 diff 是否是 breaking change”“某次修复是否需要 review”。
 
 ---
 
-## 工作流详解
+## 当前子模块
 
-### 新版本创建流程
+### 2.1 Version Control
 
-```
-POST /lifecycle/{id}/new-version  { bump: "patch" }
-    │
-    ▼
-1. 获取当前 Skill（必须是 S4 Released）
-2. 计算新版本号（semver bump）
-3. 克隆 Skill，更新 version、state=S2 Draft
-4. 记录 ChangeRecord（diff = 空，等待后续修改）
-5. 写入 SkillWiki（新 skill_id）
-6. 返回新版本 Skill
-```
+`layers/skill_governance/version_control.py`
 
-### Diff 计算流程
+保留现有语义化版本控制能力：
 
-```
-GET /lifecycle/{id}/diff
-    │
-    ▼
-1. 获取该 Skill 的所有版本历史
-2. 对相邻版本计算字段级 diff
-3. _format_diff() 将 {field: {old, new}} 转换为
-   [{field, type, old_lines, new_lines}] 格式
-4. 返回完整变更历史列表
-```
+- 记录 `ChangeRecord`。
+- 计算两个 Skill 对象之间的字段级 diff。
+- 根据 diff 建议 `major` / `minor` / `patch`。
+- 创建新版本时把 Skill 回到 Draft 状态，等待后续审核。
 
-### 自动降级流程
+### 2.2 Git Version Store
 
-```
-每次 record_execution() 调用后：
-    │
-    ▼
-计算 success_rate = successful / total
-    │
-    ├── success_rate < 0.6 AND total >= 10 AND state == S4
-    │       → 自动 transition_to(S5, "自动降级：成功率过低")
-    │
-    └── 否则保持当前状态
-```
+`layers/skill_governance/git_version_store.py`
 
----
+第一阶段新增的 Git 包装层，职责是安全调用 Git，而不是实现 Git：
 
-## API 端点
+- 检查目标目录是否是 Git 仓库。
+- 获取当前分支。
+- 获取当前 HEAD commit。
+- 获取某个 Skill 快照文件的 commit history。
+- 获取两个 commit 之间的 Git diff。
+- 在测试用临时仓库中创建 commit。
+
+这一层暂时不直接改 lifecycle API，也不自动写入真实 Skill 快照。后续阶段会把 Skill JSON 快照接到这一层。
+
+### 2.3 Lifecycle Management
+
+`api/routes/lifecycle.py`
+
+封装现有生命周期接口：
 
 | 方法 | 路径 | 功能 |
-|------|------|------|
-| `POST` | `/api/v1/lifecycle/{id}/transition` | 手动状态转换 |
-| `POST` | `/api/v1/lifecycle/{id}/release` | 发布（S2/S3 → S4） |
-| `POST` | `/api/v1/lifecycle/{id}/deprecate` | 废弃（→ S6） |
+| --- | --- | --- |
+| `POST` | `/api/v1/lifecycle/{id}/transition` | 手动状态流转 |
+| `POST` | `/api/v1/lifecycle/{id}/release` | 发布 Skill |
+| `POST` | `/api/v1/lifecycle/{id}/deprecate` | 废弃 Skill |
 | `POST` | `/api/v1/lifecycle/{id}/new-version` | 创建新版本 |
 | `POST` | `/api/v1/lifecycle/{id}/review` | LLM 审核 |
 | `POST` | `/api/v1/lifecycle/{id}/review-and-release` | 审核并发布 |
 | `POST` | `/api/v1/lifecycle/{id}/record-execution` | 记录执行结果 |
-| `GET` | `/api/v1/lifecycle/{id}/diff` | 获取变更历史与 diff |
-| `GET` | `/api/v1/lifecycle/{id}/diff/versions` | 比较两个特定版本 |
+| `GET` | `/api/v1/lifecycle/{id}/diff` | 获取变更历史 diff |
+| `GET` | `/api/v1/lifecycle/{id}/diff/versions` | 比较两个版本 |
+
+第一阶段不修改这些接口的请求和响应字段。
+
+### 2.4 Reviewer / Merger
+
+`layers/skill_governance/reviewer.py`
+
+`layers/skill_governance/merger.py`
+
+现有 Reviewer 负责 Skill 质量审核，Merger 负责相似 Skill 合并和大 Skill 拆分。B 后续阶段会让这些治理动作也产生 Git-backed 版本记录。
 
 ---
 
-## 关键文件
+## B 任务阶段规划
 
-```
-skillos/skillos/
-├── layers/
-│   ├── skill_governance/
-│   │   ├── version_control.py  # 版本控制核心逻辑
-│   │   ├── reviewer.py         # LLM 审核
-│   │   └── merger.py           # Skill 合并
-│   └── skill_construction/
-│       ├── candidate_miner.py  # 候选挖掘
-│       ├── formalizer.py       # Schema 规范化
-│       └── validator.py        # 合法性验证
-├── models/skill_model.py       # SkillState 枚举、transition_to()
-└── api/routes/lifecycle.py     # 生命周期 API 路由
-```
+### 阶段一：Git-backed Version Adapter 底座
+
+目标：先把 Git 调用能力放进 governance 层，保证后续不用自研 Git-like 版本系统。
+
+完成内容：
+
+- 新增 `GitVersionStore`。
+- 新增临时 Git 仓库测试。
+- 保持 REST 接口不变。
+- 更新本模块文档，明确“Git 外壳”路线。
+
+### 阶段二：Skill 快照与领域级 Diff
+
+目标：把 Skill 序列化为稳定 JSON 快照，并用 Git diff + Skill 字段级解释生成更可读的版本差异。
+
+重点：
+
+- Skill snapshot 路径规则。
+- JSON 稳定排序。
+- interface / implementation / prompt_template 的字段级 diff。
+- breaking change 检测。
+
+### 阶段三：Branch / Review 工作流封装
+
+目标：把 Skill 修改映射为 Git branch 和 review 流程。
+
+重点：
+
+- Skill 修改分支。
+- commit message 规范。
+- review 状态与 lifecycle 状态对应。
+- 后续可接 GitHub PR，但不自造 PR 系统。
+
+### 阶段四：Rollback / Tag / Release
+
+目标：支持按 commit 或版本 tag 回滚 Skill。
+
+重点：
+
+- version tag 规则。
+- rollback API 设计。
+- rollback 后的 Skill 状态与审计记录。
+
+### 阶段五：联调与交付
+
+目标：与 E 前端和 D 自管理 Agent 联调。
+
+重点：
+
+- E 展示 Skill 版本历史和 diff。
+- D 的 repair / merge / split 产生可追踪版本记录。
+- 中文 PR 说明、交付文档、组长 review。
 
 ---
 
-## 优化方向（Member B 任务）
+## 当前边界
 
-1. **Diff 精细化**：当前 diff 只比较顶层字段，可深入比较 `interface.input_schema` 的具体字段变化
-2. **Breaking Change 检测**：自动检测 major bump 是否真的有破坏性变更（如删除必填输入字段）
-3. **审核流程完善**：`reviewer.py` 当前是 LLM 调用，可增加规则引擎（如检查 prompt_template 是否包含所有 input_schema 字段）
-4. **版本回滚**：增加 `POST /lifecycle/{id}/rollback/{version}` 端点
-5. **变更通知**：当 Skill 状态变更时，通过 WebSocket 广播事件（当前已有 ws.py 基础设施）
-6. **Skill Construction 完善**：`candidate_miner.py` 和 `formalizer.py` 的 LLM prompt 可进一步优化
-
----
-
-*更新此文档时请同步更新 `architecture.md` 中的 Governance Flow 部分（联系负责人）*
+- 不修改 `docs/interfaces.md` 和 `docs/architecture.md`。
+- 不新增依赖。
+- 不改现有 lifecycle API 字段。
+- 不碰 E 的 `frontend-dev` PR。
+- 不碰 D 的 `agents-dev` PR。
