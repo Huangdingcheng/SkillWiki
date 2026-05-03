@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 
 from skillos.api.schemas import EvolutionCycleResponse, HealthReportResponse, SystemHealthResponse
 from skillos.layers.feedback_evolution import HealthStatus, SkillHealthReport, SkillRepair
-from skillos.layers.skill_management import SkillAuditorAgent, SkillBuilderAgent
+from skillos.layers.skill_management import (
+    MaintenanceAction,
+    SkillAuditorAgent,
+    SkillBuilderAgent,
+    SkillMaintainerAgent,
+)
 from skillos.models.skill_model import (
     MetaSkillCategory,
     Skill,
@@ -234,6 +239,150 @@ def test_auditor_passes_valid_prompt_skill_with_stable_score() -> None:
     assert result.safety_ok
     assert result.postcondition_ok
     assert result.audit_score >= 0.8
+
+
+def _maintainer_source_skill(name: str = "process_report") -> Skill:
+    return Skill(
+        name=name,
+        description="Process a report and produce a normalized result.",
+        skill_type=SkillType.FUNCTIONAL,
+        tags=["report", "workflow"],
+        interface=SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {"report_text": {"type": "string"}},
+                "required": ["report_text"],
+            },
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+        ),
+        implementation=SkillImplementation(prompt_template="Process {report_text}."),
+    )
+
+
+def test_maintainer_repair_fails_when_response_has_no_implementation() -> None:
+    llm = FakeLLM(
+        """
+        {
+          "repaired_prompt_template": "",
+          "repaired_code": null,
+          "repair_notes": "No usable fix",
+          "confidence": 0.4
+        }
+        """
+    )
+
+    result = SkillMaintainerAgent(llm).repair(_maintainer_source_skill(), failure_info="bad output")
+
+    assert result.action == MaintenanceAction.REPAIR
+    assert not result.success
+    assert "repaired_prompt_template or repaired_code" in result.reason
+    assert result.details["confidence"] == 0.4
+
+
+def test_maintainer_split_normalizes_children_and_skips_empty_items() -> None:
+    llm = FakeLLM(
+        """
+        {
+          "sub_skills": [
+            {"name": "1. Extract!", "description": "", "prompt_template": ""},
+            {},
+            {"name": "Summarize Report", "description": "Summarize the report.", "prompt_template": "Summarize {report_text}."}
+          ],
+          "split_notes": "Split into extraction and summary steps",
+          "confidence": 0.85
+        }
+        """
+    )
+
+    parent = _maintainer_source_skill()
+    result = SkillMaintainerAgent(llm).split(parent, reason="too broad")
+
+    assert result.action == MaintenanceAction.SPLIT
+    assert result.success
+    assert len(result.new_skills) == 2
+    assert result.new_skills[0].name == "skill_1_extract"
+    assert result.new_skills[0].skill_type == SkillType.ATOMIC
+    assert result.new_skills[0].implementation is not None
+    assert result.new_skills[0].implementation.prompt_template
+    assert result.new_skills[0].provenance is not None
+    assert result.new_skills[0].provenance.parent_skill_ids == [parent.skill_id]
+    assert result.details["sub_skill_count"] == 2
+    assert result.details["confidence"] == 0.85
+
+
+def test_maintainer_merge_success_creates_new_skill_with_details() -> None:
+    skill_a = _maintainer_source_skill("extract_report_facts")
+    skill_b = _maintainer_source_skill("summarize_report_facts")
+    llm = FakeLLM(
+        """
+        {
+          "merged_name": "process_report_facts",
+          "merged_description": "Extract and summarize reusable facts from a report.",
+          "merged_type": "functional",
+          "merged_tags": ["report", "facts"],
+          "merged_interface": {
+            "input_schema": {
+              "type": "object",
+              "properties": {"report_text": {"type": "string"}}
+            },
+            "output_schema": {
+              "type": "object",
+              "properties": {"facts": {"type": "array"}}
+            },
+            "preconditions": ["report_text is available"],
+            "postconditions": ["facts are summarized"],
+            "side_effects": []
+          },
+          "merged_implementation": {
+            "language": "python",
+            "prompt_template": "Extract and summarize facts from {report_text}."
+          },
+          "merge_rationale": "The two Skills overlap on report fact processing.",
+          "confidence": 0.9
+        }
+        """
+    )
+
+    result = SkillMaintainerAgent(llm).merge(skill_a, skill_b, reason="overlap")
+
+    assert result.action == MaintenanceAction.MERGE
+    assert result.success
+    assert result.updated_skill is not None
+    assert result.updated_skill.name == "process_report_facts"
+    assert result.updated_skill.provenance is not None
+    assert result.updated_skill.provenance.parent_skill_ids == [skill_a.skill_id, skill_b.skill_id]
+    assert result.details["source_skill_ids"] == [skill_a.skill_id, skill_b.skill_id]
+    assert result.details["confidence"] == 0.9
+    assert "overlap" in result.details["merge_rationale"]
+
+
+def test_maintainer_merge_fails_on_invalid_or_empty_response() -> None:
+    skill_a = _maintainer_source_skill("extract_report_facts")
+    skill_b = _maintainer_source_skill("summarize_report_facts")
+
+    invalid = SkillMaintainerAgent(FakeLLM("not json")).merge(skill_a, skill_b)
+    assert not invalid.success
+    assert "valid JSON" in invalid.reason
+
+    empty_impl = SkillMaintainerAgent(FakeLLM('{"merged_name": "bad_merge"}')).merge(skill_a, skill_b)
+    assert not empty_impl.success
+    assert "usable merged implementation" in empty_impl.reason
+
+
+def test_maintainer_deprecate_records_reason_and_replacement() -> None:
+    skill = _maintainer_source_skill()
+
+    result = SkillMaintainerAgent(FakeLLM()).deprecate(
+        skill,
+        reason="replaced by broader skill",
+        replacement_skill_id="replacement-1",
+    )
+
+    assert result.action == MaintenanceAction.DEPRECATE
+    assert result.success
+    assert result.reason == "replaced by broader skill"
+    assert result.details["reason"] == "replaced by broader skill"
+    assert result.details["replacement_skill_id"] == "replacement-1"
 
 
 async def test_repair_returns_clear_failure_when_llm_fails() -> None:

@@ -352,9 +352,31 @@ skillos/skillos/layers/
 - Auditor 对危险代码失败，并给出更低审计分数。
 - Auditor 对合法 prompt Skill 通过，且审计分数保持较高。
 
-### 前两阶段仍未完成项
+## 第三阶段完成内容（agents-dev）
 
-以下内容不属于第一、第二阶段，放到后续阶段：
+第三阶段目标是收口 Maintainer 的维护动作，让 D 的维修能力从 repair/split 扩展到 repair / split / merge / deprecate 四类动作。
+
+### Maintainer 维护动作
+
+- `repair()` 保持不返回空实现，LLM 返回无效 JSON 或空 prompt/code 时返回清晰失败原因。
+- `split()` 限制最多 5 个子 Skill，跳过完全空的子项，并对非法名称、空描述、空 prompt 做归一化。
+- `merge()` 新增为正式维护动作，输入两个相似 Skill，输出一个新的合并 Skill 草稿。
+- `merge()` 的结果通过现有 `MaintenanceResult.updated_skill` 返回，source skill ids、merge rationale、confidence 放入 `details`，不新增公开字段。
+- `deprecate()` 只返回维护决策，不直接修改 Wiki 状态；废弃原因和可选 replacement id 放入 `details`。
+
+### 第三阶段新增测试
+
+`tests/test_skill_management_phase1.py` 在前两阶段基础上新增：
+
+- repair 空实现失败且原因清晰。
+- split 对非法/空子项进行归一化或跳过，成功子 Skill 均为 atomic 且带 parent provenance。
+- merge 成功时生成新 Skill，并记录 source skill ids、confidence 和 merge rationale。
+- merge 遇到非法 JSON 或空实现时失败，不抛异常。
+- deprecate 返回成功维护决策，并记录 reason 与 replacement skill id。
+
+### 前三阶段仍未完成项
+
+以下内容不属于第一、第二、第三阶段，放到后续阶段：
 
 - `merge_redundant_skills` 的完整合并流程。
 - 演化周期自动定时触发。
