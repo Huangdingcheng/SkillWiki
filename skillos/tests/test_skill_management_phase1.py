@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 
+import pytest
+
+from skillos.api.routes import evolution as evolution_routes
 from skillos.api.schemas import EvolutionCycleResponse, HealthReportResponse, SystemHealthResponse
-from skillos.layers.feedback_evolution import HealthStatus, SkillHealthReport, SkillRepair
+from skillos.layers.feedback_evolution import (
+    EvolutionReport,
+    HealthStatus,
+    SkillHealthReport,
+    SkillRepair,
+    SystemHealthReport,
+)
 from skillos.layers.skill_management import (
     MaintenanceAction,
     SkillAuditorAgent,
@@ -385,6 +395,7 @@ def test_maintainer_deprecate_records_reason_and_replacement() -> None:
     assert result.details["replacement_skill_id"] == "replacement-1"
 
 
+@pytest.mark.asyncio
 async def test_repair_returns_clear_failure_when_llm_fails() -> None:
     skill = Skill(
         name="unstable_skill",
@@ -459,3 +470,249 @@ def test_evolution_api_response_fields_remain_stable() -> None:
         split=[],
         errors=[],
     )
+
+
+def test_health_payload_is_json_serializable_and_stable() -> None:
+    report = SkillHealthReport(
+        skill_id="skill-1",
+        skill_name="unstable_skill",
+        status=HealthStatus.DEGRADED,
+        success_rate=0.62,
+        usage_count=12,
+        avg_latency_ms=250.0,
+        issues=["low success rate"],
+    )
+
+    payload = evolution_routes._health_payload(report)
+
+    assert evolution_routes._health_event_name(report.status) == "health_degraded"
+    assert payload["skill_id"] == "skill-1"
+    assert payload["skill_name"] == "unstable_skill"
+    assert payload["status"] == "degraded"
+    assert payload["success_rate"] == 0.62
+    assert payload["issues"] == ["low success rate"]
+    assert payload["timestamp"].endswith("Z")
+    json.dumps(payload)
+
+
+def test_system_health_payload_summarizes_critical_skills() -> None:
+    critical = SkillHealthReport(
+        skill_id="critical-1",
+        skill_name="critical_skill",
+        status=HealthStatus.CRITICAL,
+        success_rate=0.2,
+        usage_count=10,
+        avg_latency_ms=100.0,
+        issues=["very low success rate"],
+    )
+    degraded = SkillHealthReport(
+        skill_id="degraded-1",
+        skill_name="degraded_skill",
+        status=HealthStatus.DEGRADED,
+        success_rate=0.65,
+        usage_count=10,
+        avg_latency_ms=100.0,
+        issues=["low success rate"],
+    )
+    report = SystemHealthReport(
+        total_skills=2,
+        degraded_count=1,
+        critical_count=1,
+        skill_reports=[critical, degraded],
+    )
+
+    payload = evolution_routes._system_health_payload(report, HealthStatus.CRITICAL)
+
+    assert payload["skill_id"] == "system"
+    assert payload["status"] == "critical"
+    assert payload["degraded_count"] == 1
+    assert payload["critical_count"] == 1
+    assert payload["affected_skills"] == [
+        {
+            "skill_id": "critical-1",
+            "skill_name": "critical_skill",
+            "success_rate": 0.2,
+            "issues": ["very low success rate"],
+        }
+    ]
+    json.dumps(payload)
+
+
+def test_evolution_cycle_payload_uses_summary_counts() -> None:
+    report = EvolutionReport(
+        cycle_id="cycle-1",
+        tasks_total=4,
+        tasks_completed=3,
+        tasks_failed=1,
+        repaired=["repair-1"],
+        deprecated=["old-1"],
+        merged=[(["a", "b"], "merged-1")],
+        split=[("large-1", ["small-1", "small-2"])],
+        errors=["merge failed"],
+    )
+
+    payload = evolution_routes._cycle_payload(report)
+
+    assert payload["cycle_id"] == "cycle-1"
+    assert payload["tasks_total"] == 4
+    assert payload["tasks_completed"] == 3
+    assert payload["tasks_failed"] == 1
+    assert payload["repaired"] == 1
+    assert payload["deprecated"] == 1
+    assert payload["merged"] == 1
+    assert payload["split"] == 1
+    assert payload["errors"] == ["merge failed"]
+    assert payload["timestamp"].endswith("Z")
+    json.dumps(payload)
+
+
+@pytest.mark.asyncio
+async def test_run_evolution_cycle_broadcasts_done_event(monkeypatch) -> None:
+    events = []
+
+    async def capture(event, payload):  # noqa: ANN001
+        events.append((event, payload))
+
+    class FakeEvolution:
+        async def run_evolution_cycle(self) -> EvolutionReport:
+            return EvolutionReport(
+                cycle_id="cycle-1",
+                tasks_total=1,
+                tasks_completed=1,
+                repaired=["repair-1"],
+            )
+
+    class FakeApp:
+        evolution = FakeEvolution()
+
+    monkeypatch.setattr(evolution_routes, "_safe_broadcast", capture)
+
+    response = await evolution_routes.run_evolution_cycle(FakeApp())
+
+    assert response.cycle_id == "cycle-1"
+    assert response.tasks_total == 1
+    assert events == [
+        (
+            "evolution_cycle_done",
+            {
+                "cycle_id": "cycle-1",
+                "tasks_total": 1,
+                "tasks_completed": 1,
+                "tasks_failed": 0,
+                "repaired": 1,
+                "deprecated": 0,
+                "merged": 0,
+                "split": 0,
+                "errors": [],
+                "timestamp": events[0][1]["timestamp"],
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_safe_broadcast_does_not_raise_when_websocket_fails(monkeypatch) -> None:
+    async def failing_broadcast(event, payload):  # noqa: ANN001
+        raise RuntimeError("websocket unavailable")
+
+    monkeypatch.setattr(evolution_routes, "broadcast", failing_broadcast)
+
+    await evolution_routes._safe_broadcast("health_critical", {"skill_id": "skill-1"})
+
+
+@pytest.mark.asyncio
+async def test_emit_health_event_broadcasts_degraded_and_critical(monkeypatch) -> None:
+    events = []
+
+    async def capture(event, payload):  # noqa: ANN001
+        events.append((event, payload))
+
+    monkeypatch.setattr(evolution_routes, "_safe_broadcast", capture)
+    evolution_routes._last_health_event_at.clear()
+    degraded = SkillHealthReport(
+        skill_id="degraded-1",
+        skill_name="degraded_skill",
+        status=HealthStatus.DEGRADED,
+        success_rate=0.66,
+        usage_count=10,
+        avg_latency_ms=100.0,
+    )
+    critical = SkillHealthReport(
+        skill_id="critical-1",
+        skill_name="critical_skill",
+        status=HealthStatus.CRITICAL,
+        success_rate=0.2,
+        usage_count=10,
+        avg_latency_ms=100.0,
+    )
+
+    await evolution_routes._emit_health_event(degraded)
+    await evolution_routes._emit_health_event(critical)
+
+    assert [event for event, _ in events] == ["health_degraded", "health_critical"]
+    assert events[0][1]["skill_id"] == "degraded-1"
+    assert events[1][1]["skill_id"] == "critical-1"
+
+
+@pytest.mark.asyncio
+async def test_emit_health_event_uses_short_cooldown(monkeypatch) -> None:
+    events = []
+
+    async def capture(event, payload):  # noqa: ANN001
+        events.append((event, payload))
+
+    monkeypatch.setattr(evolution_routes, "_safe_broadcast", capture)
+    evolution_routes._last_health_event_at.clear()
+    degraded = SkillHealthReport(
+        skill_id="degraded-1",
+        skill_name="degraded_skill",
+        status=HealthStatus.DEGRADED,
+        success_rate=0.66,
+        usage_count=10,
+        avg_latency_ms=100.0,
+    )
+
+    await evolution_routes._emit_health_event(degraded)
+    await evolution_routes._emit_health_event(degraded)
+
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_emit_system_health_events_broadcasts_only_attention_states(monkeypatch) -> None:
+    events = []
+
+    async def capture(event, payload):  # noqa: ANN001
+        events.append((event, payload))
+
+    monkeypatch.setattr(evolution_routes, "_safe_broadcast", capture)
+    evolution_routes._last_health_event_at.clear()
+    report = SystemHealthReport(
+        total_skills=2,
+        degraded_count=1,
+        critical_count=1,
+        skill_reports=[
+            SkillHealthReport(
+                skill_id="degraded-1",
+                skill_name="degraded_skill",
+                status=HealthStatus.DEGRADED,
+                success_rate=0.66,
+                usage_count=10,
+                avg_latency_ms=100.0,
+            ),
+            SkillHealthReport(
+                skill_id="critical-1",
+                skill_name="critical_skill",
+                status=HealthStatus.CRITICAL,
+                success_rate=0.2,
+                usage_count=10,
+                avg_latency_ms=100.0,
+            ),
+        ],
+    )
+
+    await evolution_routes._emit_system_health_events(report)
+
+    assert [event for event, _ in events] == ["health_critical", "health_degraded"]
+    assert events[0][1]["affected_skills"][0]["skill_id"] == "critical-1"
+    assert events[1][1]["affected_skills"][0]["skill_id"] == "degraded-1"
