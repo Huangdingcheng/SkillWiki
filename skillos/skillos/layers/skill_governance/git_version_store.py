@@ -47,6 +47,30 @@ class GitVersionStore:
         self._require_repo()
         return self._run(["rev-parse", "--abbrev-ref", "HEAD"]).strip()
 
+    def branch_exists(self, branch_name: str) -> bool:
+        """Return True when a local branch exists."""
+        self._require_repo()
+        branch = self._normalize_branch_name(branch_name)
+        try:
+            self._run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"])
+        except GitVersionStoreError:
+            return False
+        return True
+
+    def create_branch(self, branch_name: str, start_point: str = "HEAD") -> None:
+        """Create a local branch at start_point."""
+        self._require_repo()
+        branch = self._normalize_branch_name(branch_name)
+        if self.branch_exists(branch):
+            raise GitVersionStoreError(f"Git branch already exists: {branch}")
+        self._run(["branch", branch, start_point])
+
+    def checkout(self, branch_name: str) -> None:
+        """Checkout an existing local branch."""
+        self._require_repo()
+        branch = self._normalize_branch_name(branch_name)
+        self._run(["checkout", branch])
+
     def head_commit(self) -> str:
         """Return the current HEAD commit hash."""
         self._require_repo()
@@ -153,6 +177,16 @@ class GitVersionStore:
         parts = [part for part in raw.split("/") if part not in ("", ".")]
         if Path(raw).is_absolute() or ".." in parts:
             raise ValueError("Git path must be repo-relative and stay inside the repository.")
+        return "/".join(parts)
+
+    @staticmethod
+    def _normalize_branch_name(branch_name: str) -> str:
+        branch = branch_name.strip().replace("\\", "/")
+        if not branch:
+            raise ValueError("Git branch name cannot be empty.")
+        parts = [part for part in branch.split("/") if part]
+        if ".." in branch or branch.startswith("/") or branch.endswith("/") or any(part == "." for part in parts):
+            raise ValueError(f"Invalid Git branch name: {branch_name!r}")
         return "/".join(parts)
 
     @staticmethod

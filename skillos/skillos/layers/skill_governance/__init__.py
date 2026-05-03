@@ -3,6 +3,12 @@
 from .git_version_store import GitCommit, GitVersionStore, GitVersionStoreError
 from .merger import MergeResult, SkillMerger, SplitResult
 from .reviewer import ReviewResult, ReviewStatus, SkillReviewer
+from .skill_change_workflow import (
+    SkillChangeReviewBundle,
+    propose_skill_change,
+    skill_change_branch_name,
+    skill_change_commit_message,
+)
 from .skill_snapshot import (
     SkillSnapshotDiff,
     commit_skill_snapshot,
@@ -20,6 +26,10 @@ __all__ = [
     "GitVersionStore",
     "GitVersionStoreError",
     "GitCommit",
+    "SkillChangeReviewBundle",
+    "skill_change_branch_name",
+    "skill_change_commit_message",
+    "propose_skill_change",
     "SkillSnapshotDiff",
     "skill_snapshot_path",
     "skill_to_snapshot",
