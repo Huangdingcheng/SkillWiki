@@ -136,5 +136,22 @@ cd C:\Users\m1516\Desktop\SKILLOS\skillos\skillos
 python -m compileall -q skillos\layers\skill_repository skillos\api\routes\skills.py skillos\api\routes\graph.py skillos\api\memory_store.py
 python -m pytest tests\test_skill_repository_phase1.py -q
 python -m pytest tests\test_skill_repository_search_phase2.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
 git diff --check
 ```
+
+## Phase 3: Graph auto-construction
+
+第三阶段让 Skill Repository 在 Skill 变化时自动维护 Graph，而不是只依赖手动 `/graph/edges`。
+
+- `POST /api/v1/skills` 创建成功后会同步 Graph 节点，并根据当前 Skill 字段创建自动关系边。
+- `PATCH /api/v1/skills/{id}` 更新成功后会刷新 Graph 节点，并重建该 Skill 发出的自动关系边。
+- `DELETE /api/v1/skills/{id}` 删除成功后会移除 Graph 节点和相关边。
+- `implementation.sub_skill_ids` 会生成 `composes_with` 边，方向为 parent Skill -> child Skill。
+- `provenance.parent_skill_ids` 会生成 `evolved_from` 边，方向为 new Skill -> parent Skill。
+- 自动边使用稳定 `edge_id`，格式为 `auto:<edge_type>:<source_id>:<target_id>`，并带有 `metadata.auto_generated=true` 与 `metadata.source=skill_repository`。
+- 自动同步只清理 Skill Repository 自己生成的自动边，不删除用户通过 `/graph/edges` 手动创建的边。
+- 目标 Skill 不存在时跳过对应自动边并记录 warning，主 Skill 创建或更新仍然成功。
+
+本阶段不新增 REST endpoint，不修改 `GraphData` / `GraphEdgeData` / `SkillSummary` 返回结构，E 前端可继续消费现有 Graph API。

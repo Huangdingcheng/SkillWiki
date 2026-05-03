@@ -200,11 +200,54 @@ class MemoryGraphManager:
     async def sync_skill(self, skill: Skill) -> None:
         self._nodes[skill.skill_id] = _skill_to_graph_node(skill)
 
+    async def sync_auto_edges(self, skill: Skill, valid_skill_ids: Iterable[str]) -> None:
+        valid_ids = set(valid_skill_ids)
+        self._remove_auto_edges_from(skill.skill_id, {
+            EdgeType.COMPOSES_WITH,
+            EdgeType.EVOLVED_FROM,
+        })
+
+        if not skill.implementation:
+            sub_skill_ids: List[str] = []
+        else:
+            sub_skill_ids = skill.implementation.sub_skill_ids
+        for child_id in _unique_ids(sub_skill_ids):
+            if child_id == skill.skill_id or child_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing child Skill: %s -> %s", skill.skill_id, child_id)
+                continue
+            await self.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=child_id,
+                edge_type=EdgeType.COMPOSES_WITH,
+            ))
+
+        parent_ids = skill.provenance.parent_skill_ids if skill.provenance else []
+        for parent_id in _unique_ids(parent_ids):
+            if parent_id == skill.skill_id or parent_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing parent Skill: %s -> %s", skill.skill_id, parent_id)
+                continue
+            await self.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=parent_id,
+                edge_type=EdgeType.EVOLVED_FROM,
+            ))
+
     async def remove_skill(self, skill_id: str) -> None:
         self._nodes.pop(skill_id, None)
         self._edges = [
             edge for edge in self._edges
             if edge.source_id != skill_id and edge.target_id != skill_id
+        ]
+
+    def _remove_auto_edges_from(self, source_id: str, edge_types: Set[EdgeType]) -> None:
+        self._edges = [
+            edge for edge in self._edges
+            if not (
+                edge.source_id == source_id
+                and edge.edge_type in edge_types
+                and edge.metadata.get("auto_generated") is True
+                and edge.metadata.get("source") == "skill_repository"
+            )
         ]
 
     async def create_edge(self, edge: SkillEdge) -> None:
@@ -413,3 +456,25 @@ def _dedupe_edges(edges: Iterable[SkillEdge]) -> List[SkillEdge]:
         seen.add(edge.edge_id)
         unique.append(edge)
     return unique
+
+
+def _auto_edge(source_id: str, target_id: str, edge_type: EdgeType) -> SkillEdge:
+    return SkillEdge(
+        edge_id=f"auto:{edge_type.value}:{source_id}:{target_id}",
+        source_id=source_id,
+        target_id=target_id,
+        edge_type=edge_type,
+        weight=1.0,
+        metadata={"auto_generated": True, "source": "skill_repository"},
+    )
+
+
+def _unique_ids(skill_ids: Iterable[str]) -> List[str]:
+    seen: Set[str] = set()
+    result: List[str] = []
+    for skill_id in skill_ids:
+        if not skill_id or skill_id in seen:
+            continue
+        seen.add(skill_id)
+        result.append(skill_id)
+    return result

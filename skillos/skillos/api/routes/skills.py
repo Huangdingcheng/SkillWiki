@@ -37,6 +37,16 @@ def _to_summary(skill: Skill) -> SkillSummary:
     )
 
 
+async def _sync_graph_for_skill(app: AppState, skill: Skill) -> None:
+    try:
+        await app.graph.sync_skill(skill)
+        if hasattr(app.graph, "sync_auto_edges"):
+            skills = await app.wiki.list(limit=10000)
+            await app.graph.sync_auto_edges(skill, [item.skill_id for item in skills])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
+
+
 @router.get("", response_model=List[SkillSummary])
 async def list_skills(
     state: Optional[SkillState] = Query(None),
@@ -117,6 +127,7 @@ async def create_skill(
         created = await app.wiki.create(skill)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _sync_graph_for_skill(app, created)
     return _to_summary(created)
 
 
@@ -165,6 +176,7 @@ async def update_skill(
     updated = await app.wiki.update(skill_id, **updates)
     if not updated:
         raise HTTPException(status_code=500, detail="Skill update failed")
+    await _sync_graph_for_skill(app, updated)
     await app.wiki.invalidate(skill_id)
     return _to_summary(updated)
 
@@ -179,6 +191,10 @@ async def delete_skill(
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     deleted = await app.wiki.delete(skill_id)
     if deleted:
+        try:
+            await app.graph.remove_skill(skill_id)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Graph remove failed: {exc}") from exc
         await app.wiki.invalidate(skill_id)
     return OKResponse(message=f"Skill {skill_id} deleted")
 

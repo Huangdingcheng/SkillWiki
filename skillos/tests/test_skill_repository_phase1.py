@@ -11,7 +11,14 @@ from skillos.api.memory_store import MemoryGraphManager, MemorySearchEngine, Mem
 from skillos.api.routes import graph, skills
 from skillos.layers.skill_repository.indexing import SearchQuery
 from skillos.models.graph_model import SkillEdge
-from skillos.models.skill_model import EdgeType, Skill, SkillImplementation, SkillState, SkillType
+from skillos.models.skill_model import (
+    EdgeType,
+    Skill,
+    SkillImplementation,
+    SkillProvenance,
+    SkillState,
+    SkillType,
+)
 
 
 def make_skill(
@@ -36,6 +43,30 @@ def make_skill(
             prompt_template=f"Run {name}",
         ),
     )
+
+
+def create_skill_payload(
+    name: str,
+    *,
+    skill_type: str = "atomic",
+    sub_skill_ids: list[str] | None = None,
+) -> dict:
+    implementation = (
+        {"language": "python", "sub_skill_ids": sub_skill_ids}
+        if sub_skill_ids is not None
+        else {"language": "python", "prompt_template": f"Run {name}"}
+    )
+    return {
+        "name": name,
+        "description": f"{name} handles browser automation",
+        "skill_type": skill_type,
+        "tags": ["web"],
+        "interface": {
+            "input_schema": {"type": "object", "properties": {}},
+            "output_schema": {"type": "object", "properties": {}},
+        },
+        "implementation": implementation,
+    }
 
 
 @pytest.fixture
@@ -187,6 +218,59 @@ async def test_memory_graph_edges_subgraph_stats_and_order(
     assert chain == [dependency.skill_id]
 
 
+@pytest.mark.asyncio
+async def test_memory_graph_auto_edges_from_skill_relationships(
+    wiki: MemoryWikiManager,
+    graph_mgr: MemoryGraphManager,
+):
+    parent = await wiki.create(make_skill("form_flow", skill_type=SkillType.FUNCTIONAL))
+    first_child = await wiki.create(make_skill("click_button"))
+    second_child = await wiki.create(make_skill("type_text"))
+    previous = await wiki.create(make_skill("old_form_flow"))
+    for skill in (parent, first_child, second_child, previous):
+        await graph_mgr.sync_skill(skill)
+
+    parent = parent.model_copy(
+        update={
+            "implementation": SkillImplementation(sub_skill_ids=[first_child.skill_id]),
+            "provenance": SkillProvenance(
+                source_type="adapt",
+                parent_skill_ids=[previous.skill_id],
+            ),
+        },
+        deep=True,
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+
+    subgraph = await graph_mgr.get_subgraph([parent.skill_id], depth=1)
+    edge_pairs = {(edge.edge_type, edge.source_id, edge.target_id) for edge in subgraph.edges}
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, first_child.skill_id) in edge_pairs
+    assert (EdgeType.EVOLVED_FROM, parent.skill_id, previous.skill_id) in edge_pairs
+    assert all(edge.metadata.get("auto_generated") is True for edge in subgraph.edges)
+
+    parent = parent.model_copy(
+        update={"implementation": SkillImplementation(sub_skill_ids=[second_child.skill_id])},
+        deep=True,
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+
+    subgraph = await graph_mgr.get_subgraph([parent.skill_id], depth=1)
+    edge_pairs = {(edge.edge_type, edge.source_id, edge.target_id) for edge in subgraph.edges}
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, first_child.skill_id) not in edge_pairs
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, second_child.skill_id) in edge_pairs
+    assert len(subgraph.edges) == 2
+
+
 def test_skill_and_graph_api_smoke(
     api_app: FastAPI,
     wiki: MemoryWikiManager,
@@ -244,3 +328,109 @@ def test_skill_and_graph_api_smoke(
 
     delete_resp = client.delete(f"/api/v1/skills/{second.skill_id}")
     assert delete_resp.status_code == 200
+
+
+def test_skill_api_auto_syncs_graph_relations(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    child_resp = client.post("/api/v1/skills", json=create_skill_payload("api_child_one"))
+    assert child_resp.status_code == 201
+    child_id = child_resp.json()["skill_id"]
+
+    other_resp = client.post("/api/v1/skills", json=create_skill_payload("api_child_two"))
+    assert other_resp.status_code == 201
+    other_id = other_resp.json()["skill_id"]
+
+    parent_resp = client.post(
+        "/api/v1/skills",
+        json=create_skill_payload(
+            "api_parent_flow",
+            skill_type="functional",
+            sub_skill_ids=[child_id],
+        ),
+    )
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["skill_id"]
+
+    graph_resp = client.get("/api/v1/graph")
+    assert graph_resp.status_code == 200
+    edges = graph_resp.json()["edges"]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "composes_with"
+    ]
+
+    update_resp = client.patch(
+        f"/api/v1/skills/{parent_id}",
+        json={"implementation": {"language": "python", "sub_skill_ids": [other_id]}},
+    )
+    assert update_resp.status_code == 200
+
+    manual_resp = client.post(
+        "/api/v1/graph/edges",
+        json={
+            "source_id": parent_id,
+            "target_id": child_id,
+            "edge_type": "depends_on",
+            "weight": 0.7,
+        },
+    )
+    assert manual_resp.status_code == 200
+
+    graph_resp = client.get("/api/v1/graph")
+    edges = graph_resp.json()["edges"]
+    assert not [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "composes_with"
+    ]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == other_id
+        and edge["edge_type"] == "composes_with"
+    ]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "depends_on"
+    ]
+
+    stats_resp = client.get("/api/v1/graph/stats/overview")
+    assert stats_resp.status_code == 200
+    assert stats_resp.json()["edge_type_distribution"]["composes_with"] == 1
+
+    subgraph_resp = client.post("/api/v1/graph/subgraph", json={"skill_id": parent_id, "depth": 1})
+    assert subgraph_resp.status_code == 200
+    assert any(edge["target"] == other_id for edge in subgraph_resp.json()["edges"])
+
+    delete_resp = client.delete(f"/api/v1/skills/{other_id}")
+    assert delete_resp.status_code == 200
+    graph_resp = client.get("/api/v1/graph")
+    assert all(
+        other_id not in {edge["source"], edge["target"]}
+        for edge in graph_resp.json()["edges"]
+    )
+
+
+def test_skill_api_skips_missing_auto_edge_targets(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    parent_resp = client.post(
+        "/api/v1/skills",
+        json=create_skill_payload(
+            "api_missing_child_flow",
+            skill_type="functional",
+            sub_skill_ids=["missing-skill-id"],
+        ),
+    )
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["skill_id"]
+
+    subgraph_resp = client.post("/api/v1/graph/subgraph", json={"skill_id": parent_id, "depth": 1})
+    assert subgraph_resp.status_code == 200
+    assert subgraph_resp.json()["edges"] == []
