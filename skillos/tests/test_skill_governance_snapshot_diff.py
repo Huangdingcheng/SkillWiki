@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from skillos.layers.skill_governance import (
     GitVersionStore,
     commit_skill_snapshot,
@@ -11,6 +13,7 @@ from skillos.layers.skill_governance import (
     skill_snapshot_path,
     skill_to_snapshot,
     skill_to_snapshot_json,
+    write_skill_snapshot,
 )
 from skillos.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 
@@ -96,6 +99,25 @@ def test_snapshot_path_uses_skill_id_and_version() -> None:
     skill = _make_skill()
 
     assert skill_snapshot_path(skill) == "skills/skill-123/1.0.0.json"
+
+
+def test_snapshot_path_rejects_unsafe_skill_id() -> None:
+    for unsafe_id in ("../outside", "bad/id", "bad\\id", "bad id"):
+        skill = _make_skill()
+        skill.skill_id = unsafe_id
+
+        with pytest.raises(ValueError, match="Invalid Skill snapshot skill_id"):
+            skill_snapshot_path(skill)
+
+
+def test_write_snapshot_rejects_unsafe_path_before_writing(tmp_path: Path) -> None:
+    skill = _make_skill()
+    skill.skill_id = "../outside"
+
+    with pytest.raises(ValueError, match="Invalid Skill snapshot skill_id"):
+        write_skill_snapshot(tmp_path, skill)
+
+    assert not (tmp_path.parent / "outside").exists()
 
 
 def test_description_change_is_not_breaking() -> None:

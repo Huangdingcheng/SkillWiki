@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -43,6 +44,8 @@ DIFF_FIELDS = (
     "implementation.sub_skill_ids",
 )
 
+SAFE_PATH_COMPONENT = re.compile(r"^[A-Za-z0-9._-]+$")
+
 
 @dataclass(frozen=True)
 class SkillSnapshotDiff:
@@ -66,7 +69,9 @@ class SkillSnapshotDiff:
 
 def skill_snapshot_path(skill: Skill) -> str:
     """Return the repo-relative snapshot path for a Skill version."""
-    return f"skills/{skill.skill_id}/{skill.version}.json"
+    skill_id = _safe_snapshot_component(skill.skill_id, "skill_id")
+    version = _safe_snapshot_component(skill.version, "version")
+    return f"skills/{skill_id}/{version}.json"
 
 
 def skill_to_snapshot(skill: Skill) -> Dict[str, Any]:
@@ -88,7 +93,10 @@ def skill_to_snapshot_json(skill: Skill) -> str:
 def write_skill_snapshot(repo_path: str | Path, skill: Skill) -> str:
     """Write a Skill snapshot under the repo path and return its relative path."""
     relative_path = skill_snapshot_path(skill)
-    target = Path(repo_path) / relative_path
+    repo_root = Path(repo_path).resolve()
+    target = (repo_root / relative_path).resolve()
+    if not target.is_relative_to(repo_root):
+        raise ValueError("Skill snapshot path must stay inside the repository.")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(skill_to_snapshot_json(skill), encoding="utf-8")
     return relative_path
@@ -127,6 +135,12 @@ def diff_skill_snapshots(
 
 def has_breaking_changes(diffs: List[SkillSnapshotDiff]) -> bool:
     return any(diff.is_breaking for diff in diffs)
+
+
+def _safe_snapshot_component(value: str, field_name: str) -> str:
+    if not value or not SAFE_PATH_COMPONENT.fullmatch(value) or ".." in value:
+        raise ValueError(f"Invalid Skill snapshot {field_name}: {value!r}")
+    return value
 
 
 def _coerce_snapshot(snapshot: Mapping[str, Any] | str) -> Dict[str, Any]:
