@@ -57,7 +57,17 @@ class SearchResult:
     match_reasons: List[str] = field(default_factory=list)
 ```
 
-第一阶段不引入 embedding，内存搜索仍使用关键词、标签、质量分和状态分。`score` 会归一到 `[0, 1]`，`match_reasons` 使用可读文本，避免前端和 C/D 日志出现新的乱码。
+当前阶段不引入 embedding，搜索仍使用规则型混合评分。`score` 会归一到 `[0, 1]`，`match_reasons` 使用可读文本，避免前端和 C/D 日志出现新的乱码。
+
+第二阶段已将搜索评分抽成共享逻辑，内存 demo 搜索和未来持久化搜索共用同一套规则：
+
+- 文本会同时匹配 `name`、`display_name`、`description`、`tags`、`domain`。
+- `fill form` 可以匹配 `fill_form`，用于支持自然语言和 snake_case 之间的轻量映射。
+- 精确名称匹配权重最高，名称 token 命中次之，描述/标签/领域命中作为补充分。
+- `tags`、`skill_type`、`domain`、`state`、`min_success_rate`、`include_deprecated` 的过滤语义保持一致。
+- 默认过滤 `DEPRECATED` / `ARCHIVED`，只有 `include_deprecated=True` 时才返回。
+- 同名多版本 Skill 会保留最高分版本。
+- 同分时按状态、成功率、使用次数、更新时间稳定排序。
 
 ### SkillGraph
 
@@ -103,12 +113,19 @@ async def get_stats() -> Dict[str, Any]
 - 修正 Skill API 在内存模式下更新/删除会访问不存在 `wiki.db` / `wiki.cache` 的问题。
 - 补充 `tests/test_skill_repository_phase1.py` 覆盖 Wiki、Search、Graph 和 API 冒烟。
 
+## 第二阶段完成项
+
+- 新增共享评分入口 `score_skill_match()` 和排序入口 `rank_search_results()`。
+- `MemorySearchEngine` 改为复用共享评分逻辑，避免内存 demo 和生产搜索排序漂移。
+- 搜索结果的 `match_reasons` 使用稳定英文原因，例如 `exact name match`、`tag match`、`domain match`。
+- `/api/v1/skills/search` 支持 `domain`、`min_success_rate`、`include_deprecated` 请求字段。
+- 补充 `tests/test_skill_repository_search_phase2.py` 覆盖搜索排序、过滤、去重、可读原因和 API 冒烟。
+
 ## 后续阶段
 
-1. 搜索索引质量增强：更细的权重、字段匹配原因、候选去重和排序稳定性。
-2. Graph 自动构建：Skill 创建/更新时自动同步节点，并根据 `sub_skill_ids` 建立 `composes_with` 边。
-3. 持久化适配准备：整理 PostgreSQL / Neo4j 接入边界，保持内存 fallback 可用。
-4. 联调交付：与 C Retriever、D Librarian / Evolution、E Wiki / Graph、B Snapshot API 做真实数据联调。
+1. Graph 自动构建：Skill 创建/更新时自动同步节点，并根据 `sub_skill_ids` 建立 `composes_with` 边。
+2. 持久化适配准备：整理 PostgreSQL / Neo4j 接入边界，保持内存 fallback 可用。
+3. 联调交付：与 C Retriever、D Librarian / Evolution、E Wiki / Graph、B Snapshot API 做真实数据联调。
 
 ## 验证
 
@@ -118,5 +135,6 @@ async def get_stats() -> Dict[str, Any]
 cd C:\Users\m1516\Desktop\SKILLOS\skillos\skillos
 python -m compileall -q skillos\layers\skill_repository skillos\api\routes\skills.py skillos\api\routes\graph.py skillos\api\memory_store.py
 python -m pytest tests\test_skill_repository_phase1.py -q
+python -m pytest tests\test_skill_repository_search_phase2.py -q
 git diff --check
 ```

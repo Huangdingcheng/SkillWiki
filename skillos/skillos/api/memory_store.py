@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from collections import deque
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set
 
-from ..layers.skill_repository.indexing import SearchQuery, SearchResult
+from ..layers.skill_repository.indexing import SearchQuery, SearchResult, rank_search_results
 from ..models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
 from ..models.skill_model import EdgeType, Skill, SkillState, SkillType
 from ..utils.logger import get_logger
@@ -380,69 +379,7 @@ class MemorySearchEngine:
             domain=query.domain,
             limit=10000,
         )
-        if not query.include_deprecated:
-            skills = [
-                skill for skill in skills
-                if skill.state not in (SkillState.DEPRECATED, SkillState.ARCHIVED)
-            ]
-        if query.tags:
-            required_tags = {tag.strip().lower() for tag in query.tags if tag.strip()}
-            skills = [skill for skill in skills if required_tags & set(skill.tags)]
-        if query.min_success_rate > 0:
-            skills = [
-                skill for skill in skills
-                if skill.metrics.success_rate >= query.min_success_rate
-            ]
-
-        keywords = set(_tokens(query.text))
-        results = [self._score(skill, query, keywords) for skill in skills]
-        results = [result for result in results if result.score > 0.0 or not keywords]
-        results.sort(reverse=True)
-        return results[: query.max_results]
-
-    def _score(self, skill: Skill, query: SearchQuery, keywords: Set[str]) -> SearchResult:
-        score = 0.0
-        reasons: List[str] = []
-
-        if keywords:
-            text_tokens = set(_tokens(f"{skill.name} {skill.description} {' '.join(skill.tags)}"))
-            matched = sorted(keywords & text_tokens)
-            text_score = len(matched) / len(keywords)
-            score += text_score * 0.45
-            if matched:
-                reasons.append(f"text matched: {', '.join(matched)}")
-
-        if query.tags:
-            requested_tags = {tag.strip().lower() for tag in query.tags if tag.strip()}
-            matched_tags = sorted(requested_tags & set(skill.tags))
-            tag_score = len(matched_tags) / max(len(requested_tags), 1)
-            score += tag_score * 0.2
-            if matched_tags:
-                reasons.append(f"tags matched: {', '.join(matched_tags)}")
-
-        quality = skill.metrics.success_rate if skill.metrics.total_executions else 0.5
-        score += quality * 0.2
-        if skill.metrics.total_executions:
-            reasons.append(f"success rate: {skill.metrics.success_rate:.0%}")
-
-        state_score = {
-            SkillState.RELEASED: 1.0,
-            SkillState.VERIFIED: 0.7,
-            SkillState.DEGRADED: 0.5,
-            SkillState.SKILL_CANDIDATE: 0.4,
-            SkillState.DRAFT: 0.3,
-        }.get(skill.state, 0.1)
-        score += state_score * 0.15
-
-        return SearchResult(
-            skill=skill,
-            score=max(0.0, min(score, 1.0)),
-            match_reasons=reasons,
-        )
-
-
-def _tokens(text: str) -> List[str]:
-    return [token for token in re.split(r"[\s\.,;:!?\-_/\\]+", text.lower()) if token]
+        return rank_search_results(skills, query)
 
 
 def _version_key(version: str) -> List[int]:
