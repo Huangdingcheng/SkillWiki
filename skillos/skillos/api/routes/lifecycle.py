@@ -2,17 +2,37 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...layers.skill_governance import (
+    GitVersionStore,
+    GitVersionStoreError,
+    diff_skill_snapshots,
+    has_breaking_changes,
+    read_skill_snapshot_at_ref,
+    release_skill_snapshot,
+    restore_skill_snapshot,
+    skill_snapshot_path,
+    skill_to_snapshot,
+    write_skill_snapshot,
+)
 from ..deps import AppState, get_app_state
 from ..schemas import (
     DeprecateRequest,
     NewVersionRequest,
     OKResponse,
     ReleaseRequest,
+    ReleaseTagRequest,
+    RollbackRequest,
     SkillSummary,
+    SnapshotCommitRequest,
+    SnapshotCommitResponse,
+    SnapshotDiffResponse,
+    SnapshotHistoryResponse,
     TransitionRequest,
 )
 
@@ -202,6 +222,121 @@ async def diff_two_versions(
     }
 
 
+@router.post("/{skill_id}/snapshot", response_model=SnapshotCommitResponse)
+async def commit_skill_snapshot_endpoint(
+    skill_id: str,
+    req: SnapshotCommitRequest,
+    app: AppState = Depends(get_app_state),
+) -> SnapshotCommitResponse:
+    skill = await _get_skill_or_404(skill_id, app)
+    repo_path = _governance_repo_path()
+    store = GitVersionStore(repo_path)
+    snapshot_path = write_skill_snapshot(repo_path, skill)
+    message = req.message or f"skill({skill.name}): snapshot v{skill.version}"
+    try:
+        commit = store.commit_paths([snapshot_path], message, author_name=req.author)
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return SnapshotCommitResponse(
+        skill_id=skill.skill_id,
+        skill_name=skill.name,
+        version=skill.version,
+        snapshot_path=snapshot_path,
+        commit=commit,
+        message=message,
+    )
+
+
+@router.get("/{skill_id}/snapshot/history", response_model=SnapshotHistoryResponse)
+async def get_skill_snapshot_history(
+    skill_id: str,
+    max_count: int = 20,
+    app: AppState = Depends(get_app_state),
+) -> SnapshotHistoryResponse:
+    skill = await _get_skill_or_404(skill_id, app)
+    repo_path = _governance_repo_path()
+    store = GitVersionStore(repo_path)
+    snapshot_path = skill_snapshot_path(skill)
+    try:
+        history = store.commit_history(snapshot_path, max_count=max_count)
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return SnapshotHistoryResponse(
+        skill_id=skill.skill_id,
+        snapshot_path=snapshot_path,
+        history=[
+            {
+                "commit_hash": item.commit_hash,
+                "author": item.author,
+                "authored_at": item.authored_at,
+                "subject": item.subject,
+                "changed_paths": list(item.changed_paths),
+            }
+            for item in history
+        ],
+    )
+
+
+@router.get("/{skill_id}/snapshot/diff", response_model=SnapshotDiffResponse)
+async def get_skill_snapshot_diff(
+    skill_id: str,
+    from_ref: str,
+    to_ref: str = "HEAD",
+    app: AppState = Depends(get_app_state),
+) -> SnapshotDiffResponse:
+    skill = await _get_skill_or_404(skill_id, app)
+    repo_path = _governance_repo_path()
+    store = GitVersionStore(repo_path)
+    snapshot_path = skill_snapshot_path(skill)
+    try:
+        raw_diff = store.diff_between(from_ref, to_ref, snapshot_path)
+        old_snapshot = read_skill_snapshot_at_ref(repo_path, from_ref, snapshot_path, store)
+        try:
+            new_snapshot = read_skill_snapshot_at_ref(repo_path, to_ref, snapshot_path, store)
+        except GitVersionStoreError:
+            new_snapshot = skill_to_snapshot(skill)
+        diffs = diff_skill_snapshots(old_snapshot, new_snapshot)
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return SnapshotDiffResponse(
+        skill_id=skill.skill_id,
+        snapshot_path=snapshot_path,
+        from_ref=from_ref,
+        to_ref=to_ref,
+        raw_diff=raw_diff,
+        diffs=[item.to_dict() for item in diffs],
+        has_breaking_changes=has_breaking_changes(diffs),
+    )
+
+
+@router.post("/{skill_id}/release-tag", response_model=Dict[str, Any])
+async def create_skill_release_tag(
+    skill_id: str,
+    req: ReleaseTagRequest,
+    app: AppState = Depends(get_app_state),
+) -> Dict[str, Any]:
+    skill = await _get_skill_or_404(skill_id, app)
+    repo_path = _governance_repo_path()
+    try:
+        return release_skill_snapshot(repo_path, skill, ref=req.ref).to_dict()
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{skill_id}/rollback", response_model=Dict[str, Any])
+async def rollback_skill_snapshot(
+    skill_id: str,
+    req: RollbackRequest,
+    app: AppState = Depends(get_app_state),
+) -> Dict[str, Any]:
+    skill = await _get_skill_or_404(skill_id, app)
+    repo_path = _governance_repo_path()
+    try:
+        return restore_skill_snapshot(repo_path, skill, req.source_ref).to_dict()
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 def _format_diff(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
     """将 diff 字典格式化为前端友好的行列表。"""
     lines = []
@@ -227,3 +362,17 @@ def _format_diff(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "new_lines": str(change).splitlines() or [str(change)],
             })
     return lines
+
+
+async def _get_skill_or_404(skill_id: str, app: AppState):
+    skill = await app.wiki.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
+    return skill
+
+
+def _governance_repo_path() -> Path:
+    configured = os.environ.get("SKILLOS_GOVERNANCE_REPO")
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parents[4]
