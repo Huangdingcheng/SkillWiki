@@ -47,7 +47,15 @@ Task:
 - Identify one reusable Skill from the task.
 - Prefer a small atomic Skill unless the task clearly needs composition.
 - Use stable snake_case for the skill name.
+- Use skill_type only from: atomic, functional, strategic.
+- Make prompt_template variables match input_schema.properties.
+- Do not create vague skills such as "handle_task" or "process_data".
 - Keep all fields concise and useful for a future agent.
+
+Quality examples:
+- Atomic: extract_api_endpoint, input api_document, output endpoints.
+- Functional: summarize_execution_trace, input trajectory_text, output summary and action_count.
+- Strategic: plan_multi_step_repair, input failure_report, output repair_plan.
 
 Return only valid JSON with this shape:
 {{
@@ -83,7 +91,15 @@ Execution trajectory:
 Task:
 - Extract one reusable Skill from the trajectory.
 - Use stable snake_case for the skill name.
+- Use skill_type only from: atomic, functional, strategic.
+- Make prompt_template variables match input_schema.properties.
+- Prefer an atomic Skill unless the trajectory clearly shows a reusable multi-step workflow.
 - Keep schemas valid JSON Schema objects.
+
+Quality examples:
+- Atomic: click_confirm_button from a repeated click step.
+- Functional: import_markdown_document from parse, validate, and create steps.
+- Strategic: diagnose_failed_execution from error clustering and repair planning.
 
 Return only valid JSON with this shape:
 {{
@@ -142,17 +158,14 @@ class SkillBuilderAgent:
         raw_input: str,
     ) -> SkillDraft:
         name = _safe_skill_name(data.get("name"), fallback=f"skill_from_{source_type}")
-        description = _safe_text(
-            data.get("description"),
-            fallback=f"Execute a reusable workflow derived from {source_type}.",
-        )
         skill_type = _safe_skill_type(data.get("skill_type"))
-        input_schema = _safe_schema(data.get("input_schema"))
-        output_schema = _safe_schema(data.get("output_schema"))
         prompt_template = _safe_text(
             data.get("prompt_template"),
             fallback=f"Execute the reusable {name.replace('_', ' ')} workflow.",
         )
+        description = _safe_description(data.get("description"), source_type=source_type, name=name)
+        input_schema = _align_schema_with_prompt(_safe_schema(data.get("input_schema")), prompt_template)
+        output_schema = _safe_schema(data.get("output_schema"))
 
         skill = Skill(
             name=name,
@@ -236,6 +249,14 @@ def _safe_text(value: Any, *, fallback: str) -> str:
     return text if text else fallback
 
 
+def _safe_description(value: Any, *, source_type: str, name: str) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 16:
+        return text
+    readable_name = name.replace("_", " ")
+    return f"Reusable {readable_name} skill derived from {source_type} input."
+
+
 def _safe_skill_name(value: Any, *, fallback: str) -> str:
     raw = str(value or fallback or "").strip().lower()
     raw = re.sub(r"[^a-z0-9_]+", "_", raw)
@@ -260,9 +281,46 @@ def _safe_schema(value: Any) -> Dict[str, Any]:
         schema["type"] = "object"
     if not isinstance(schema.get("properties"), dict):
         schema["properties"] = {}
+    else:
+        schema["properties"] = {
+            str(key): prop if isinstance(prop, dict) else {"type": "string"}
+            for key, prop in schema["properties"].items()
+            if str(key).strip()
+        }
     if "required" in schema and not isinstance(schema["required"], list):
         schema["required"] = []
+    if isinstance(schema.get("required"), list):
+        properties = schema.get("properties", {})
+        schema["required"] = [
+            str(field)
+            for field in schema["required"]
+            if isinstance(field, str) and field in properties
+        ]
     return schema
+
+
+def _align_schema_with_prompt(schema: Dict[str, Any], prompt_template: str) -> Dict[str, Any]:
+    properties = schema.setdefault("properties", {})
+    for variable in sorted(_extract_prompt_variables(prompt_template)):
+        if variable not in properties:
+            properties[variable] = {
+                "type": "string",
+                "description": f"Value for the {variable} prompt variable.",
+            }
+    if "required" in schema and isinstance(schema["required"], list):
+        schema["required"] = [
+            field for field in schema["required"] if isinstance(field, str) and field in properties
+        ]
+    return schema
+
+
+def _extract_prompt_variables(prompt_template: str) -> set[str]:
+    variables: set[str] = set()
+    for match in re.finditer(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", prompt_template):
+        variables.add(match.group(1))
+    for match in re.finditer(r"(?<!\{)\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}(?!\})", prompt_template):
+        variables.add(match.group(1))
+    return variables
 
 
 def _safe_tags(value: Any, source_type: str) -> List[str]:

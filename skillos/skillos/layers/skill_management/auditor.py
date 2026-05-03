@@ -72,6 +72,7 @@ class SkillAuditorAgent:
         schema_ok = True
         safety_ok = True
         postcondition_ok = True
+        quality_penalty = 0.0
 
         input_schema = skill.interface.input_schema or {}
         output_schema = skill.interface.output_schema or {}
@@ -87,6 +88,10 @@ class SkillAuditorAgent:
             issues.append("output_schema must be an object schema with a properties object")
             schema_ok = False
             recommendations.append("Set output_schema to {'type': 'object', 'properties': {...}}")
+            output_properties = output_properties if isinstance(output_properties, dict) else {}
+        elif not output_properties:
+            recommendations.append("Define output_schema.properties so downstream agents know what this Skill returns")
+            quality_penalty += 0.05
 
         required = input_schema.get("required", [])
         if required is None:
@@ -107,7 +112,31 @@ class SkillAuditorAgent:
             recommendations.append("Rename the Skill using snake_case, for example 'click_submit_button'")
             schema_ok = False
 
+        if len(str(skill.description or "").strip()) < 16:
+            recommendations.append("Expand the Skill description so it explains reusable behavior, not only a task name")
+            quality_penalty += 0.05
+
         impl = skill.implementation
+        if impl is None:
+            issues.append("skill implementation is missing")
+            recommendations.append("Provide a prompt_template, code implementation, or sub_skill_ids")
+            postcondition_ok = False
+        elif impl.prompt_template is not None and not impl.prompt_template.strip():
+            issues.append("prompt_template is empty")
+            recommendations.append("Remove the blank prompt_template or replace it with an executable prompt")
+            postcondition_ok = False
+
+        skill_type = skill.skill_type.value
+        if skill_type == "strategic" and skill.meta_category is None:
+            issues.append("strategic Skill must define meta_category")
+            recommendations.append("Set meta_category for strategic Skills so downstream routing can classify it")
+            postcondition_ok = False
+        if skill_type in {"functional", "strategic"} and impl and not impl.sub_skill_ids:
+            recommendations.append(
+                "Functional or strategic Skills should document composition intent or reference sub_skill_ids"
+            )
+            quality_penalty += 0.05
+
         if impl and impl.code:
             dangerous = ["os.system", "subprocess", "eval(", "exec(", "__import__", "open("]
             for d in dangerous:
@@ -115,7 +144,7 @@ class SkillAuditorAgent:
                     issues.append(f"code contains potentially dangerous operation: {d}")
                     recommendations.append("Remove dangerous operations or wrap them in a reviewed safe tool")
                     safety_ok = False
-        if impl and impl.prompt_template:
+        if impl and impl.prompt_template and impl.prompt_template.strip():
             prompt_vars = _extract_prompt_variables(impl.prompt_template)
             for var_name in sorted(prompt_vars):
                 if var_name not in input_properties:
@@ -160,7 +189,14 @@ class SkillAuditorAgent:
                 schema_ok = bool(data.get("schema_ok", schema_ok)) and schema_ok
                 safety_ok = bool(data.get("safety_ok", safety_ok)) and safety_ok
                 postcondition_ok = bool(data.get("postcondition_ok", postcondition_ok))
-                audit_score = _clamp_float(data.get("audit_score"), default=0.8)
+                local_score = _score_audit(
+                    schema_ok=schema_ok,
+                    safety_ok=safety_ok,
+                    postcondition_ok=postcondition_ok,
+                    issue_count=len(issues),
+                    quality_penalty=quality_penalty,
+                )
+                audit_score = min(_clamp_float(data.get("audit_score"), default=0.8), local_score)
                 passed = (
                     bool(data.get("passed", True))
                     and schema_ok
@@ -193,7 +229,13 @@ class SkillAuditorAgent:
             postcondition_ok=postcondition_ok,
             issues=issues,
             recommendations=recommendations,
-            audit_score=_clamp_float(1.0 - len(issues) * 0.1, default=0.0),
+            audit_score=_score_audit(
+                schema_ok=schema_ok,
+                safety_ok=safety_ok,
+                postcondition_ok=postcondition_ok,
+                issue_count=len(issues),
+                quality_penalty=quality_penalty,
+            ),
         )
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
@@ -241,3 +283,23 @@ def _clamp_float(value: Any, *, default: float) -> float:
     except (TypeError, ValueError):
         number = default
     return max(0.0, min(1.0, number))
+
+
+def _score_audit(
+    *,
+    schema_ok: bool,
+    safety_ok: bool,
+    postcondition_ok: bool,
+    issue_count: int,
+    quality_penalty: float,
+) -> float:
+    score = 1.0
+    if not schema_ok:
+        score -= 0.35
+    if not safety_ok:
+        score -= 0.45
+    if not postcondition_ok:
+        score -= 0.25
+    score -= min(0.25, issue_count * 0.05)
+    score -= quality_penalty
+    return max(0.0, min(1.0, score))

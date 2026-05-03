@@ -7,7 +7,13 @@ from datetime import UTC, datetime
 from skillos.api.schemas import EvolutionCycleResponse, HealthReportResponse, SystemHealthResponse
 from skillos.layers.feedback_evolution import HealthStatus, SkillHealthReport, SkillRepair
 from skillos.layers.skill_management import SkillAuditorAgent, SkillBuilderAgent
-from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillType
+from skillos.models.skill_model import (
+    MetaSkillCategory,
+    Skill,
+    SkillImplementation,
+    SkillInterface,
+    SkillType,
+)
 
 
 class FakeResponse:
@@ -68,6 +74,76 @@ def test_builder_fallback_is_readable_and_structured() -> None:
     assert draft.confidence == 0.1
 
 
+def test_builder_aligns_prompt_variables_with_input_schema() -> None:
+    llm = FakeLLM(
+        """
+        {
+          "name": "Search Docs",
+          "description": "Search a document source for a user query.",
+          "skill_type": "functional",
+          "tags": ["search"],
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "source": {"type": "string"}
+            },
+            "required": ["source", "missing_field"]
+          },
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "answer": {"type": "string"}
+            }
+          },
+          "prompt_template": "Search {query} inside {{source}}.",
+          "confidence": 0.8,
+          "build_notes": "Reusable search workflow"
+        }
+        """
+    )
+
+    draft = SkillBuilderAgent(llm).build_from_task("search docs")
+    input_schema = draft.skill.interface.input_schema
+
+    assert draft.skill.name == "search_docs"
+    assert input_schema["properties"]["source"]["type"] == "string"
+    assert input_schema["properties"]["query"]["type"] == "string"
+    assert "missing_field" not in input_schema["required"]
+
+
+def test_builder_sets_meta_category_for_strategic_skill() -> None:
+    llm = FakeLLM(
+        """
+        {
+          "name": "plan repair",
+          "description": "Plan a multi-step repair from a failure report.",
+          "skill_type": "strategic",
+          "tags": ["repair"],
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "failure_report": {"type": "string"}
+            }
+          },
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "repair_plan": {"type": "string"}
+            }
+          },
+          "prompt_template": "Plan repair steps for {failure_report}.",
+          "confidence": 0.9,
+          "build_notes": "Strategic repair planning"
+        }
+        """
+    )
+
+    draft = SkillBuilderAgent(llm).build_from_task("plan repair")
+
+    assert draft.skill.skill_type == SkillType.STRATEGIC
+    assert draft.skill.meta_category == MetaSkillCategory.GENERATION
+
+
 def test_auditor_fails_when_required_field_missing_from_properties() -> None:
     skill = Skill(
         name="login_user",
@@ -111,6 +187,53 @@ def test_auditor_fails_when_prompt_variable_missing_from_schema() -> None:
     assert not result.passed
     assert not result.schema_ok
     assert any("otp_code" in issue for issue in result.issues)
+
+
+def test_auditor_fails_dangerous_code_and_weights_score() -> None:
+    skill = Skill(
+        name="run_command",
+        description="Run a shell command for an automation task.",
+        interface=SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+            output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+        ),
+        implementation=SkillImplementation(code="import subprocess\nsubprocess.run(command)"),
+    )
+
+    result = SkillAuditorAgent(FakeLLM(should_raise=True)).audit(skill)
+
+    assert not result.passed
+    assert not result.safety_ok
+    assert any("subprocess" in issue for issue in result.issues)
+    assert result.audit_score <= 0.5
+
+
+def test_auditor_passes_valid_prompt_skill_with_stable_score() -> None:
+    skill = Skill(
+        name="extract_title",
+        description="Extract a readable title from a source document.",
+        interface=SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {"document_text": {"type": "string"}},
+                "required": ["document_text"],
+            },
+            output_schema={"type": "object", "properties": {"title": {"type": "string"}}},
+        ),
+        implementation=SkillImplementation(prompt_template="Extract one title from {document_text}."),
+    )
+
+    result = SkillAuditorAgent(FakeLLM(should_raise=True)).audit(skill)
+
+    assert result.passed
+    assert result.schema_ok
+    assert result.safety_ok
+    assert result.postcondition_ok
+    assert result.audit_score >= 0.8
 
 
 async def test_repair_returns_clear_failure_when_llm_fails() -> None:

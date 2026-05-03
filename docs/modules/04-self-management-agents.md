@@ -322,9 +322,39 @@ skillos/skillos/layers/
 - Repair：LLM 调用失败时返回清楚错误，不抛出到 API 层。
 - Evolution：健康报告、系统健康、演化周期响应字段保持稳定。
 
-### 暂未完成项
+## 第二阶段完成内容（agents-dev）
 
-以下内容不属于第一阶段，放到后续阶段：
+第二阶段目标是增强 Builder 和 Auditor 的质量判断，不新增跨组接口，不进入 merge、自动演化或 WebSocket 告警。
+
+### Builder 质量增强
+
+- `build_from_task()` 和 `build_from_trajectory()` 的 LLM prompt 增加 few-shot 风格示例，覆盖 atomic、functional、strategic 三类 Skill。
+- prompt 明确要求 `skill_type` 只能是 `atomic` / `functional` / `strategic`，并要求 `prompt_template` 变量与 `input_schema.properties` 对齐。
+- Builder 会自动补齐 prompt 中出现但 schema 未声明的变量，补为 string 类型参数。
+- Builder 会清理 `required` 中不存在于 `properties` 的字段，避免生成不一致 schema。
+- description 为空或过短时会补成可读说明，减少候选 Skill 只有空描述或任务名的情况。
+
+### Auditor 规则增强
+
+- 缺少 implementation 或空 `prompt_template` 会进入 `issues`。
+- `output_schema.properties` 为空时给出 `recommendations` 并轻微扣分，但不直接阻断合法 Skill。
+- `subprocess`、`eval(`、`exec(`、`open(` 等危险代码命中后 `safety_ok = false`，审计不通过。
+- functional / strategic Skill 缺少组合意图或 `sub_skill_ids` 时给出质量建议，不强制改变接口。
+- 审计分数从简单按 issue 数扣分改为轻量权重，最终仍保持 `[0, 1]`。
+
+### 新增测试覆盖
+
+`tests/test_skill_management_phase1.py` 在第一阶段测试基础上新增：
+
+- Builder 自动补齐 prompt 变量到 `input_schema.properties`。
+- Builder 自动清理无效 `required` 字段。
+- Builder 对 strategic Skill 自动补 `MetaSkillCategory.GENERATION`。
+- Auditor 对危险代码失败，并给出更低审计分数。
+- Auditor 对合法 prompt Skill 通过，且审计分数保持较高。
+
+### 前两阶段仍未完成项
+
+以下内容不属于第一、第二阶段，放到后续阶段：
 
 - `merge_redundant_skills` 的完整合并流程。
 - 演化周期自动定时触发。
