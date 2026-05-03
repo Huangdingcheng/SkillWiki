@@ -62,7 +62,10 @@ class SkillSearchRequest(BaseModel):
     query: str
     tags: Optional[List[str]] = None
     skill_type: Optional[SkillType] = None
+    domain: Optional[str] = None
     state: Optional[SkillState] = None
+    min_success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    include_deprecated: bool = False
     limit: int = Field(default=20, ge=1, le=100)
 
 

@@ -1,203 +1,122 @@
 # Module 01: Skill Repository Layer
 
-**负责人分支：`repo-dev`**
+负责人分支：`repo-dev`
 
----
+## 职责概览
 
-## 职责概述
+Skill Repository Layer 是 SkillOS 的 Skill 存储与关系底座，主要负责：
 
-Skill Repository Layer 是 SkillOS 的知识存储核心，负责：
-- Skill 的持久化存储（CRUD）
-- 语义检索与相似度搜索
-- 异构知识图谱的构建与查询
-- 版本历史管理
+- SkillWiki：Skill 的创建、读取、更新、删除、版本列表和执行统计。
+- Search：按自然语言、标签、类型、状态、领域和成功率检索 Skill。
+- SkillGraph：维护 Skill 之间的依赖、组合、相似、演化等关系。
+- Wiki / Graph API：为 C 执行层、D 自管理 Agent、E 前端展示、B 版本治理提供稳定数据入口。
 
----
+当前第一阶段仍以 demo 可跑为优先，使用内存实现，不接 PostgreSQL / Neo4j。
 
-## 子模块
+## 当前实现
 
-### 1.1 SkillWiki（`layers/skill_repository/repository.py`）
+### SkillWiki
 
-SkillWiki 是 Skill 的主存储，提供完整的 CRUD 接口。
+当前 demo 实现位于 `skillos/api/memory_store.py` 的 `MemoryWikiManager`，对齐生产版 `SkillWikiManager` 的核心行为：
 
-**核心接口：**
 ```python
-class SkillWikiManager:
-    async def create(skill: Skill) -> Skill
-    async def get(skill_id: str) -> Optional[Skill]
-    async def get_many(ids: List[str]) -> Dict[str, Skill]
-    async def update(skill_id: str, **kwargs) -> Skill
-    async def delete(skill_id: str) -> bool
-    async def list(state, skill_type, tags, limit, offset) -> List[Skill]
-    async def search(query: str, limit: int) -> List[Skill]
-    async def get_version_history(name: str) -> List[Skill]
-    async def record_execution(skill_id, success, latency_ms)
+async def create(skill: Skill) -> Skill
+async def get(skill_id: str) -> Optional[Skill]
+async def get_by_name(name: str, version: Optional[str] = None) -> Optional[Skill]
+async def get_many(skill_ids: List[str]) -> Dict[str, Optional[Skill]]
+async def list(skill_type=None, state=None, tags=None, domain=None, name_like=None, limit=100, offset=0) -> List[Skill]
+async def update(skill_id: str, **kwargs) -> Optional[Skill]
+async def delete(skill_id: str) -> bool
+async def get_version_history(name: str) -> List[Skill]
+async def record_execution(skill_id: str, success: bool, latency_ms: float) -> None
+async def get_overview_stats() -> Dict[str, Any]
 ```
 
-**当前实现：** `api/memory_store.py` 中的 `MemoryWikiManager`（内存存储，demo 模式）
+第一阶段修正了 API 路由直接访问 `wiki.db` / `wiki.cache` 的问题。`PATCH /skills/{id}` 和 `DELETE /skills/{id}` 现在统一通过 `app.wiki.update()` / `app.wiki.delete()`，因此内存 demo 模式和未来持久化实现可以共享同一层接口。
 
-**生产实现：** `storage/postgres_db.py`（PostgreSQL 适配器，待接入）
+### Search
 
-### 1.2 Skill Graph（`layers/skill_repository/graph_manager.py`）
+检索契约仍以飞书 `SearchQuery` / `SearchResult` 为准：
 
-异构知识图谱，节点为 Skill，边为关系类型。
-
-**边类型（EdgeType）：**
-| 类型 | 含义 |
-|------|------|
-| `depends_on` | A 依赖 B 才能执行 |
-| `composes_with` | A 与 B 组合使用 |
-| `similar_to` | A 与 B 功能相似 |
-| `evolved_from` | A 从 B 演化而来 |
-| `conflicts_with` | A 与 B 存在冲突 |
-| `replaces` | A 替代了 B |
-| `specializes` | A 是 B 的特化版本 |
-| `generalizes` | A 是 B 的泛化版本 |
-
-**核心接口：**
-```python
-class SkillGraphManager:
-    async def add_node(skill: Skill)
-    async def add_edge(source_id, target_id, edge_type, weight)
-    async def get_subgraph(skill_id, depth) -> GraphData
-    async def get_dependencies(skill_id) -> List[str]
-    async def get_execution_order(skill_ids) -> List[str]  # 拓扑排序
-    async def get_stats() -> Dict
-```
-
-**当前实现：** `api/memory_store.py` 中的 `MemoryGraphManager`
-
-### 1.3 Indexing & Search（`layers/skill_repository/indexing.py`）
-
-基于 BM25 + 语义相似度的混合检索。
-
-**SearchQuery：**
 ```python
 @dataclass
 class SearchQuery:
-    text: str
-    tags: List[str] = []
+    text: str = ""
+    tags: List[str] = field(default_factory=list)
     skill_type: Optional[SkillType] = None
+    domain: Optional[str] = None
     state: Optional[SkillState] = None
-    max_results: int = 10
-```
+    min_success_rate: float = 0.0
+    max_results: int = 20
+    include_deprecated: bool = False
 
-**SearchResult：**
-```python
 @dataclass
 class SearchResult:
     skill: Skill
-    score: float          # 综合相关度分数 [0, 1]
-    match_reasons: List[str]  # 匹配原因列表
-    match_reason: str     # 主要匹配原因（逗号拼接）
+    score: float
+    match_reasons: List[str] = field(default_factory=list)
 ```
 
----
+第一阶段不引入 embedding，内存搜索仍使用关键词、标签、质量分和状态分。`score` 会归一到 `[0, 1]`，`match_reasons` 使用可读文本，避免前端和 C/D 日志出现新的乱码。
 
-## 数据模型
+### SkillGraph
 
-### Skill（`models/skill_model.py`）
+当前 demo 实现位于 `MemoryGraphManager`，支持基础图谱能力：
 
 ```python
-class Skill(BaseModel):
-    skill_id: str                    # UUID，主键
-    name: str                        # 唯一名称
-    description: str
-    skill_type: SkillType            # atomic / functional / strategic
-    state: SkillState                # S0-S7
-    version: str                     # semver，如 "1.0.0"
-    tags: List[str]
-    granularity_level: int           # 1=Atomic, 2=Functional, 3=Strategic
-    interface: SkillInterface        # 输入/输出 Schema + 前后置条件
-    implementation: SkillImplementation  # 实现方式
-    metrics: SkillMetrics            # 执行统计
-    provenance: SkillProvenance      # 来源信息
-    meta_category: Optional[MetaSkillCategory]  # L3 专用分类
-    created_at: datetime
-    updated_at: datetime
+async def sync_skill(skill: Skill) -> None
+async def create_edge(edge: SkillEdge) -> None
+async def get_subgraph(skill_ids: Optional[List[str]] = None, depth: int = 2) -> SkillSubgraph
+async def get_dependency_chain(skill_id: str) -> List[str]
+async def get_execution_order(skill_ids: Union[str, List[str]]) -> List[str]
+async def get_stats() -> Dict[str, Any]
 ```
 
-### SkillInterface
-```python
-class SkillInterface(BaseModel):
-    input_schema: Dict               # JSON Schema
-    output_schema: Dict              # JSON Schema
-    preconditions: List[str]         # 前置条件（自然语言）
-    postconditions: List[str]        # 后置条件（自然语言）
-```
-
-### SkillImplementation
-```python
-class SkillImplementation(BaseModel):
-    language: str                    # "python" / "javascript" 等
-    code: Optional[str]              # 代码实现
-    prompt_template: Optional[str]   # LLM prompt 模板
-    sub_skill_ids: List[str]         # 子 Skill ID 列表（composite 类型）
-    tool_calls: List[str]            # 工具调用列表
-```
-
-### SkillGraph（`models/graph_model.py`）
-```python
-class SkillGraph(BaseModel):
-    nodes: Dict[str, SkillNode]
-    edges: List[SkillEdge]
-```
-
----
+第一阶段只保证基础边、子图、依赖链、执行顺序和统计可用；根据 `sub_skill_ids` 自动建边、相似关系发现、复杂图分析放到后续阶段。
 
 ## API 端点
 
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| `GET` | `/api/v1/skills` | 列出 Skill（支持 state/type/tags 过滤） |
+现有 API 路径保持不变：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/skills` | 列出 Skill，支持状态、类型、标签、分页 |
 | `POST` | `/api/v1/skills` | 创建 Skill |
 | `GET` | `/api/v1/skills/{id}` | 获取 Skill 摘要 |
-| `GET` | `/api/v1/skills/{id}/full` | 获取 Skill 完整信息（含 implementation） |
-| `PATCH` | `/api/v1/skills/{id}` | 更新 Skill |
+| `GET` | `/api/v1/skills/{id}/full` | 获取完整 Skill |
+| `PATCH` | `/api/v1/skills/{id}` | 更新 description、tags、interface、implementation |
 | `DELETE` | `/api/v1/skills/{id}` | 删除 Skill |
-| `POST` | `/api/v1/skills/search` | 语义搜索 |
-| `GET` | `/api/v1/skills/{id}/versions` | 版本历史 |
-| `GET` | `/api/v1/skills/evolution-stats` | 演化统计指标 |
-| `GET` | `/api/v1/graph` | 完整图谱数据 |
-| `POST` | `/api/v1/graph/subgraph` | 子图查询 |
+| `POST` | `/api/v1/skills/search` | 搜索 Skill |
+| `GET` | `/api/v1/skills/{id}/versions` | 获取同名 Skill 版本历史 |
+| `GET` | `/api/v1/graph` | 获取完整图谱数据 |
+| `POST` | `/api/v1/graph/subgraph` | 获取指定 Skill 的局部子图 |
 | `POST` | `/api/v1/graph/edges` | 添加关系边 |
-| `GET` | `/api/v1/graph/{id}/dependencies` | 依赖链 |
-| `GET` | `/api/v1/graph/{id}/execution-order` | 执行顺序（拓扑排序） |
-| `GET` | `/api/v1/graph/stats/overview` | 图谱统计 |
+| `GET` | `/api/v1/graph/{id}/dependencies` | 获取依赖链 |
+| `GET` | `/api/v1/graph/{id}/execution-order` | 获取执行顺序 |
+| `GET` | `/api/v1/graph/stats/overview` | 获取图谱统计 |
 
----
+## 第一阶段完成项
 
-## 关键文件
+- 稳定 `MemoryWikiManager` 的 CRUD、版本历史、过滤、执行统计和 overview stats。
+- 稳定 `MemorySearchEngine` 对 `SearchQuery` 字段的支持。
+- 稳定 `MemoryGraphManager` 的基础边、子图、依赖链、执行顺序和统计。
+- 修正 Skill API 在内存模式下更新/删除会访问不存在 `wiki.db` / `wiki.cache` 的问题。
+- 补充 `tests/test_skill_repository_phase1.py` 覆盖 Wiki、Search、Graph 和 API 冒烟。
 
+## 后续阶段
+
+1. 搜索索引质量增强：更细的权重、字段匹配原因、候选去重和排序稳定性。
+2. Graph 自动构建：Skill 创建/更新时自动同步节点，并根据 `sub_skill_ids` 建立 `composes_with` 边。
+3. 持久化适配准备：整理 PostgreSQL / Neo4j 接入边界，保持内存 fallback 可用。
+4. 联调交付：与 C Retriever、D Librarian / Evolution、E Wiki / Graph、B Snapshot API 做真实数据联调。
+
+## 验证
+
+第一阶段验证命令：
+
+```powershell
+cd C:\Users\m1516\Desktop\SKILLOS\skillos\skillos
+python -m compileall -q skillos\layers\skill_repository skillos\api\routes\skills.py skillos\api\routes\graph.py skillos\api\memory_store.py
+python -m pytest tests\test_skill_repository_phase1.py -q
+git diff --check
 ```
-skillos/skillos/
-├── models/
-│   ├── skill_model.py          # Skill 核心数据模型
-│   └── graph_model.py          # 图谱数据模型
-├── layers/skill_repository/
-│   ├── repository.py           # SkillWikiManager 接口定义
-│   ├── graph_manager.py        # SkillGraphManager
-│   └── indexing.py             # 检索引擎
-├── api/
-│   ├── memory_store.py         # 内存实现（demo 用）
-│   └── routes/
-│       ├── skills.py           # Skill CRUD 路由
-│       └── graph.py            # 图谱路由
-└── storage/
-    ├── postgres_db.py          # PostgreSQL 适配器（生产用）
-    └── neo4j_db.py             # Neo4j 适配器（生产用）
-```
-
----
-
-## 优化方向（Member A 任务）
-
-1. **检索质量提升**：当前 `indexing.py` 使用简单关键词匹配，可引入 embedding 向量检索（如 sentence-transformers）
-2. **图谱自动构建**：当前边需要手动添加，可在 Skill 创建时根据 `sub_skill_ids` 自动建立 `composes_with` 边
-3. **持久化接入**：将 `MemoryWikiManager` 替换为 `PostgresWikiManager`（`storage/postgres_db.py` 已有框架）
-4. **版本历史完善**：`get_version_history` 当前按 name 查询所有版本，可增加版本间 diff 的自动计算
-5. **图谱可视化数据优化**：前端 SkillGraph 页面的节点大小/颜色逻辑可与后端统计数据更紧密联动
-
----
-
-*更新此文档时请同步更新 `architecture.md` 中的接口关系表（联系负责人）*
