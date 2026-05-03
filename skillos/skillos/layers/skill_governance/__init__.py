@@ -9,6 +9,14 @@ from .skill_change_workflow import (
     skill_change_branch_name,
     skill_change_commit_message,
 )
+from .skill_release import (
+    SkillReleaseRecord,
+    SkillRollbackRecord,
+    read_skill_snapshot_at_ref,
+    release_skill_snapshot,
+    restore_skill_snapshot,
+    skill_release_tag_name,
+)
 from .skill_snapshot import (
     SkillSnapshotDiff,
     commit_skill_snapshot,
@@ -30,6 +38,12 @@ __all__ = [
     "skill_change_branch_name",
     "skill_change_commit_message",
     "propose_skill_change",
+    "SkillReleaseRecord",
+    "SkillRollbackRecord",
+    "skill_release_tag_name",
+    "release_skill_snapshot",
+    "read_skill_snapshot_at_ref",
+    "restore_skill_snapshot",
     "SkillSnapshotDiff",
     "skill_snapshot_path",
     "skill_to_snapshot",

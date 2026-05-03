@@ -71,6 +71,33 @@ class GitVersionStore:
         branch = self._normalize_branch_name(branch_name)
         self._run(["checkout", branch])
 
+    def tag_exists(self, tag_name: str) -> bool:
+        """Return True when a local tag exists."""
+        self._require_repo()
+        tag = self._normalize_tag_name(tag_name)
+        try:
+            self._run(["show-ref", "--verify", "--quiet", f"refs/tags/{tag}"])
+        except GitVersionStoreError:
+            return False
+        return True
+
+    def create_tag(self, tag_name: str, ref: str = "HEAD") -> None:
+        """Create a lightweight local tag for a ref."""
+        self._require_repo()
+        tag = self._normalize_tag_name(tag_name)
+        if self.tag_exists(tag):
+            raise GitVersionStoreError(f"Git tag already exists: {tag}")
+        self._run(["tag", tag, ref])
+
+    def read_file_at_ref(self, ref: str, path: str | Path) -> str:
+        """Read a repo-relative file from a commit, branch, or tag."""
+        self._require_repo()
+        git_path = self._normalize_repo_path(path)
+        clean_ref = ref.strip()
+        if not clean_ref:
+            raise ValueError("Git ref cannot be empty.")
+        return self._run(["show", f"{clean_ref}:{git_path}"])
+
     def head_commit(self) -> str:
         """Return the current HEAD commit hash."""
         self._require_repo()
@@ -187,6 +214,16 @@ class GitVersionStore:
         parts = [part for part in branch.split("/") if part]
         if ".." in branch or branch.startswith("/") or branch.endswith("/") or any(part == "." for part in parts):
             raise ValueError(f"Invalid Git branch name: {branch_name!r}")
+        return "/".join(parts)
+
+    @staticmethod
+    def _normalize_tag_name(tag_name: str) -> str:
+        tag = tag_name.strip().replace("\\", "/")
+        if not tag:
+            raise ValueError("Git tag name cannot be empty.")
+        parts = [part for part in tag.split("/") if part]
+        if ".." in tag or tag.startswith("/") or tag.endswith("/") or any(part == "." for part in parts):
+            raise ValueError(f"Invalid Git tag name: {tag_name!r}")
         return "/".join(parts)
 
     @staticmethod
