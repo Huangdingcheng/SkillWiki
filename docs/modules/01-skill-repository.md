@@ -136,6 +136,7 @@ cd C:\Users\m1516\Desktop\SKILLOS\skillos\skillos
 python -m compileall -q skillos\layers\skill_repository skillos\api\routes\skills.py skillos\api\routes\graph.py skillos\api\memory_store.py
 python -m pytest tests\test_skill_repository_phase1.py -q
 python -m pytest tests\test_skill_repository_search_phase2.py -q
+python -m pytest tests\test_skill_repository_persistence_phase4.py -q
 python -m pytest tests\test_models.py tests\test_config.py -q
 python -m pytest skillos\tests\test_layers.py -q
 git diff --check
@@ -155,3 +156,15 @@ git diff --check
 - 目标 Skill 不存在时跳过对应自动边并记录 warning，主 Skill 创建或更新仍然成功。
 
 本阶段不新增 REST endpoint，不修改 `GraphData` / `GraphEdgeData` / `SkillSummary` 返回结构，E 前端可继续消费现有 Graph API。
+
+## Phase 4: Persistence adapter preparation
+
+第四阶段不启动真实 PostgreSQL / Neo4j，也不把 demo 模式强行切到生产数据库。目标是先把持久化适配边界对齐，避免未来替换内存层时出现字段丢失或 Graph 行为不一致。
+
+- PostgreSQL Skill 映射需要保留仓库关系字段，包括 `implementation.sub_skill_ids`、`implementation.tool_calls`、`provenance.parent_skill_ids`、`provenance.source_ids`、`dependency_ids`、`component_ids` 和运行指标。
+- Neo4j `SkillEdge` 会把 `metadata` 一起写入边属性，并在读取时解析回来，保证自动边的 `auto_generated` 与 `source=skill_repository` 不丢失。
+- 生产版 `SkillGraphManager` 补齐 `sync_auto_edges()`，语义与内存 Graph 保持一致：只刷新 A 层自动生成的 `composes_with` / `evolved_from` 边，不删除手动边。
+- 生产版 `get_subgraph()` 兼容单个 `skill_id`、位置参数列表和 `skill_ids=[...]` 关键字形式，方便复用现有 Graph API 调用方式。
+- 新增 `tests/test_skill_repository_persistence_phase4.py`，用轻量 fake repository 验证适配边界，不依赖真实数据库服务。
+
+本阶段仍然不新增 REST endpoint，不修改飞书锁定接口文档，不要求本地安装 PostgreSQL 或 Neo4j。真实数据库连接、迁移脚本和生产部署验证放到后续团队集成阶段。

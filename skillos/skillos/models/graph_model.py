@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
@@ -51,6 +52,7 @@ class SkillEdge(BaseModel):
             "weight": self.weight,
             "confidence": self.confidence,
             "description": self.description,
+            "metadata": json.dumps(self.metadata),
             "created_at": self.created_at.isoformat(),
             "created_by": self.created_by,
         }
