@@ -5,6 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from skillos.api.main import _seed_demo_skills, _sync_graph_from_wiki
+from skillos.api.memory_store import MemoryGraphManager
+from skillos.api.routes import graph as graph_routes
 from skillos.api.routes import lifecycle, repository, skills
 from skillos.api.schemas import ExecutionStepResult, SkillUpdateRequest
 from skillos.layers.skill_management.librarian import SkillLibrarianAgent
@@ -231,3 +234,36 @@ class FakeGraphManager:
 
     async def create_edge(self, edge: object) -> None:
         self.edges.append(edge)
+
+
+@pytest.mark.asyncio
+async def test_demo_seed_syncs_graph_and_uses_readable_text(tmp_path):
+    wiki = SkillWikiManager(storage_dir=tmp_path / "SkillStorage")
+    graph = MemoryGraphManager()
+
+    await _seed_demo_skills(wiki)
+    await _sync_graph_from_wiki(wiki, graph)
+
+    seeded_skills = await wiki.list(limit=100)
+    stats = await graph.get_stats()
+    route_stats = await graph_routes.get_graph_stats(app=SimpleNamespace(graph=graph))
+
+    assert seeded_skills
+    assert stats["nodes"] == len(seeded_skills)
+    assert route_stats["nodes"] == len(seeded_skills)
+
+    click_skill = await wiki.get_by_name("click_element")
+    assert click_skill is not None
+    assert click_skill.description == "Click a target element on a web page."
+
+    mojibake_markers = ("鍦", "灏", "鐨", "歿")
+    sampled_parts: list[str] = []
+    for skill in seeded_skills:
+        sampled_parts.extend([
+            skill.description or "",
+            skill.implementation.prompt_template if skill.implementation else "",
+            " ".join(skill.interface.preconditions),
+            " ".join(skill.interface.postconditions),
+        ])
+    sampled_text = "\n".join(part or "" for part in sampled_parts)
+    assert not any(marker in sampled_text for marker in mojibake_markers)
