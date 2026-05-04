@@ -54,5 +54,5 @@ htmlcov/
 *.bak
 idea.txt
 
-skillos/skillos/storage/skill_repo/
-**/storage/skill_repo/
+skillos/skillos/storage/skill_repo/SkillStorage
+**/storage/skill_repo/SkillStorage
