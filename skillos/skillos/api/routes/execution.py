@@ -46,10 +46,12 @@ async def execute_skill(
 
     step = ExecutionStepResult(
         step_id="single",
+        step_index=0,
         skill_id=skill.skill_id,
         skill_name=skill.name,
         status=record.status.value,
         outputs=record.output_data or {},
+        result=record.output_data or {},
         latency_ms=record.latency_ms or latency,
         error=record.error_message,
     )
@@ -126,10 +128,12 @@ async def execute_plan(
         skill = skill_map.get(step.skill_id)
         steps.append(ExecutionStepResult(
             step_id=step.step_id,
+            step_index=step.step_index,
             skill_id=step.skill_id,
             skill_name=skill.name if skill else step.skill_id,
             status=step.status.value if hasattr(step.status, "value") else str(step.status),
             outputs=step.result or {},
+            result=step.result or {},
             latency_ms=step.latency_ms or 0.0,
             error=step.error,
         ))

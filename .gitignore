@@ -53,3 +53,6 @@ htmlcov/
 *.tmp
 *.bak
 idea.txt
+
+# Runtime SkillStorage repository
+skillos/skillos/storage/skill_repo/SkillStorage/

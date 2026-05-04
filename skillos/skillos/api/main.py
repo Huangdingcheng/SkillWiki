@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -14,20 +15,30 @@ from fastapi.responses import JSONResponse
 from ..utils.llm_client import LLMClient
 from .deps import app_state
 from .memory_store import MemoryGraphManager, MemoryWikiManager
-from .routes import evolution, execution, graph, ingest, lifecycle, skills, ws
+from .routes import evolution, execution, graph, ingest, lifecycle, repository, skills, ws
+
+
+def _default_skill_storage_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "storage" / "skill_repo" / "SkillStorage"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     llm_cfg = app.state.llm_cfg
     llm = LLMClient(llm_cfg)
-    wiki = MemoryWikiManager()
+    if app.state.repository_backend == "memory":
+        wiki = MemoryWikiManager()
+    else:
+        from ..layers.skill_repository import SkillWikiManager
+
+        wiki = SkillWikiManager(storage_dir=app.state.skill_storage_dir)
     graph_mgr = MemoryGraphManager()
 
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
 
     # 预加载 demo 数据
-    await _seed_demo_skills(wiki)
+    if app.state.seed_demo:
+        await _seed_demo_skills(wiki)
 
     # 注入 WebSocket 广播到 executor
     from .routes.ws import broadcast
@@ -374,7 +385,7 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
     for d in all_skills:
         skill = Skill(
             **d,
-            provenance=SkillProvenance(source_type="demo", author="system"),
+            provenance=SkillProvenance(source_type="demo", created_by_agent="system"),
         )
         skill.transition_to(SkillState.VERIFIED)
         skill.transition_to(SkillState.RELEASED)
@@ -388,7 +399,14 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             pass
 
 
-def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
+def create_app(
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+    *,
+    repository_backend: str = "git",
+    skill_storage_dir: Optional[Path] = None,
+    seed_demo: bool = True,
+) -> FastAPI:
     from ..config.llm_config import LLMConfig
 
     llm_cfg = LLMConfig(api_key=api_key, model=model)
@@ -402,6 +420,9 @@ def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
         redoc_url="/redoc",
     )
     app.state.llm_cfg = llm_cfg
+    app.state.repository_backend = repository_backend
+    app.state.skill_storage_dir = (skill_storage_dir or _default_skill_storage_dir()).resolve()
+    app.state.seed_demo = seed_demo
 
     app.add_middleware(
         CORSMiddleware,
@@ -421,6 +442,7 @@ def create_app(api_key: str, model: str = "claude-sonnet-4-6") -> FastAPI:
     app.include_router(execution.router, prefix="/api/v1")
     app.include_router(evolution.router, prefix="/api/v1")
     app.include_router(ingest.router, prefix="/api/v1")
+    app.include_router(repository.router, prefix="/api/v1")
     app.include_router(ws.router)
 
     @app.get("/")
@@ -441,9 +463,19 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
+    parser.add_argument("--repository-backend", choices=["git", "memory"], default="git")
+    parser.add_argument("--skill-storage-dir", default=None)
+    parser.add_argument("--no-seed-demo", action="store_true")
     args = parser.parse_args()
 
-    app = create_app(api_key=args.api_key, model=args.model)
+    storage_dir = Path(args.skill_storage_dir).resolve() if args.skill_storage_dir else None
+    app = create_app(
+        api_key=args.api_key,
+        model=args.model,
+        repository_backend=args.repository_backend,
+        skill_storage_dir=storage_dir,
+        seed_demo=not args.no_seed_demo,
+    )
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
 
 
