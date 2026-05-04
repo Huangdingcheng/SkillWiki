@@ -1,4 +1,8 @@
-"""Reflection Agent — 分析执行失败/成功，生成反馈用于 Skill 演化。"""
+"""Runtime reflection agent.
+
+Reflection turns execution traces and verification results into feedback that
+can be consumed by D-side maintenance agents. It does not mutate Skills.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,8 @@ from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_ALLOWED_ACTIONS = {"repair", "deprecate", "review", "no_action"}
 
 
 @dataclass
@@ -26,47 +32,49 @@ class Feedback:
 
 
 _REFLECT_PROMPT = """
-你是 SkillOS 的 Reflection Agent，负责分析任务执行结果并生成改进反馈。
+Analyze a SkillOS runtime execution and produce maintenance-oriented feedback.
 
-## 任务目标
+Goal:
 {goal}
 
-## 执行结果
-成功: {success}
+Execution success:
+{success}
 
-## 执行轨迹
+Execution trace:
 {trace}
 
-## 验证结果
+Verification result:
 {verification}
 
-## 分析要求
-1. 找出失败根因（如果失败）
-2. 识别哪些 Skill 需要改进
-3. 提出具体的 Skill 更新建议
-4. 总结本次执行的经验
+Rules:
+- Return JSON only. Do not include Markdown or commentary.
+- Do not claim that a Skill was repaired. Only propose follow-up actions.
+- failed_skill_ids must only include concrete skill ids from the trace.
+- recommended_action must be one of: repair, deprecate, review, no_action.
+- Use repair for implementation/prompt/runtime failures.
+- Use review when the issue is uncertain or needs human inspection.
 
-## 输出格式（严格 JSON）
+Return this JSON shape:
 {{
-  "root_cause": "失败根因描述",
+  "root_cause": "brief root cause",
   "failed_skill_ids": ["skill_id_1"],
-  "improvement_suggestions": ["建议1", "建议2"],
+  "improvement_suggestions": ["short suggestion"],
   "skill_update_proposals": [
     {{
-      "skill_id": "skill_id",
-      "issue": "问题描述",
-      "proposed_fix": "修复方案"
+      "skill_id": "skill_id_1",
+      "issue": "what failed",
+      "proposed_fix": "what D Maintainer should inspect or repair",
+      "recommended_action": "repair",
+      "evidence": ["step failed with timeout"]
     }}
   ],
-  "experience_summary": "本次执行经验总结"
+  "experience_summary": "brief reusable experience summary"
 }}
-
-只输出 JSON。
 """
 
 
 class ReflectionAgent:
-    """分析执行轨迹，生成 Skill 改进反馈。"""
+    """Analyze execution traces and produce Skill improvement feedback."""
 
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm = llm_client
@@ -78,14 +86,11 @@ class ReflectionAgent:
         trace: Dict[str, Any],
         verification_result: Optional[Any] = None,
     ) -> Feedback:
-        """分析执行结果，生成反馈。"""
+        """Reflect on an execution result."""
+
         success = verification_result.passed if verification_result else bool(trace)
-        trace_str = json.dumps(trace, ensure_ascii=False, indent=2)[:600]
-        verify_str = (
-            f"通过={verification_result.passed}, 评分={verification_result.score:.2f}, "
-            f"问题={verification_result.issues}"
-            if verification_result else "（无验证结果）"
-        )
+        trace_str = json.dumps(trace, ensure_ascii=False, indent=2)[:1200]
+        verify_str = _format_verification(verification_result)
 
         prompt = _REFLECT_PROMPT.format(
             goal=goal,
@@ -96,31 +101,18 @@ class ReflectionAgent:
 
         try:
             response = self._llm.chat([
-                Message.system("你是 SkillOS Reflection Agent，严格输出 JSON。"),
+                Message.system(
+                    "You are the SkillOS Reflection Agent. Return strict JSON only."
+                ),
                 Message.user(prompt),
             ])
             data = self._extract_json(response.content)
             if data:
-                return Feedback(
-                    task_id=task_id,
-                    goal=goal,
-                    success=success,
-                    root_cause=data.get("root_cause", ""),
-                    failed_skill_ids=data.get("failed_skill_ids", []),
-                    improvement_suggestions=data.get("improvement_suggestions", []),
-                    skill_update_proposals=data.get("skill_update_proposals", []),
-                    experience_summary=data.get("experience_summary", ""),
-                )
+                return _normalize_feedback(data, task_id, goal, success)
         except Exception as exc:
-            logger.warning(f"Reflection LLM 调用失败: {exc}")
+            logger.warning("Reflection LLM failed: %s", exc)
 
-        return Feedback(
-            task_id=task_id,
-            goal=goal,
-            success=success,
-            root_cause="LLM 反思调用失败" if not success else "",
-            experience_summary=f"任务{'成功' if success else '失败'}完成",
-        )
+        return _fallback_feedback(task_id, goal, trace, verification_result, success)
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
         text = text.strip()
@@ -128,16 +120,172 @@ class ReflectionAgent:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-        m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
-        if m:
+        match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
+        if match:
             try:
-                return json.loads(m.group(1))
+                return json.loads(match.group(1))
             except json.JSONDecodeError:
                 pass
-        m = re.search(r"\{[\s\S]+\}", text)
-        if m:
+        match = re.search(r"\{[\s\S]+\}", text)
+        if match:
             try:
-                return json.loads(m.group(0))
+                return json.loads(match.group(0))
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _format_verification(verification_result: Optional[Any]) -> str:
+    if not verification_result:
+        return "(no verification result)"
+    return json.dumps(
+        {
+            "passed": bool(getattr(verification_result, "passed", False)),
+            "score": getattr(verification_result, "score", 0.0),
+            "issues": getattr(verification_result, "issues", []),
+            "suggestions": getattr(verification_result, "suggestions", []),
+        },
+        ensure_ascii=False,
+    )
+
+
+def _normalize_feedback(
+    data: Dict[str, Any],
+    task_id: str,
+    goal: str,
+    success: bool,
+) -> Feedback:
+    proposals = _normalize_proposals(data.get("skill_update_proposals", []))
+    return Feedback(
+        task_id=task_id,
+        goal=goal,
+        success=success,
+        root_cause=str(data.get("root_cause", "")),
+        failed_skill_ids=_string_list(data.get("failed_skill_ids", [])),
+        improvement_suggestions=_string_list(data.get("improvement_suggestions", [])),
+        skill_update_proposals=proposals,
+        experience_summary=str(data.get("experience_summary", "")),
+    )
+
+
+def _fallback_feedback(
+    task_id: str,
+    goal: str,
+    trace: Dict[str, Any],
+    verification_result: Optional[Any],
+    success: bool,
+) -> Feedback:
+    issues = _string_list(getattr(verification_result, "issues", []))
+    failed_skill_ids = _extract_failed_skill_ids(trace)
+
+    if success:
+        return Feedback(
+            task_id=task_id,
+            goal=goal,
+            success=True,
+            experience_summary="Task completed successfully.",
+        )
+
+    evidence = issues or _extract_failure_evidence(trace)
+    root_cause = evidence[0] if evidence else "Runtime execution did not satisfy the goal."
+    suggestions = _string_list(getattr(verification_result, "suggestions", []))
+    if not suggestions:
+        suggestions = ["Review failed runtime steps and repair the related skill if needed."]
+
+    proposals = [
+        {
+            "skill_id": skill_id,
+            "issue": root_cause,
+            "proposed_fix": (
+                "Review runtime failure and repair the skill implementation or prompt."
+            ),
+            "recommended_action": "repair",
+            "evidence": evidence,
+        }
+        for skill_id in failed_skill_ids
+    ]
+
+    return Feedback(
+        task_id=task_id,
+        goal=goal,
+        success=False,
+        root_cause=root_cause,
+        failed_skill_ids=failed_skill_ids,
+        improvement_suggestions=suggestions,
+        skill_update_proposals=proposals,
+        experience_summary="Task failed; runtime reflection generated repair guidance.",
+    )
+
+
+def _normalize_proposals(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    proposals: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        skill_id = str(item.get("skill_id", "")).strip()
+        if not skill_id:
+            continue
+        action = str(item.get("recommended_action", "review")).strip()
+        if action not in _ALLOWED_ACTIONS:
+            action = "review"
+        proposals.append(
+            {
+                "skill_id": skill_id,
+                "issue": str(item.get("issue", "")),
+                "proposed_fix": str(item.get("proposed_fix", "")),
+                "recommended_action": action,
+                "evidence": _string_list(item.get("evidence", [])),
+            }
+        )
+    return proposals
+
+
+def _extract_failed_skill_ids(trace: Any) -> List[str]:
+    ids: List[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            status = str(value.get("status", "")).lower()
+            has_error = any(key in value and value[key] for key in ("error", "error_message"))
+            if status in {"failed", "timeout"} or has_error:
+                skill_id = value.get("skill_id")
+                if skill_id:
+                    ids.append(str(skill_id))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(trace)
+    return list(dict.fromkeys(ids))
+
+
+def _extract_failure_evidence(trace: Any) -> List[str]:
+    evidence: List[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            status = str(value.get("status", "")).lower()
+            error = value.get("error") or value.get("error_message")
+            if status in {"failed", "skipped", "timeout"}:
+                evidence.append(f"step status: {status}")
+            if error:
+                evidence.append(str(error))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(trace)
+    return list(dict.fromkeys(evidence))
+
+
+def _string_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None and str(item)]

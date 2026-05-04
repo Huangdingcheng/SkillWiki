@@ -350,4 +350,29 @@ git diff --check
 
 ---
 
+## Phase 4: Verifier / Reflection maintenance feedback
+
+第四阶段把 C 的执行结果转成更可靠的验证结果和 D 可消费的维护建议，不扩 REST endpoint，也不在 C 内自动修改 Skill。
+
+- `VerifierAgent` 的 LLM-facing prompt 改成稳定英文 ASCII，并要求只输出 JSON。
+- Verifier 会归一化 `passed`、`score`、`issues`、`suggestions` 和 `reasoning`；`score` 会 clamp 到 `[0, 1]`，非法列表会降级为空列表。
+- Verifier 的 fallback 不再只看 output 是否非空；会检查 `success=false`、`ok=false`、`error`、`exception`、`failed`、`timeout`、`skipped` 等失败证据。
+- `ReflectionAgent` 的 LLM-facing prompt 改成稳定英文 ASCII，并明确只能提出后续动作，不能声称已经修复 Skill。
+- Reflection 会归一化 `failed_skill_ids`、`improvement_suggestions` 和 `skill_update_proposals`。
+- `skill_update_proposals` 面向 D 的 Maintainer / Repair 消费，使用 `recommended_action = repair | deprecate | review | no_action`；非法动作会回退为 `review`。
+- Reflection fallback 在验证失败时会尽量从 trace 中提取失败 Skill ID，并生成 repair proposal；验证成功时不生成修复 proposal。
+- 本阶段不自动调用 D 的 `SkillMaintainerAgent`，不改 Wiki，不修改任何 Skill 实体。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py tests\test_skill_runtime_phase3.py tests\test_skill_runtime_phase4.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
