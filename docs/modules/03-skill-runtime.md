@@ -327,4 +327,27 @@ git diff --check
 
 ---
 
+## Phase 3: Executor stability and partial success
+
+第三阶段稳定 Executor 的运行语义，不扩 REST endpoint，也不扩大代码 Skill 沙箱权限。
+
+- `SkillExecutor.execute_plan()` 不再因为某个 step 失败就立刻停止整个 plan；无依赖或依赖已满足的其它 step 会继续执行。
+- 依赖失败的后续 step 会从 `pending` 明确转为 `skipped`，并记录 `Skipped because dependency failed: <step_id>`，避免执行历史和前端状态一直停在 pending。
+- 新增 `step_skipped` 事件，payload 包含 `plan_id`、`step_id`、`step_index`、`skill_id`、`skill_name`、`reason` 和 `failed_dependency`。
+- `step_failed` 事件统一补齐 `step_index`、`skill_id`、`skill_name`、`error` 和 `latency_ms`，missing Skill、timeout、普通异常都走同一类事件结构。
+- missing Skill 路径会补齐 `started_at` / `completed_at`，让 latency 和历史统计更稳定。
+- `plan_completed.status` 继续使用 `success` / `partial` / `failed`：只要有成功 step 且存在失败或跳过，就返回 `partial`；没有成功则返回 `failed`。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py tests\test_skill_runtime_phase3.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
