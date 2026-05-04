@@ -46,17 +46,19 @@ async def execute_skill(
 
     step = ExecutionStepResult(
         step_id="single",
+        step_index=0,
         skill_id=skill.skill_id,
         skill_name=skill.name,
         status=record.status.value,
         outputs=record.output_data or {},
+        result=record.output_data or {},
         latency_ms=record.latency_ms or latency,
         error=record.error_message,
     )
     return ExecutionResult(
         plan_id="single",
         goal=f"执行 {skill.name}",
-        status=step.status,
+        status="success" if step.status == "success" else "failed",
         steps=[step],
         total_latency_ms=latency,
         final_state=app.state_tracker.current,
@@ -66,7 +68,7 @@ async def execute_skill(
             description=skill.description,
             skill_type=skill.skill_type.value,
             score=1.0,
-            match_reason="直接指定",
+            match_reason="direct skill execution",
         )],
         experience_recorded=True,
     )
@@ -95,7 +97,7 @@ async def execute_plan(
             description=r.skill.description,
             skill_type=r.skill.skill_type.value,
             score=round(r.score, 3),
-            match_reason=r.match_reason,
+            match_reason=_format_match_reason(r),
         )
         for r in search_results
     ]
@@ -124,21 +126,33 @@ async def execute_plan(
     steps = []
     for step in plan.steps:
         skill = skill_map.get(step.skill_id)
+        step_output = step.result or {}
+        step_status = step.status.value if hasattr(step.status, "value") else str(step.status)
+        step_latency = step.latency_ms or 0.0
         steps.append(ExecutionStepResult(
             step_id=step.step_id,
+            step_index=step.step_index,
             skill_id=step.skill_id,
             skill_name=skill.name if skill else step.skill_id,
-            status=step.status.value if hasattr(step.status, "value") else str(step.status),
-            outputs=step.result or {},
-            latency_ms=step.latency_ms or 0.0,
+            status=step_status,
+            outputs=step_output,
+            result=step_output,
+            latency_ms=step_latency,
             error=step.error,
         ))
+        if skill:
+            await app.wiki.record_execution(
+                step.skill_id,
+                success=step_status == "success",
+                latency_ms=step_latency,
+            )
 
     success_count = sum(1 for s in steps if s.status == "success")
+    status = _execution_status(steps)
     result = ExecutionResult(
         plan_id=plan.plan_id,
         goal=req.goal,
-        status="completed" if plan.is_complete else "partial",
+        status=status,
         steps=steps,
         total_latency_ms=total_latency,
         final_state=app.state_tracker.current,
@@ -162,8 +176,8 @@ async def execute_plan(
     return result
 
 
-@router.get("/history", response_model=list)
-async def get_execution_history() -> list:
+@router.get("/history", response_model=List[ExecutionHistoryItem])
+async def get_execution_history() -> List[ExecutionHistoryItem]:
     return list(reversed(_execution_history[-20:]))
 
 
@@ -181,3 +195,20 @@ async def reset_state(
     from ...layers.skill_runtime.state_tracker import StateTracker
     app.state_tracker = StateTracker(task_id="session")
     return {"ok": True, "message": "状态已重置"}
+
+
+def _format_match_reason(search_result: Any) -> str:
+    reasons = getattr(search_result, "match_reasons", None)
+    if reasons:
+        return "; ".join(str(reason) for reason in reasons)
+    reason = getattr(search_result, "match_reason", "")
+    return str(reason or "")
+
+
+def _execution_status(steps: List[ExecutionStepResult]) -> str:
+    if not steps:
+        return "failed"
+    success_count = sum(1 for step in steps if step.status == "success")
+    if success_count == len(steps):
+        return "success"
+    return "partial" if success_count else "failed"

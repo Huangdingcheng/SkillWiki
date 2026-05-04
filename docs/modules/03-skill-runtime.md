@@ -279,4 +279,28 @@ skillos/skillos/layers/skill_runtime/
 
 ---
 
+## Phase 1: Runtime contract stabilization
+
+第一阶段先稳定 C 与 E/D/A 的联调契约，不扩展新的 REST endpoint。
+
+- `/api/v1/execution/plan` 会把 A 层 `SearchResult.match_reasons` 拼接成 `RetrievedSkill.match_reason`，避免前端执行页因字段名混用报错。
+- `ExecutionResult.status` 统一为 `success` / `partial` / `failed`，与飞书接口和 E 前端颜色语义保持一致。
+- `ExecutionStepResult` 保留 E 当前消费的 `outputs`，同时增加飞书契约中的 `step_index` 和 `result`；后端返回时 `outputs` 与 `result` 使用同一份 step 输出。
+- `/api/v1/execution/history` 返回 `ExecutionHistoryItem` 列表，继续使用内存历史，保持最近执行倒序展示。
+- plan 执行完成后会按 step 调用 `wiki.record_execution()`，让 Skill metrics 能被 D 的健康监控消费。
+- `SkillExecutor._emit()` 支持同步和异步 WebSocket callback；异步 callback 会被调度执行，callback 异常不会影响主执行流程。
+- 执行事件 payload 补齐 `plan_id`、`goal`、`step_count`、`status`、`total_latency_ms`、`skill_name` 等轻量字段；传输格式暂时保持现有 `{ "event": "...", "data": {} }`，由 E 的兼容层消费。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\api\routes\execution.py skillos\layers\skill_runtime skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*

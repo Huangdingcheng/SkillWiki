@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import uuid
 from datetime import datetime
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Union
 
 from ...models.experience_model import ExecutionStatus, SkillExecutionRecord
 from ...models.skill_model import Skill
@@ -17,7 +18,7 @@ from .state_tracker import StateTracker
 logger = get_logger(__name__)
 
 # 执行事件类型（用于 WebSocket 实时推送）
-ExecutionEventCallback = Callable[[str, Dict[str, Any]], None]
+ExecutionEventCallback = Callable[[str, Dict[str, Any]], Union[None, Awaitable[None]]]
 
 
 class SkillExecutor:
@@ -54,7 +55,9 @@ class SkillExecutor:
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         for cb in self._event_callbacks:
             try:
-                cb(event_type, data)
+                result = cb(event_type, data)
+                if inspect.isawaitable(result):
+                    asyncio.create_task(result)
             except Exception:
                 pass
 
@@ -79,6 +82,8 @@ class SkillExecutor:
 
         self._emit("plan_started", {
             "plan_id": plan.plan_id,
+            "goal": plan.task_description,
+            "step_count": plan.total_steps,
             "task": plan.task_description,
             "total_steps": plan.total_steps,
         })
@@ -109,8 +114,12 @@ class SkillExecutor:
                     execution_records.append(record)
 
         final_state = tracker.current
+        total_latency_ms = sum((step.latency_ms or 0.0) for step in plan.steps)
+        status = _plan_status(plan)
         self._emit("plan_completed", {
             "plan_id": plan.plan_id,
+            "status": status,
+            "total_latency_ms": total_latency_ms,
             "success": plan.is_complete and not plan.has_failures,
             "summary": plan.to_summary(),
             "final_state": final_state,
@@ -129,12 +138,18 @@ class SkillExecutor:
         if not skill:
             step.status = StepStatus.FAILED
             step.error = f"Skill 不存在: {step.skill_id}"
-            self._emit("step_failed", {"step_id": step.step_id, "error": step.error})
+            self._emit("step_failed", {
+                "plan_id": tracker._task_id,
+                "step_id": step.step_id,
+                "skill_name": step.skill_name or step.skill_id,
+                "error": step.error,
+            })
             return None
 
         step.status = StepStatus.RUNNING
         step.started_at = datetime.utcnow()
         self._emit("step_started", {
+            "plan_id": tracker._task_id,
             "step_id": step.step_id,
             "step_index": step.step_index,
             "skill_name": skill.name,
@@ -171,6 +186,7 @@ class SkillExecutor:
 
                 record.complete(output, tracker.current)
                 self._emit("step_completed", {
+                    "plan_id": tracker._task_id,
                     "step_id": step.step_id,
                     "skill_name": skill.name,
                     "output": output,
@@ -188,7 +204,12 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
-                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                self._emit("step_failed", {
+                    "plan_id": tracker._task_id,
+                    "step_id": step.step_id,
+                    "skill_name": skill.name,
+                    "error": error,
+                })
                 return record
 
             except Exception as e:
@@ -202,7 +223,12 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, type(e).__name__)
-                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                self._emit("step_failed", {
+                    "plan_id": tracker._task_id,
+                    "step_id": step.step_id,
+                    "skill_name": skill.name,
+                    "error": error,
+                })
                 return record
 
         return record
@@ -339,3 +365,12 @@ class SkillExecutor:
         except Exception as e:
             record.fail(str(e), type(e).__name__)
         return record
+
+
+def _plan_status(plan: ExecutionPlan) -> str:
+    if not plan.steps:
+        return "failed"
+    if plan.is_complete and not plan.has_failures:
+        return "success"
+    success_count = sum(1 for step in plan.steps if step.status == StepStatus.SUCCESS)
+    return "partial" if success_count else "failed"
