@@ -113,50 +113,77 @@ class ExecutionPlan:
 
 
 _PLAN_PROMPT = """
-请为以下任务制定详细的 Skill 执行计划。
+Create a SkillOS execution plan for the task.
 
-## 任务描述
+Task:
 {task_description}
 
-## 当前状态
+Current state:
 {current_state}
 
-## 可用 Skill
+Available skills:
 {available_skills}
 
-## 规划要求
-1. 将任务分解为有序的执行步骤
-2. 每个步骤对应一个 Skill
-3. 明确步骤间的依赖关系
-4. 为每个步骤提供参数映射（从任务描述或前序步骤结果中提取）
-5. 如果某个步骤可以并行执行，在 depends_on 中不列出其他步骤
+Rules:
+- Return JSON only. Do not include Markdown or commentary.
+- Use only skill_id values from the available skills list.
+- If one skill can complete the task, use one step. Do not over-split.
+- Each step must include step_index, skill_id, skill_name, description, input_mapping, and depends_on.
+- depends_on may contain prior step indexes as strings or prior step ids.
+- input_mapping must be an object. Use an empty object if no parameters are needed.
 
-## 输出格式（严格 JSON）
+Example 1:
 {{
   "steps": [
     {{
       "step_index": 0,
-      "skill_id": "skill_id_here",
-      "skill_name": "skill_name",
-      "description": "步骤描述",
-      "input_mapping": {{
-        "param1": "值或 ${{step_0.result.field}} 引用"
-      }},
+      "skill_id": "skill_fill_form",
+      "skill_name": "fill_form",
+      "description": "Fill the requested form.",
+      "input_mapping": {{"goal": "task description"}},
+      "depends_on": []
+    }}
+  ],
+  "plan_rationale": "A single form-filling skill is sufficient."
+}}
+
+Example 2:
+{{
+  "steps": [
+    {{
+      "step_index": 0,
+      "skill_id": "skill_extract",
+      "skill_name": "extract_data",
+      "description": "Extract the source data.",
+      "input_mapping": {{}},
       "depends_on": []
     }},
     {{
       "step_index": 1,
-      "skill_id": "skill_id_here",
-      "skill_name": "skill_name",
-      "description": "步骤描述",
-      "input_mapping": {{}},
-      "depends_on": ["step_0_id"]
+      "skill_id": "skill_submit",
+      "skill_name": "submit_result",
+      "description": "Submit the extracted result.",
+      "input_mapping": {{"data": "${{step_0.result}}"}},
+      "depends_on": ["0"]
     }}
   ],
-  "plan_rationale": "规划理由"
+  "plan_rationale": "Data must be extracted before it can be submitted."
 }}
 
-只输出 JSON，不要其他内容。
+Return this JSON shape:
+{{
+  "steps": [
+    {{
+      "step_index": 0,
+      "skill_id": "available_skill_id",
+      "skill_name": "skill_name",
+      "description": "step description",
+      "input_mapping": {{}},
+      "depends_on": []
+    }}
+  ],
+  "plan_rationale": "why this plan was selected"
+}}
 """
 
 
@@ -190,41 +217,23 @@ class SkillPlanner:
             available_skills=skills_info,
         )
 
-        response = self._llm.chat([
-            Message.system(
-                "你是 SkillOS 的任务规划专家，擅长将复杂任务分解为有序的 Skill 执行步骤。"
-                "严格按照 JSON 格式输出。"
-            ),
-            Message.user(prompt),
-        ])
+        try:
+            response = self._llm.chat([
+                Message.system(
+                    "You are the SkillOS Planner Agent. Return strict JSON only."
+                ),
+                Message.user(prompt),
+            ])
+        except Exception as exc:
+            logger.warning("Planner LLM failed; using fallback plan: %s", exc)
+            return self._fallback_plan(plan, available_skills)
 
         data = self._extract_json(response.content)
         if not data or "steps" not in data:
             logger.warning("规划器 LLM 返回无效响应，使用顺序执行所有 Skill")
             return self._fallback_plan(plan, available_skills)
 
-        skill_map = {s.skill_id: s for s in available_skills}
-        step_id_map: Dict[str, str] = {}  # step_index → step_id
-
-        for step_data in data["steps"]:
-            step = PlanStep(
-                step_index=step_data.get("step_index", len(plan.steps)),
-                skill_id=step_data.get("skill_id", ""),
-                skill_name=step_data.get("skill_name", ""),
-                description=step_data.get("description", ""),
-                input_mapping=step_data.get("input_mapping", {}),
-            )
-            step_id_map[str(step.step_index)] = step.step_id
-
-            # 解析依赖（支持 step_id 或 step_index 引用）
-            for dep in step_data.get("depends_on", []):
-                dep_str = str(dep)
-                if dep_str in step_id_map:
-                    step.depends_on.append(step_id_map[dep_str])
-                else:
-                    step.depends_on.append(dep_str)
-
-            plan.steps.append(step)
+        plan.steps = _normalize_plan_steps(data["steps"], available_skills)
 
         plan.metadata["rationale"] = data.get("plan_rationale", "")
         logger.info(f"执行计划生成: {len(plan.steps)} 步骤, 任务={task_description[:50]}")
@@ -233,16 +242,18 @@ class SkillPlanner:
     def _fallback_plan(self, plan: ExecutionPlan, skills: List[Skill]) -> ExecutionPlan:
         """降级方案：顺序执行所有 Skill。"""
         prev_step_id: Optional[str] = None
-        for i, skill in enumerate(skills):
+        for i, skill in enumerate(skills[:5]):
             step = PlanStep(
                 step_index=i,
                 skill_id=skill.skill_id,
                 skill_name=skill.name,
-                description=skill.description,
+                description=skill.description or f"Execute {skill.name}",
                 depends_on=[prev_step_id] if prev_step_id else [],
             )
             plan.steps.append(step)
             prev_step_id = step.step_id
+        plan.metadata["rationale"] = "Fallback sequential plan generated from top retrieved skills."
+        plan.metadata["source"] = "fallback"
         return plan
 
     def _format_skills(self, skills: List[Skill]) -> str:
@@ -250,7 +261,7 @@ class SkillPlanner:
         for s in skills[:10]:
             lines.append(
                 f"- [{s.skill_id}] {s.name}: {s.description[:80]}\n"
-                f"  输入: {list(s.interface.input_schema.get('properties', {}).keys())}"
+                f"  inputs: {list(s.interface.input_schema.get('properties', {}).keys())}"
             )
         return "\n".join(lines)
 
@@ -273,3 +284,44 @@ class SkillPlanner:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _normalize_plan_steps(raw_steps: Any, available_skills: List[Skill]) -> List[PlanStep]:
+    if not isinstance(raw_steps, list):
+        return []
+
+    skill_map = {skill.skill_id: skill for skill in available_skills}
+    normalized: List[PlanStep] = []
+    index_to_step_id: Dict[str, str] = {}
+
+    for raw in raw_steps:
+        if not isinstance(raw, dict):
+            continue
+        skill_id = str(raw.get("skill_id") or "")
+        skill = skill_map.get(skill_id)
+        if not skill:
+            continue
+
+        step = PlanStep(
+            step_index=len(normalized),
+            skill_id=skill.skill_id,
+            skill_name=str(raw.get("skill_name") or skill.name),
+            description=str(raw.get("description") or skill.description or f"Execute {skill.name}"),
+            input_mapping=raw.get("input_mapping") if isinstance(raw.get("input_mapping"), dict) else {},
+        )
+
+        old_index = str(raw.get("step_index", len(normalized)))
+        index_to_step_id[old_index] = step.step_id
+        depends_on = raw.get("depends_on", [])
+        if not isinstance(depends_on, list):
+            depends_on = []
+        for dep in depends_on:
+            dep_str = str(dep)
+            if dep_str in index_to_step_id:
+                step.depends_on.append(index_to_step_id[dep_str])
+            elif any(existing.step_id == dep_str for existing in normalized):
+                step.depends_on.append(dep_str)
+
+        normalized.append(step)
+
+    return normalized

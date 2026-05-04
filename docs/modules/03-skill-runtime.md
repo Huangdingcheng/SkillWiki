@@ -303,4 +303,28 @@ git diff --check
 
 ---
 
+## Phase 2: Planner / Retriever quality baseline
+
+第二阶段继续先稳住 C 的智能入口，不扩 REST endpoint，也不改前端契约。
+
+- Planner 的 LLM-facing prompt 改成稳定英文 ASCII，并补充少量 few-shot 示例，明确要求只返回 JSON，且只能使用候选 Skill 中真实存在的 `skill_id`。
+- Planner 会归一化 LLM 返回的 steps：过滤不存在的 Skill、重新编号 `step_index`、补齐空的 `skill_name` / `description`、把非法 `input_mapping` 降级为空对象，并清理无效依赖。
+- Planner 的 fallback 限制为最多 5 个候选 Skill，按顺序生成可执行计划，并标记 `metadata.source = "fallback"`，避免 LLM 失效时生成过长或不可解释的计划。
+- Retriever 的 LLM-facing prompt 改成稳定英文 ASCII，明确 `reuse` / `compose` / `adapt` / `generate` 四种策略边界。
+- Retriever 会归一化 LLM 返回的 strategy、selected ids、execution order、confidence 和 parameter mapping；非法 strategy 回退为 `reuse`，confidence clamp 到 `[0, 1]`，不存在的 Skill ID 会被过滤。
+- 如果 LLM 没有给出可用 Skill，但搜索结果存在，Retriever 回退到最高分候选；如果搜索结果为空，返回 `generate`，为后续 Builder / D 任务保留入口。
+- `retrieve_by_id()` 改成严格按 `skill_id` 精确匹配，即使搜索引擎先返回模糊命中，也不会误执行错误 Skill。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*

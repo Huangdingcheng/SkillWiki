@@ -1,10 +1,7 @@
-"""Skill 检索器 — 在运行时根据任务需求检索最合适的 Skill。
+"""Runtime Skill retriever.
 
-检索策略优先级：
-1. Reuse（直接复用）：精确匹配已有 Released Skill
-2. Compose（组合）：将多个 Skill 组合满足需求
-3. Adapt（适配）：对已有 Skill 进行参数适配
-4. Generate（生成）：触发新 Skill 生成流程
+The retriever combines repository search results with a small LLM decision step.
+It chooses whether the runtime should reuse, compose, adapt, or generate skills.
 """
 
 from __future__ import annotations
@@ -13,9 +10,9 @@ import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from ...models.skill_model import Skill, SkillState, SkillType
+from ...models.skill_model import Skill, SkillState
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 
@@ -31,10 +28,11 @@ class RetrievalStrategy(str, Enum):
 
 @dataclass
 class RetrievalResult:
-    """检索结果。"""
+    """Result of runtime skill retrieval."""
+
     strategy: RetrievalStrategy
     skills: List[Skill] = field(default_factory=list)
-    execution_order: List[str] = field(default_factory=list)  # skill_id 列表
+    execution_order: List[str] = field(default_factory=list)
     confidence: float = 0.0
     rationale: str = ""
     parameter_mapping: Dict[str, Any] = field(default_factory=dict)
@@ -47,54 +45,50 @@ class RetrievalResult:
 
 
 _RETRIEVAL_PROMPT = """
-给定以下任务描述和可用 Skill 列表，请选择最合适的 Skill 来完成任务。
+Select the best SkillOS retrieval strategy for the task.
 
-## 任务描述
+Task:
 {task_description}
 
-## 当前状态
+Current state:
 {current_state}
 
-## 可用 Skill（按相关性排序）
+Available skills, ranked by search relevance:
 {available_skills}
 
-## 检索策略
-请按以下优先级选择：
-1. reuse：直接使用某个 Skill（最优先）
-2. compose：组合多个 Skill 完成任务
-3. adapt：使用某个 Skill 但需要调整参数
-4. generate：没有合适的 Skill，需要生成新 Skill
+Rules:
+- Return JSON only. Do not include Markdown or commentary.
+- strategy must be one of: reuse, compose, adapt, generate.
+- selected_skill_ids must only contain ids from the available skills list.
+- Use reuse when one skill directly solves the task.
+- Use compose when multiple listed skills are needed in sequence.
+- Use adapt when one listed skill is close but needs parameter adaptation.
+- Use generate only when the listed skills cannot reasonably solve the task.
+- confidence must be a number between 0 and 1.
 
-## 输出格式（严格 JSON）
+Return this JSON shape:
 {{
   "strategy": "reuse",
   "selected_skill_ids": ["skill_id_1"],
   "execution_order": ["skill_id_1"],
   "confidence": 0.9,
-  "rationale": "选择理由",
+  "rationale": "why this strategy was selected",
   "parameter_mapping": {{
-    "skill_id_1": {{
-      "param1": "从任务描述中提取的值"
-    }}
+    "skill_id_1": {{"param1": "value extracted from the task"}}
   }},
   "needs_generation": false,
   "generation_hint": ""
 }}
-
-只输出 JSON，不要其他内容。
 """
 
 
 class SkillRetriever:
-    """运行时 Skill 检索器。
-
-    结合语义搜索和 LLM 推理，为给定任务找到最合适的 Skill 组合。
-    """
+    """Find the most suitable Skill or Skill set for a runtime task."""
 
     def __init__(
         self,
         llm_client: LLMClient,
-        search_engine: Any,  # SkillSearchEngine，避免循环导入
+        search_engine: Any,
         max_candidates: int = 10,
     ) -> None:
         self._llm = llm_client
@@ -107,19 +101,10 @@ class SkillRetriever:
         current_state: Optional[Dict[str, Any]] = None,
         domain: Optional[str] = None,
     ) -> RetrievalResult:
-        """为任务检索最合适的 Skill。
+        """Retrieve candidate Skills and choose a runtime strategy."""
 
-        Args:
-            task_description: 任务描述（自然语言）
-            current_state: 当前执行状态
-            domain: 限定领域（可选）
-
-        Returns:
-            RetrievalResult，包含策略和选中的 Skill
-        """
         from ...layers.skill_repository.indexing import SearchQuery
 
-        # 1. 语义搜索候选集
         query = SearchQuery(
             text=task_description,
             domain=domain,
@@ -129,77 +114,95 @@ class SkillRetriever:
         search_results = await self._search.search(query)
 
         if not search_results:
-            # 无候选，直接触发生成
             return RetrievalResult(
                 strategy=RetrievalStrategy.GENERATE,
                 confidence=0.0,
                 needs_generation=True,
                 generation_hint=task_description,
-                rationale="无匹配 Skill，需要生成新 Skill",
+                rationale="No matching skill found; new skill generation is needed.",
             )
 
-        # 2. LLM 推理选择最优策略
         skills_info = self._format_skills_for_prompt(search_results)
-        llm_result = await self._llm_select(
-            task_description, current_state or {}, skills_info
-        )
+        try:
+            llm_result = await self._llm_select(
+                task_description, current_state or {}, skills_info
+            )
+        except Exception as exc:
+            logger.warning("Retriever LLM failed; using fallback result: %s", exc)
+            llm_result = None
 
         if not llm_result:
-            # LLM 失败，降级为最高分候选
-            best = search_results[0].skill
-            return RetrievalResult(
-                strategy=RetrievalStrategy.REUSE,
-                skills=[best],
-                execution_order=[best.skill_id],
-                confidence=search_results[0].score,
-                rationale="LLM 不可用，使用最高相关性 Skill",
-            )
+            return _fallback_reuse(search_results)
 
-        # 3. 构建检索结果
         skill_map = {r.skill.skill_id: r.skill for r in search_results}
-        selected_ids = llm_result.get("selected_skill_ids", [])
+        selected_ids = _string_list(llm_result.get("selected_skill_ids", []))
         selected_skills = [skill_map[sid] for sid in selected_ids if sid in skill_map]
 
-        strategy_str = llm_result.get("strategy", "reuse")
+        strategy_str = str(llm_result.get("strategy", "reuse"))
         try:
             strategy = RetrievalStrategy(strategy_str)
         except ValueError:
             strategy = RetrievalStrategy.REUSE
 
+        if not selected_skills and strategy != RetrievalStrategy.GENERATE:
+            return _fallback_reuse(search_results)
+
+        execution_order = [
+            skill_id
+            for skill_id in _string_list(
+                llm_result.get("execution_order", selected_ids)
+            )
+            if skill_id in skill_map
+        ] or [skill.skill_id for skill in selected_skills]
+        confidence = _clamp_float(llm_result.get("confidence", 0.7))
+        parameter_mapping = llm_result.get("parameter_mapping", {})
+        if not isinstance(parameter_mapping, dict):
+            parameter_mapping = {}
+
         result = RetrievalResult(
             strategy=strategy,
             skills=selected_skills,
-            execution_order=llm_result.get("execution_order", selected_ids),
-            confidence=llm_result.get("confidence", 0.7),
-            rationale=llm_result.get("rationale", ""),
-            parameter_mapping=llm_result.get("parameter_mapping", {}),
-            needs_generation=llm_result.get("needs_generation", False),
-            generation_hint=llm_result.get("generation_hint", ""),
+            execution_order=execution_order,
+            confidence=confidence,
+            rationale=str(llm_result.get("rationale", "")),
+            parameter_mapping=parameter_mapping,
+            needs_generation=bool(
+                llm_result.get("needs_generation", strategy == RetrievalStrategy.GENERATE)
+            ),
+            generation_hint=str(llm_result.get("generation_hint", "")),
         )
 
         logger.info(
-            f"Skill 检索: [{strategy.value}] "
-            f"选中 {len(selected_skills)} 个 Skill, "
-            f"置信度={result.confidence:.2f}"
+            "Skill retrieval [%s] selected %s skill(s), confidence %.2f",
+            strategy.value,
+            len(selected_skills),
+            result.confidence,
         )
         return result
 
     async def retrieve_by_id(self, skill_id: str) -> Optional[Skill]:
-        """按 ID 直接检索（用于已知 Skill 的执行）。"""
+        """Retrieve a Skill by exact id, even if search returns fuzzy matches first."""
+
         from ...layers.skill_repository.indexing import SearchQuery
-        results = await self._search.search(SearchQuery(text=skill_id, max_results=1))
-        if results and results[0].skill.skill_id == skill_id:
-            return results[0].skill
+
+        results = await self._search.search(
+            SearchQuery(text=skill_id, max_results=self._max_candidates)
+        )
+        for result in results:
+            if result.skill.skill_id == skill_id:
+                return result.skill
         return None
 
     def _format_skills_for_prompt(self, search_results: List[Any]) -> str:
         lines = []
-        for i, r in enumerate(search_results[:8]):
-            s = r.skill
+        for i, result in enumerate(search_results[:8]):
+            skill = result.skill
             lines.append(
-                f"{i+1}. [{s.skill_id}] {s.name} ({s.skill_type.value}, {s.domain})\n"
-                f"   描述: {s.description[:100]}\n"
-                f"   成功率: {s.metrics.success_rate:.0%}, 使用: {s.metrics.usage_count}次"
+                f"{i + 1}. [{skill.skill_id}] {skill.name} "
+                f"({skill.skill_type.value}, {skill.domain})\n"
+                f"   description: {skill.description[:100]}\n"
+                f"   success_rate: {skill.metrics.success_rate:.0%}, "
+                f"usage_count: {skill.metrics.usage_count}"
             )
         return "\n".join(lines)
 
@@ -214,13 +217,14 @@ class SkillRetriever:
             current_state=json.dumps(state, ensure_ascii=False)[:300],
             available_skills=skills_info,
         )
-        response = self._llm.chat([
-            Message.system(
-                "你是 SkillOS 的 Skill 检索专家，负责为任务选择最合适的 Skill。"
-                "严格按照 JSON 格式输出。"
-            ),
-            Message.user(prompt),
-        ])
+        response = self._llm.chat(
+            [
+                Message.system(
+                    "You are the SkillOS Retrieval Agent. Return strict JSON only."
+                ),
+                Message.user(prompt),
+            ]
+        )
         return self._extract_json(response.content)
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
@@ -242,3 +246,29 @@ class SkillRetriever:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _fallback_reuse(search_results: List[Any]) -> RetrievalResult:
+    best_result = search_results[0]
+    best_skill = best_result.skill
+    return RetrievalResult(
+        strategy=RetrievalStrategy.REUSE,
+        skills=[best_skill],
+        execution_order=[best_skill.skill_id],
+        confidence=_clamp_float(getattr(best_result, "score", 0.0)),
+        rationale="LLM selection failed; using the highest-scoring retrieved skill.",
+    )
+
+
+def _clamp_float(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, number))
+
+
+def _string_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None and str(item)]
