@@ -118,6 +118,44 @@ class NewVersionRequest(BaseModel):
     author: str = "api"
 
 
+class SnapshotCommitRequest(BaseModel):
+    author: str = "api"
+    message: Optional[str] = None
+
+
+class SnapshotCommitResponse(BaseModel):
+    skill_id: str
+    skill_name: str
+    version: str
+    snapshot_path: str
+    commit: str
+    message: str
+
+
+class SnapshotHistoryResponse(BaseModel):
+    skill_id: str
+    snapshot_path: str
+    history: List[Dict[str, Any]]
+
+
+class SnapshotDiffResponse(BaseModel):
+    skill_id: str
+    snapshot_path: str
+    from_ref: str
+    to_ref: str
+    raw_diff: str
+    diffs: List[Dict[str, Any]]
+    has_breaking_changes: bool
+
+
+class ReleaseTagRequest(BaseModel):
+    ref: str = "HEAD"
+
+
+class RollbackRequest(BaseModel):
+    source_ref: str
+
+
 # ─── 图谱 ─────────────────────────────────────────────────────────────────────
 
 class AddEdgeRequest(BaseModel):
