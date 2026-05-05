@@ -303,4 +303,76 @@ git diff --check
 
 ---
 
+## Phase 2: Planner / Retriever quality baseline
+
+第二阶段继续先稳住 C 的智能入口，不扩 REST endpoint，也不改前端契约。
+
+- Planner 的 LLM-facing prompt 改成稳定英文 ASCII，并补充少量 few-shot 示例，明确要求只返回 JSON，且只能使用候选 Skill 中真实存在的 `skill_id`。
+- Planner 会归一化 LLM 返回的 steps：过滤不存在的 Skill、重新编号 `step_index`、补齐空的 `skill_name` / `description`、把非法 `input_mapping` 降级为空对象，并清理无效依赖。
+- Planner 的 fallback 限制为最多 5 个候选 Skill，按顺序生成可执行计划，并标记 `metadata.source = "fallback"`，避免 LLM 失效时生成过长或不可解释的计划。
+- Retriever 的 LLM-facing prompt 改成稳定英文 ASCII，明确 `reuse` / `compose` / `adapt` / `generate` 四种策略边界。
+- Retriever 会归一化 LLM 返回的 strategy、selected ids、execution order、confidence 和 parameter mapping；非法 strategy 回退为 `reuse`，confidence clamp 到 `[0, 1]`，不存在的 Skill ID 会被过滤。
+- 如果 LLM 没有给出可用 Skill，但搜索结果存在，Retriever 回退到最高分候选；如果搜索结果为空，返回 `generate`，为后续 Builder / D 任务保留入口。
+- `retrieve_by_id()` 改成严格按 `skill_id` 精确匹配，即使搜索引擎先返回模糊命中，也不会误执行错误 Skill。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
+## Phase 3: Executor stability and partial success
+
+第三阶段稳定 Executor 的运行语义，不扩 REST endpoint，也不扩大代码 Skill 沙箱权限。
+
+- `SkillExecutor.execute_plan()` 不再因为某个 step 失败就立刻停止整个 plan；无依赖或依赖已满足的其它 step 会继续执行。
+- 依赖失败的后续 step 会从 `pending` 明确转为 `skipped`，并记录 `Skipped because dependency failed: <step_id>`，避免执行历史和前端状态一直停在 pending。
+- 新增 `step_skipped` 事件，payload 包含 `plan_id`、`step_id`、`step_index`、`skill_id`、`skill_name`、`reason` 和 `failed_dependency`。
+- `step_failed` 事件统一补齐 `step_index`、`skill_id`、`skill_name`、`error` 和 `latency_ms`，missing Skill、timeout、普通异常都走同一类事件结构。
+- missing Skill 路径会补齐 `started_at` / `completed_at`，让 latency 和历史统计更稳定。
+- `plan_completed.status` 继续使用 `success` / `partial` / `failed`：只要有成功 step 且存在失败或跳过，就返回 `partial`；没有成功则返回 `failed`。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py tests\test_skill_runtime_phase3.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
+## Phase 4: Verifier / Reflection maintenance feedback
+
+第四阶段把 C 的执行结果转成更可靠的验证结果和 D 可消费的维护建议，不扩 REST endpoint，也不在 C 内自动修改 Skill。
+
+- `VerifierAgent` 的 LLM-facing prompt 改成稳定英文 ASCII，并要求只输出 JSON。
+- Verifier 会归一化 `passed`、`score`、`issues`、`suggestions` 和 `reasoning`；`score` 会 clamp 到 `[0, 1]`，非法列表会降级为空列表。
+- Verifier 的 fallback 不再只看 output 是否非空；会检查 `success=false`、`ok=false`、`error`、`exception`、`failed`、`timeout`、`skipped` 等失败证据。
+- `ReflectionAgent` 的 LLM-facing prompt 改成稳定英文 ASCII，并明确只能提出后续动作，不能声称已经修复 Skill。
+- Reflection 会归一化 `failed_skill_ids`、`improvement_suggestions` 和 `skill_update_proposals`。
+- `skill_update_proposals` 面向 D 的 Maintainer / Repair 消费，使用 `recommended_action = repair | deprecate | review | no_action`；非法动作会回退为 `review`。
+- Reflection fallback 在验证失败时会尽量从 trace 中提取失败 Skill ID，并生成 repair proposal；验证成功时不生成修复 proposal。
+- 本阶段不自动调用 D 的 `SkillMaintainerAgent`，不改 Wiki，不修改任何 Skill 实体。
+
+验证命令：
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime skillos\api\routes\execution.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase2.py tests\test_skill_runtime_phase3.py tests\test_skill_runtime_phase4.py -q
+python -m pytest tests\test_models.py tests\test_config.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+---
+
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
