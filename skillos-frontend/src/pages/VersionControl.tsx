@@ -217,7 +217,7 @@ export default function VersionControl() {
         <Col xs={24} lg={16}>
           <Card
             title={<span><BranchesOutlined /> 版本历史</span>}
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
             extra={
               selectedId && (
@@ -276,7 +276,7 @@ export default function VersionControl() {
           {diffData && (
             <Card
               title={<span><DiffOutlined /> 变更历史 — {diffData.skill_name}</span>}
-              bordered={false}
+              variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
               {diffData.history.length === 0 ? (
@@ -311,7 +311,7 @@ export default function VersionControl() {
         <Col xs={24} lg={8}>
           <Card
             title={<span><HistoryOutlined /> 版本时间线</span>}
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             {versions.length > 0 ? (
@@ -352,7 +352,7 @@ export default function VersionControl() {
           {selectedSkill && (
             <Card
               title="当前版本信息"
-              bordered={false}
+              variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
               <Descriptions column={1} size="small">
@@ -375,7 +375,7 @@ export default function VersionControl() {
         title={drawerSkill ? `v${drawerSkill.version} 详情` : ''}
         open={!!drawerSkill}
         onClose={() => setDrawerSkill(null)}
-        width={400}
+        size="default"
       >
         {drawerSkill && (
           <Descriptions column={1} bordered size="small">

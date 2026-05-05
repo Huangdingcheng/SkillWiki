@@ -23,8 +23,26 @@ export interface SkillParameter {
 }
 
 export interface SkillInterface {
-  inputs: SkillParameter[]
-  outputs: SkillParameter[]
+  inputs?: SkillParameter[]
+  outputs?: SkillParameter[]
+  input_schema?: {
+    type?: string
+    properties?: Record<string, {
+      type?: string
+      description?: string
+      default?: unknown
+    }>
+    required?: string[]
+  }
+  output_schema?: {
+    type?: string
+    properties?: Record<string, {
+      type?: string
+      description?: string
+      default?: unknown
+    }>
+    required?: string[]
+  }
   preconditions: string[]
   postconditions: string[]
 }
@@ -33,8 +51,8 @@ export interface SkillImplementation {
   language: string
   code?: string
   prompt_template?: string
-  tool_calls: string[]
-  sub_skill_ids: string[]
+  tool_calls?: string[]
+  sub_skill_ids?: string[]
 }
 
 export interface SkillMetrics {

@@ -1,21 +1,21 @@
 import { useState } from 'react'
 import {
-  Card, Tabs, Input, Button, Alert, Tag, Progress, Space,
-  Row, Col, Typography, Divider, List, Badge, message, Steps,
+  Alert, Badge, Button, Card, Col, Divider, Input, Progress,
+  Row, Space, Steps, Tabs, Tag, Typography,
 } from 'antd'
 import {
-  CloudUploadOutlined, CodeOutlined, FileTextOutlined,
-  ApiOutlined, PlayCircleOutlined, CheckCircleOutlined,
-  FilterOutlined, CompressOutlined, FileSearchOutlined, DatabaseOutlined,
-  LoadingOutlined,
+  ApiOutlined, CheckCircleOutlined, CloudUploadOutlined, CodeOutlined,
+  CompressOutlined, DatabaseOutlined, FileSearchOutlined, FileTextOutlined,
+  FilterOutlined, LoadingOutlined, PlayCircleOutlined,
 } from '@ant-design/icons'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { ingestApi } from '@/api/client'
+import { getApiErrorMessage } from '@/api/errors'
 import type { IngestResponse } from '@/api/client'
 
 const { TextArea } = Input
-const { Text, Paragraph } = Typography
+const { Paragraph, Text } = Typography
 
 const SOURCE_TYPES = [
   {
@@ -24,13 +24,13 @@ const SOURCE_TYPES = [
     icon: <PlayCircleOutlined />,
     color: '#1677ff',
     placeholder: `粘贴操作轨迹，例如：
-1. 打开浏览器，导航到 https://example.com/login
+1. 打开浏览器并进入 https://example.com/login
 2. 点击用户名输入框
-3. 输入用户名 "admin"
+3. 输入用户名 admin
 4. 点击密码输入框
 5. 输入密码
 6. 点击登录按钮
-7. 等待页面跳转，验证登录成功`,
+7. 等待页面跳转并确认登录成功`,
   },
   {
     key: 'document',
@@ -38,15 +38,15 @@ const SOURCE_TYPES = [
     icon: <FileTextOutlined />,
     color: '#52c41a',
     placeholder: `粘贴技术文档或操作说明，例如：
-# 表单填写规范
+# 登录表单规范
 
-## 登录表单
-- 用户名：必填，长度 4-20 字符
-- 密码：必填，至少 8 位，包含大小写字母和数字
-- 记住我：可选复选框
+## 输入字段
+- username: 必填，4-20 个字符
+- password: 必填，至少 8 位
+- remember_me: 可选
 
 ## 操作步骤
-1. 验证输入格式
+1. 校验输入格式
 2. 提交表单
 3. 处理响应`,
   },
@@ -55,7 +55,7 @@ const SOURCE_TYPES = [
     label: 'API 文档',
     icon: <ApiOutlined />,
     color: '#722ed1',
-    placeholder: `粘贴 API 文档或 OpenAPI 规范，例如：
+    placeholder: `粘贴 API 文档或 OpenAPI 片段，例如：
 POST /api/login
 Content-Type: application/json
 
@@ -80,7 +80,7 @@ Response 200:
     color: '#fa8c16',
     placeholder: `粘贴 Python/JavaScript/Shell 脚本，例如：
 async def login(page, username: str, password: str) -> bool:
-    """登录到系统。"""
+    """Login to the target system."""
     await page.goto("https://example.com/login")
     await page.fill("#username", username)
     await page.fill("#password", password)
@@ -91,14 +91,16 @@ async def login(page, username: str, password: str) -> bool:
 ]
 
 const TYPE_COLOR: Record<string, string> = {
-  atomic: 'blue', functional: 'purple', strategic: 'gold',
+  atomic: 'blue',
+  functional: 'purple',
+  strategic: 'gold',
 }
 
 const PIPELINE_STAGES = [
   { title: 'Extractor', icon: <FilterOutlined />, desc: '提取原始动作序列' },
-  { title: 'Normalizer', icon: <CompressOutlined />, desc: '规范化为标准格式' },
-  { title: 'Summarizer', icon: <FileSearchOutlined />, desc: '生成 Skill 摘要' },
-  { title: 'Indexer', icon: <DatabaseOutlined />, desc: '写入 Experience Store' },
+  { title: 'Normalizer', icon: <CompressOutlined />, desc: '规范化为结构化操作' },
+  { title: 'Summarizer', icon: <FileSearchOutlined />, desc: '生成候选 Skill 摘要' },
+  { title: 'Indexer', icon: <DatabaseOutlined />, desc: '生成检索关键词' },
 ]
 
 export default function KnowledgeImport() {
@@ -107,24 +109,26 @@ export default function KnowledgeImport() {
   const [loading, setLoading] = useState(false)
   const [pipelineStage, setPipelineStage] = useState(-1)
   const [result, setResult] = useState<IngestResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'parse' | 'create'>('parse')
 
   const currentSource = SOURCE_TYPES.find(s => s.key === activeTab)!
 
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   const handleSubmit = async (submitMode: 'parse' | 'create') => {
     if (!content.trim()) {
-      message.warning('请先输入内容')
+      setError('请先输入内容')
       return
     }
+
     setMode(submitMode)
     setLoading(true)
     setResult(null)
+    setError(null)
     setPipelineStage(0)
 
     try {
-      // 模拟 pipeline 阶段进度
       const stagePromise = (async () => {
         for (let i = 0; i < PIPELINE_STAGES.length; i++) {
           setPipelineStage(i)
@@ -139,13 +143,10 @@ export default function KnowledgeImport() {
       const [res] = await Promise.all([apiPromise, stagePromise])
       setPipelineStage(PIPELINE_STAGES.length)
       setResult(res)
-      if (res.success) {
-        message.success(`解析成功，提取到 ${res.unit_count} 个经验单元`)
-      } else {
-        message.warning('解析完成，但存在错误')
-      }
+
     } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '解析失败')
+      const msg = getApiErrorMessage(e, '解析失败')
+      setError(msg)
       setPipelineStage(-1)
     } finally {
       setLoading(false)
@@ -157,22 +158,39 @@ export default function KnowledgeImport() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>知识导入</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          从轨迹、文档、API 文档或代码脚本中提取结构化经验，生成 Skill 候选。
+          从轨迹、文档、API 文档或代码脚本中提取结构化经验，生成可进入 Wiki 管理的候选 Skill。
         </p>
       </motion.div>
+
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          title={mode === 'create' ? '解析并创建 Skill 失败' : '解析失败'}
+          description={error}
+          style={{ marginBottom: 16 }}
+          onClose={() => setError(null)}
+        />
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <Card
-            bordered={false}
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             <Tabs
               activeKey={activeTab}
-              onChange={k => { setActiveTab(k); setContent(''); setResult(null) }}
-              items={SOURCE_TYPES.map(s => ({
-                key: s.key,
-                label: <span>{s.icon} {s.label}</span>,
+              onChange={key => {
+                setActiveTab(key)
+                setContent('')
+                setResult(null)
+                setError(null)
+              }}
+              items={SOURCE_TYPES.map(source => ({
+                key: source.key,
+                label: <span>{source.icon} {source.label}</span>,
                 children: null,
               }))}
             />
@@ -185,13 +203,13 @@ export default function KnowledgeImport() {
 
             <TextArea
               value={content}
-              onChange={e => setContent(e.target.value)}
+              onChange={event => setContent(event.target.value)}
               placeholder={currentSource.placeholder}
               rows={14}
               style={{ fontFamily: 'monospace', fontSize: 13 }}
             />
 
-            <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Button
                 type="primary"
                 icon={<CloudUploadOutlined />}
@@ -210,11 +228,10 @@ export default function KnowledgeImport() {
                 解析并创建 Skill
               </Button>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                "解析预览"仅展示结果，"创建 Skill"会将候选写入 Wiki
+                预览只展示结果；创建会把候选 Skill 写入 Wiki。
               </Text>
             </div>
 
-            {/* Pipeline 阶段进度 */}
             {(loading || pipelineStage >= 0) && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 16 }}>
                 <Divider style={{ margin: '12px 0' }} />
@@ -225,14 +242,14 @@ export default function KnowledgeImport() {
                   size="small"
                   current={pipelineStage}
                   status={pipelineStage >= PIPELINE_STAGES.length ? 'finish' : 'process'}
-                  items={PIPELINE_STAGES.map((s, i) => ({
-                    title: s.title,
-                    description: s.desc,
-                    icon: pipelineStage > i
+                  items={PIPELINE_STAGES.map((stage, index) => ({
+                    title: stage.title,
+                    content: stage.desc,
+                    icon: pipelineStage > index
                       ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      : pipelineStage === i && loading
+                      : pipelineStage === index && loading
                         ? <LoadingOutlined style={{ color: '#1677ff' }} />
-                        : s.icon,
+                        : stage.icon,
                   }))}
                 />
               </motion.div>
@@ -251,12 +268,12 @@ export default function KnowledgeImport() {
               >
                 <Card
                   title="解析结果"
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
                   extra={
                     <Badge
                       status={result.success ? 'success' : 'error'}
-                      text={result.success ? '成功' : '失败'}
+                      text={result.success ? '成功' : '存在问题'}
                     />
                   }
                 >
@@ -284,7 +301,8 @@ export default function KnowledgeImport() {
                   {result.errors.length > 0 && (
                     <Alert
                       type="warning"
-                      message={result.errors.join('; ')}
+                      title="解析或创建过程中存在问题"
+                      description={result.errors.join('; ')}
                       style={{ marginBottom: 12 }}
                     />
                   )}
@@ -293,7 +311,7 @@ export default function KnowledgeImport() {
                     <Alert
                       type="success"
                       showIcon
-                      message={`已创建 ${result.created_skills?.length ?? 0} 个候选 Skill`}
+                      title={`已创建 ${result.created_skills?.length ?? 0} 个候选 Skill`}
                       description={
                         <Space wrap>
                           {result.created_skills?.map(skill => (
@@ -313,23 +331,20 @@ export default function KnowledgeImport() {
                 {result.units.length > 0 && (
                   <Card
                     title={`经验单元 (${result.units.length})`}
-                    bordered={false}
+                    variant="borderless"
                     style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                   >
-                    <List
-                      dataSource={result.units}
-                      renderItem={(unit, i) => (
+                    <div>
+                      {result.units.map((unit, index) => (
                         <motion.div
                           key={unit.unit_id}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.05 }}
+                          transition={{ delay: index * 0.05 }}
                         >
-                          <List.Item style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '12px 0' }}>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                              {unit.proposed_skill_name && (
-                                <Text strong>{unit.proposed_skill_name}</Text>
-                              )}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '12px 0' }}>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                              {unit.proposed_skill_name && <Text strong>{unit.proposed_skill_name}</Text>}
                               {unit.proposed_type && (
                                 <Tag color={TYPE_COLOR[unit.proposed_type] || 'default'}>
                                   {unit.proposed_type}
@@ -354,8 +369,10 @@ export default function KnowledgeImport() {
                             )}
                             {unit.extracted_actions.length > 0 && (
                               <div style={{ marginTop: 4 }}>
-                                {unit.extracted_actions.slice(0, 3).map((a, j) => (
-                                  <Tag key={j} style={{ fontSize: 11, marginBottom: 2 }}>{a}</Tag>
+                                {unit.extracted_actions.slice(0, 3).map((action, actionIndex) => (
+                                  <Tag key={`${unit.unit_id}-action-${actionIndex}`} style={{ fontSize: 11, marginBottom: 2 }}>
+                                    {action}
+                                  </Tag>
                                 ))}
                                 {unit.extracted_actions.length > 3 && (
                                   <Text type="secondary" style={{ fontSize: 11 }}>
@@ -373,11 +390,11 @@ export default function KnowledgeImport() {
                                 ))}
                               </div>
                             )}
-                          </List.Item>
-                          {i < result.units.length - 1 && <Divider style={{ margin: '4px 0' }} />}
+                          </div>
+                          {index < result.units.length - 1 && <Divider style={{ margin: '4px 0' }} />}
                         </motion.div>
-                      )}
-                    />
+                      ))}
+                    </div>
                   </Card>
                 )}
               </motion.div>
@@ -390,21 +407,21 @@ export default function KnowledgeImport() {
                 animate={{ opacity: 1 }}
               >
                 <Card
-                  bordered={false}
+                  variant="borderless"
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: 40 }}
                 >
                   <CloudUploadOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 12 }} />
                   <div style={{ color: '#999' }}>输入内容后点击解析</div>
                   <div style={{ marginTop: 16 }}>
                     <Space wrap>
-                      {SOURCE_TYPES.map(s => (
+                      {SOURCE_TYPES.map(source => (
                         <Tag
-                          key={s.key}
-                          color={activeTab === s.key ? s.color : undefined}
+                          key={source.key}
+                          color={activeTab === source.key ? source.color : undefined}
                           style={{ cursor: 'pointer' }}
-                          onClick={() => setActiveTab(s.key)}
+                          onClick={() => setActiveTab(source.key)}
                         >
-                          {s.icon} {s.label}
+                          {source.icon} {source.label}
                         </Tag>
                       ))}
                     </Space>

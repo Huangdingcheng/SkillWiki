@@ -1,30 +1,58 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import {
-  Card, Button, Input, Steps, Tag, Badge, Space, Typography,
-  Row, Col, Progress, Alert, Divider, Timeline, Spin, Tooltip,
+  Alert,
+  Button,
+  Card,
+  Col,
+  Divider,
+  Empty,
+  Input,
+  Progress,
+  Row,
+  Space,
+  Spin,
+  Steps,
+  Tag,
+  Timeline,
+  Tooltip,
+  Typography,
 } from 'antd'
 import {
-  SearchOutlined, ThunderboltOutlined, DatabaseOutlined,
-  BulbOutlined, RocketOutlined, CheckCircleFilled,
-  LoadingOutlined, ClockCircleOutlined, StarOutlined,
-  ArrowRightOutlined, ReloadOutlined,
+  ApartmentOutlined,
+  ArrowRightOutlined,
+  BranchesOutlined,
+  BulbOutlined,
+  CheckCircleFilled,
+  ClockCircleOutlined,
+  DatabaseOutlined,
+  HistoryOutlined,
+  LoadingOutlined,
+  ReloadOutlined,
+  RocketOutlined,
+  SearchOutlined,
+  StarOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
-import { executionApi, ingestApi } from '@/api/client'
-import type { ExecutionResult } from '@/api/types'
+import { useNavigate } from 'react-router-dom'
+import { executionApi } from '@/api/client'
+import { getApiErrorMessage } from '@/api/errors'
+import type { ExecutionResult, RetrievedSkill } from '@/api/types'
 
 const { TextArea } = Input
 const { Text, Paragraph } = Typography
 
 const SKILL_TYPE_COLOR: Record<string, string> = {
-  atomic: '#1677ff', functional: '#722ed1', strategic: '#faad14',
+  atomic: '#1677ff',
+  functional: '#722ed1',
+  strategic: '#faad14',
 }
 
 const DEMO_TASKS = [
-  '在网页上找到登录按钮并点击，然后填写用户名和密码',
-  '从执行轨迹中提取可复用的操作模式并生成 Skill',
-  '审计一个 Skill 的安全性并生成测试用例',
-  '将功能重复的两个 Skill 合并为一个统一版本',
+  '在网页上完成一次登录操作，并记录可复用的执行步骤',
+  '从一段执行轨迹中提取可复用操作模式，并沉淀为 Skill',
+  '检查一个 Skill 的失败原因，并给出修复建议',
+  '根据已有 Skill 组合完成一个新的自动化任务',
 ]
 
 type Phase =
@@ -36,67 +64,97 @@ type Phase =
   | 'learning'
   | 'done'
 
-interface RetrievedSkill {
-  skill_id: string
-  name: string
-  description: string
-  skill_type: string
-  score: number
-  match_reason: string
-}
-
 const PHASE_STEPS = [
-  { title: 'Skill 检索', icon: <SearchOutlined /> },
-  { title: '计划生成', icon: <BulbOutlined /> },
-  { title: '执行', icon: <ThunderboltOutlined /> },
-  { title: '经验记录', icon: <DatabaseOutlined /> },
-  { title: 'Skill 学习', icon: <StarOutlined /> },
+  { title: 'Skill 检索', description: '从 Skill Wiki 中召回相关能力', icon: <SearchOutlined /> },
+  { title: '计划生成', description: '把目标拆成可执行步骤', icon: <BulbOutlined /> },
+  { title: '执行', description: '按计划调用 Skill 并收集结果', icon: <ThunderboltOutlined /> },
+  { title: '经验记录', description: '把执行轨迹写入经验层', icon: <DatabaseOutlined /> },
+  { title: '演化学习', description: '更新质量信号并准备复用', icon: <StarOutlined /> },
 ]
 
 const phaseIndex: Record<Phase, number> = {
-  idle: -1, searching: 0, planning: 1, executing: 2, recording: 3, learning: 4, done: 4,
+  idle: -1,
+  searching: 0,
+  planning: 1,
+  executing: 2,
+  recording: 3,
+  learning: 4,
+  done: 4,
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function getStatusColor(status: string) {
+  if (status === 'success') return 'green'
+  if (status === 'failed' || status === 'error') return 'red'
+  if (status === 'partial') return 'gold'
+  return 'blue'
+}
+
+function SuggestedSkill({ suggested }: { suggested: Record<string, unknown> }) {
+  const name = String(suggested.name || suggested.skill_name || '未命名 Skill')
+  const description = String(suggested.description || suggested.summary || '后端返回了建议沉淀的新 Skill。')
+  const type = String(suggested.skill_type || suggested.type || 'candidate')
+
+  return (
+    <Card
+      title={<span><BulbOutlined style={{ color: '#faad14', marginRight: 6 }} />建议沉淀的新 Skill</span>}
+      size="small"
+      style={{ borderRadius: 8, marginTop: 12, borderLeft: '3px solid #faad14' }}
+    >
+      <Space orientation="vertical" size={6} style={{ width: '100%' }}>
+        <Space>
+          <Text strong>{name}</Text>
+          <Tag color="gold">{type}</Tag>
+        </Space>
+        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          {description}
+        </Paragraph>
+      </Space>
+    </Card>
+  )
 }
 
 export default function SelfEvolutionDemo() {
+  const navigate = useNavigate()
   const [task, setTask] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [visibleSteps, setVisibleSteps] = useState<number>(0)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+  const [visibleSteps, setVisibleSteps] = useState(0)
 
   const runDemo = async () => {
-    if (!task.trim()) return
+    const goal = task.trim()
+    if (!goal) return
+
     setError(null)
     setResult(null)
     setVisibleSteps(0)
 
     try {
       setPhase('searching')
-      await sleep(600)
+      await sleep(450)
       setPhase('planning')
-      await sleep(500)
+      await sleep(400)
       setPhase('executing')
 
-      const res = await executionApi.executePlan(task)
+      const res = await executionApi.executePlan(goal)
       setResult(res)
 
-      // 逐步显示执行步骤
-      for (let i = 1; i <= res.steps.length; i++) {
-        await sleep(300)
-        setVisibleSteps(i)
+      for (let index = 1; index <= res.steps.length; index += 1) {
+        await sleep(260)
+        setVisibleSteps(index)
       }
 
       setPhase('recording')
-      await sleep(800)
+      await sleep(550)
       setPhase('learning')
-      await sleep(600)
+      await sleep(450)
       setPhase('done')
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } }; message?: string }
-      setError(err?.response?.data?.detail || err?.message || '执行失败')
+    } catch (err) {
+      setError(getApiErrorMessage(err, '执行自演化演示失败'))
       setPhase('idle')
     }
   }
@@ -109,29 +167,39 @@ export default function SelfEvolutionDemo() {
     setTask('')
   }
 
+  const goToWiki = (skillId: string) => {
+    navigate(`/wiki?skill_id=${encodeURIComponent(skillId)}`)
+  }
+
+  const goToGraph = (skillId: string) => {
+    navigate(`/graph?skill_id=${encodeURIComponent(skillId)}`)
+  }
+
   const isRunning = phase !== 'idle' && phase !== 'done'
   const retrieved = result?.retrieved_skills || []
-  const successCount = result?.steps.filter(s => s.status === 'success').length || 0
+  const successCount = result?.steps.filter(step => step.status === 'success').length || 0
+  const stepCount = result?.steps.length || 0
+  const currentStep = phaseIndex[phase]
+  const experienceRecorded = result?.experience_recorded === true
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: 24, maxWidth: 1120, margin: '0 auto' }}>
       <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
         <div style={{ marginBottom: 24 }}>
           <h2 style={{ fontWeight: 800, fontSize: 22, marginBottom: 4 }}>
             Self-Evolution Loop Demo
           </h2>
-          <p style={{ color: '#666', marginBottom: 0 }}>
-            输入任务，观察 SkillOS 如何检索 Skill、生成计划、执行、记录经验并持续学习。
-          </p>
+          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            输入一个任务目标，观察 SkillOS 如何完成 Skill 检索、计划生成、执行、经验记录和演化学习。
+          </Paragraph>
         </div>
       </motion.div>
 
-      {/* 任务输入 */}
-      <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
+      <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
         <TextArea
           value={task}
-          onChange={e => setTask(e.target.value)}
-          placeholder="描述你的任务目标..."
+          onChange={event => setTask(event.target.value)}
+          placeholder="描述你的任务目标，例如：从执行轨迹中提取可复用 Skill"
           rows={2}
           disabled={isRunning}
           style={{ fontSize: 14, marginBottom: 10 }}
@@ -139,19 +207,21 @@ export default function SelfEvolutionDemo() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Space wrap>
             <Text type="secondary" style={{ fontSize: 12 }}>示例：</Text>
-            {DEMO_TASKS.map(t => (
+            {DEMO_TASKS.map(example => (
               <Tag
-                key={t}
-                style={{ cursor: 'pointer', fontSize: 11 }}
-                onClick={() => !isRunning && setTask(t)}
+                key={example}
+                style={{ cursor: isRunning ? 'not-allowed' : 'pointer', fontSize: 12 }}
+                onClick={() => !isRunning && setTask(example)}
               >
-                {t.slice(0, 20)}…
+                {example}
               </Tag>
             ))}
           </Space>
           <Space>
             {phase === 'done' && (
-              <Button icon={<ReloadOutlined />} onClick={reset}>重置</Button>
+              <Button icon={<ReloadOutlined />} onClick={reset}>
+                重置
+              </Button>
             )}
             <Button
               type="primary"
@@ -161,25 +231,25 @@ export default function SelfEvolutionDemo() {
               disabled={!task.trim() || phase === 'done'}
               size="large"
             >
-              {phase === 'done' ? '已完成' : '启动演化循环'}
+              {phase === 'done' ? '已完成' : '启动演化闭环'}
             </Button>
           </Space>
         </div>
       </Card>
 
-      {/* 阶段进度条 */}
       {phase !== 'idle' && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-          <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
             <Steps
-              current={phaseIndex[phase]}
+              current={currentStep}
               status={phase === 'done' ? 'finish' : 'process'}
               size="small"
-              items={PHASE_STEPS.map((s, i) => ({
-                title: s.title,
-                icon: phaseIndex[phase] > i
+              items={PHASE_STEPS.map((step, index) => ({
+                title: step.title,
+                description: step.description,
+                icon: currentStep > index
                   ? <CheckCircleFilled style={{ color: '#52c41a' }} />
-                  : phaseIndex[phase] === i
+                  : currentStep === index
                     ? <LoadingOutlined style={{ color: '#1677ff' }} />
                     : <ClockCircleOutlined style={{ color: '#d9d9d9' }} />,
               }))}
@@ -189,52 +259,69 @@ export default function SelfEvolutionDemo() {
       )}
 
       {error && (
-        <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} closable onClose={() => setError(null)} />
+        <Alert
+          type="error"
+          title={error}
+          showIcon
+          style={{ marginBottom: 16 }}
+          closable
+          onClose={() => setError(null)}
+        />
       )}
 
       <AnimatePresence>
         {result && (
           <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <Row gutter={[16, 16]}>
-              {/* 左列：检索到的 Skill + 执行步骤 */}
               <Col xs={24} lg={14}>
-                {/* 检索到的 Skill */}
                 {retrieved.length > 0 && (
                   <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
                     <Card
                       title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
-                      bordered={false}
+                      variant="borderless"
                       size="small"
-                      style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
+                      style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
                     >
-                      {retrieved.map((sk, i) => (
+                      {retrieved.map((skill: RetrievedSkill, index) => (
                         <motion.div
-                          key={sk.skill_id}
+                          key={skill.skill_id}
                           initial={{ opacity: 0, x: -12 }}
                           animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.08 }}
+                          transition={{ delay: index * 0.06 }}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 0',
-                            borderBottom: i < retrieved.length - 1 ? '1px solid #f0f0f0' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '10px 0',
+                            borderBottom: index < retrieved.length - 1 ? '1px solid #f0f0f0' : 'none',
                           }}
                         >
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <Text strong style={{ fontSize: 13 }}>{sk.name}</Text>
-                              <Tag color={SKILL_TYPE_COLOR[sk.skill_type]} style={{ fontSize: 10, padding: '0 4px' }}>
-                                {sk.skill_type}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                              <Text strong style={{ fontSize: 13 }}>{skill.name}</Text>
+                              <Tag color={SKILL_TYPE_COLOR[skill.skill_type]} style={{ fontSize: 11 }}>
+                                {skill.skill_type}
                               </Tag>
                             </div>
-                            <Text type="secondary" style={{ fontSize: 11 }}>{sk.match_reason}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>{skill.match_reason || skill.description}</Text>
+                            <div style={{ marginTop: 6 }}>
+                              <Space size={6}>
+                                <Button size="small" icon={<ApartmentOutlined />} onClick={() => goToWiki(skill.skill_id)}>
+                                  Wiki
+                                </Button>
+                                <Button size="small" icon={<BranchesOutlined />} onClick={() => goToGraph(skill.skill_id)}>
+                                  Graph
+                                </Button>
+                              </Space>
+                            </div>
                           </div>
-                          <Tooltip title={`相关度 ${(sk.score * 100).toFixed(0)}%`}>
+                          <Tooltip title={`相关度 ${Math.round(skill.score * 100)}%`}>
                             <Progress
                               type="circle"
-                              percent={Math.round(sk.score * 100)}
-                              width={36}
-                              strokeColor={sk.score > 0.7 ? '#52c41a' : sk.score > 0.4 ? '#faad14' : '#ff4d4f'}
-                              format={p => <span style={{ fontSize: 10 }}>{p}%</span>}
+                              percent={Math.round(skill.score * 100)}
+                              width={40}
+                              strokeColor={skill.score > 0.7 ? '#52c41a' : skill.score > 0.4 ? '#faad14' : '#ff4d4f'}
+                              format={percent => <span style={{ fontSize: 10 }}>{percent}%</span>}
                             />
                           </Tooltip>
                         </motion.div>
@@ -243,40 +330,44 @@ export default function SelfEvolutionDemo() {
                   </motion.div>
                 )}
 
-                {/* 执行步骤 */}
                 <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
                   <Card
                     title={<span><ThunderboltOutlined style={{ color: '#722ed1', marginRight: 6 }} />执行步骤</span>}
-                    bordered={false}
+                    variant="borderless"
                     size="small"
-                    style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                    style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                   >
                     {result.steps.length === 0 ? (
-                      <Alert type="warning" message="未找到可执行的 Skill，请尝试更具体的任务描述" />
+                      <Alert type="warning" showIcon title="未找到可执行的 Skill，请尝试更具体的任务描述。" />
                     ) : (
-                      result.steps.slice(0, visibleSteps).map((step, i) => (
+                      result.steps.slice(0, visibleSteps).map((step, index) => (
                         <motion.div
                           key={step.step_id}
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.25 }}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 0',
-                            borderBottom: i < result.steps.length - 1 ? '1px solid #f0f0f0' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '10px 0',
+                            borderBottom: index < result.steps.length - 1 ? '1px solid #f0f0f0' : 'none',
                           }}
                         >
                           {step.status === 'success'
                             ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 16 }} />
                             : <ClockCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />}
-                          <div style={{ flex: 1 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
                             <Text strong style={{ fontSize: 13 }}>{step.skill_name}</Text>
+                            <div style={{ color: '#8c8c8c', fontSize: 11 }}>
+                              Step {step.step_index + 1} / Skill ID: {step.skill_id}
+                            </div>
                             {step.error && (
-                              <div style={{ fontSize: 11, color: '#ff4d4f' }}>{step.error}</div>
+                              <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{step.error}</div>
                             )}
                           </div>
                           <Text type="secondary" style={{ fontSize: 11 }}>{(step.latency_ms ?? 0).toFixed(0)}ms</Text>
-                          <Tag color={step.status === 'success' ? 'green' : 'red'} style={{ fontSize: 10 }}>
+                          <Tag color={getStatusColor(step.status)} style={{ fontSize: 11 }}>
                             {step.status}
                           </Tag>
                         </motion.div>
@@ -291,18 +382,16 @@ export default function SelfEvolutionDemo() {
                 </motion.div>
               </Col>
 
-              {/* 右列：演化结果 */}
               <Col xs={24} lg={10}>
-                {/* 执行摘要 */}
                 <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}>
                   <Card
-                    bordered={false}
+                    variant="borderless"
                     size="small"
-                    style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
+                    style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
                   >
                     <Row gutter={8}>
                       {[
-                        { label: '步骤', value: result.steps.length, color: '#1677ff' },
+                        { label: '步骤', value: stepCount, color: '#1677ff' },
                         { label: '成功', value: successCount, color: '#52c41a' },
                         { label: '耗时', value: `${result.total_latency_ms.toFixed(0)}ms`, color: '#722ed1' },
                       ].map(({ label, value, color }) => (
@@ -312,28 +401,41 @@ export default function SelfEvolutionDemo() {
                         </Col>
                       ))}
                     </Row>
+                    <Divider style={{ margin: '12px 0' }} />
+                    <Space wrap>
+                      <Tag color={getStatusColor(result.status)}>执行状态：{result.status}</Tag>
+                      {experienceRecorded ? (
+                        <Tag color="green">经验已记录</Tag>
+                      ) : (
+                        <Tag>经验记录待确认</Tag>
+                      )}
+                    </Space>
                   </Card>
                 </motion.div>
 
-                {/* 经验记录 */}
                 <AnimatePresence>
                   {(phase === 'recording' || phase === 'learning' || phase === 'done') && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.1 }}
-                    >
+                    <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
                       <Card
-                        title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />经验已记录</span>}
-                        bordered={false}
+                        title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />经验记录</span>}
+                        variant="borderless"
                         size="small"
-                        style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #52c41a' }}
+                        style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #52c41a' }}
                       >
                         <Timeline
                           items={[
-                            { color: 'green', children: <Text style={{ fontSize: 12 }}>执行轨迹已捕获（{result.steps.length} 个步骤）</Text> },
-                            { color: 'green', children: <Text style={{ fontSize: 12 }}>状态变更已记录（{Object.keys(result.final_state).length} 个字段）</Text> },
-                            { color: 'blue', children: <Text style={{ fontSize: 12 }}>经验单元已写入 Experience Store</Text> },
+                            {
+                              color: 'green',
+                              children: <Text style={{ fontSize: 12 }}>执行轨迹已汇总：{result.steps.length} 个步骤</Text>,
+                            },
+                            {
+                              color: experienceRecorded ? 'green' : 'gray',
+                              children: <Text style={{ fontSize: 12 }}>{experienceRecorded ? '经验单元已写入 Experience Store' : '后端暂未确认经验写入'}</Text>,
+                            },
+                            {
+                              color: 'blue',
+                              children: <Text style={{ fontSize: 12 }}>最终状态字段：{Object.keys(result.final_state || {}).length} 个</Text>,
+                            },
                           ]}
                         />
                       </Card>
@@ -341,55 +443,57 @@ export default function SelfEvolutionDemo() {
                   )}
                 </AnimatePresence>
 
-                {/* Skill 学习 */}
                 <AnimatePresence>
                   {(phase === 'learning' || phase === 'done') && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.2 }}
-                    >
+                    <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
                       <Card
-                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />Skill 学习</span>}
-                        bordered={false}
+                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />演化学习</span>}
+                        variant="borderless"
                         size="small"
-                        style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #faad14' }}
+                        style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #faad14' }}
                       >
-                        <div style={{ marginBottom: 8 }}>
-                          {retrieved.slice(0, 3).map(sk => (
-                            <div key={sk.skill_id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <ArrowRightOutlined style={{ color: '#52c41a', fontSize: 10 }} />
-                              <Text style={{ fontSize: 12 }}><strong>{sk.name}</strong> 执行记录已更新</Text>
-                            </div>
-                          ))}
-                        </div>
+                        {retrieved.length > 0 ? (
+                          <div style={{ marginBottom: 8 }}>
+                            {retrieved.slice(0, 3).map(skill => (
+                              <div key={skill.skill_id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                                <ArrowRightOutlined style={{ color: '#52c41a', fontSize: 10 }} />
+                                <Text style={{ fontSize: 12 }}><strong>{skill.name}</strong> 的复用信号已更新</Text>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <Text type="secondary" style={{ fontSize: 12 }}>本次没有召回可复用 Skill，后续可通过经验沉淀补齐能力。</Text>
+                        )}
                         <Divider style={{ margin: '8px 0' }} />
-                        <div style={{ fontSize: 11, color: '#666' }}>
-                          本次执行将用于 Skill 质量评估与版本演化决策
-                        </div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          本次执行结果可用于健康评估、版本演化和后续相似任务复用。
+                        </Text>
                       </Card>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                {/* 完成 */}
+                {result.suggested_skill && (
+                  <SuggestedSkill suggested={result.suggested_skill} />
+                )}
+
                 <AnimatePresence>
                   {phase === 'done' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                    >
+                    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                       <Alert
                         type="success"
                         icon={<CheckCircleFilled />}
-                        message="自演化循环完成"
-                        description={
-                          <div style={{ fontSize: 12 }}>
-                            SkillOS 已完成本次任务的完整演化循环：检索 → 规划 → 执行 → 记录 → 学习。
-                            下次遇到相似任务时，系统将更快、更准确地响应。
-                          </div>
-                        }
+                        title="自演化闭环完成"
+                        description={(
+                          <Space orientation="vertical" size={8}>
+                            <Text style={{ fontSize: 12 }}>
+                              SkillOS 已完成本次任务的完整闭环：检索、规划、执行、记录和学习。
+                            </Text>
+                            <Button size="small" icon={<HistoryOutlined />} onClick={() => navigate('/execution')}>
+                              查看执行历史
+                            </Button>
+                          </Space>
+                        )}
                         showIcon
                       />
                     </motion.div>
@@ -401,21 +505,25 @@ export default function SelfEvolutionDemo() {
         )}
       </AnimatePresence>
 
-      {/* 空状态说明 */}
       {phase === 'idle' && !result && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-          <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: '32px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🔄</div>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Self-Evolution Loop</div>
-            <Paragraph type="secondary" style={{ maxWidth: 480, margin: '0 auto', fontSize: 13 }}>
-              SkillOS 通过持续的"检索 → 执行 → 记录 → 学习"循环，让 Agent 在每次任务后自动积累经验、
-              优化 Skill 质量，实现真正的自演化能力。
-            </Paragraph>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+          <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: '32px 0' }}>
+            <Empty
+              image={<RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />}
+              description={(
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Self-Evolution Loop</div>
+                  <Paragraph type="secondary" style={{ maxWidth: 520, margin: '0 auto', fontSize: 13 }}>
+                    通过“检索 Skill、执行任务、记录经验、反馈演化”的闭环，SkillOS 可以把每次任务结果转化为后续可复用的能力信号。
+                  </Paragraph>
+                </div>
+              )}
+            />
             <div style={{ marginTop: 20, display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-              {PHASE_STEPS.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Tag color="blue" style={{ fontSize: 12 }}>{s.icon} {s.title}</Tag>
-                  {i < PHASE_STEPS.length - 1 && <ArrowRightOutlined style={{ color: '#d9d9d9', fontSize: 10 }} />}
+              {PHASE_STEPS.map((step, index) => (
+                <div key={step.title} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Tag color="blue" style={{ fontSize: 12 }}>{step.icon} {step.title}</Tag>
+                  {index < PHASE_STEPS.length - 1 && <ArrowRightOutlined style={{ color: '#d9d9d9', fontSize: 10 }} />}
                 </div>
               ))}
             </div>

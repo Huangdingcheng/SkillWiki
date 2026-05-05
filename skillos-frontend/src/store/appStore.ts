@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import type { SkillSummary, SystemHealth } from '@/api/types'
 
+export interface WsEvent {
+  type: string
+  payload: unknown
+  timestamp: string
+}
+
 interface AppStore {
   // 主题
   darkMode: boolean
@@ -15,8 +21,8 @@ interface AppStore {
   setHealth: (h: SystemHealth) => void
 
   // WebSocket 事件日志
-  wsEvents: { time: string; event: string; data: unknown }[]
-  pushWsEvent: (event: string, data: unknown) => void
+  wsEvents: WsEvent[]
+  pushWsEvent: (event: WsEvent) => void
   clearWsEvents: () => void
 
   // 选中的 Skill
@@ -35,10 +41,10 @@ export const useAppStore = create<AppStore>((set) => ({
   setHealth: (health) => set({ health }),
 
   wsEvents: [],
-  pushWsEvent: (event, data) =>
+  pushWsEvent: (event) =>
     set(s => ({
       wsEvents: [
-        { time: new Date().toLocaleTimeString(), event, data },
+        event,
         ...s.wsEvents.slice(0, 99),
       ],
     })),
