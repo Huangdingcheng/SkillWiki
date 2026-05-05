@@ -131,12 +131,13 @@ export interface SystemHealth {
 
 export interface ExecutionStepResult {
   step_id: string
+  step_index: number
   skill_id: string
   skill_name: string
   status: string
-  outputs: Record<string, unknown>
-  latency_ms: number
-  error?: string
+  result?: Record<string, unknown> | null
+  error?: string | null
+  latency_ms?: number | null
 }
 
 export interface RetrievedSkill {
@@ -158,6 +159,17 @@ export interface ExecutionResult {
   retrieved_skills: RetrievedSkill[]
   experience_recorded: boolean
   suggested_skill?: Record<string, unknown>
+}
+
+export interface ExecutionHistoryItem {
+  execution_id: string
+  goal: string
+  status: string
+  step_count: number
+  success_count: number
+  total_latency_ms: number
+  retrieved_skill_count: number
+  created_at: string
 }
 
 export interface OverviewStats {

@@ -148,11 +148,17 @@ async def execute_plan(
             )
 
     success_count = sum(1 for s in steps if s.status == "success")
-    status = _execution_status(steps)
+    if steps and success_count == len(steps) and plan.is_complete:
+        overall_status = "success"
+    elif success_count == 0:
+        overall_status = "failed"
+    else:
+        overall_status = "partial"
+
     result = ExecutionResult(
         plan_id=plan.plan_id,
         goal=req.goal,
-        status=status,
+        status=overall_status,
         steps=steps,
         total_latency_ms=total_latency,
         final_state=app.state_tracker.current,
@@ -168,7 +174,7 @@ async def execute_plan(
         "success_count": success_count,
         "total_latency_ms": total_latency,
         "retrieved_skill_count": len(retrieved),
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.utcnow(),
     })
     if len(_execution_history) > 50:
         _execution_history.pop(0)

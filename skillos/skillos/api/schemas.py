@@ -219,8 +219,8 @@ class ExecutionStepResult(BaseModel):
     status: str
     outputs: Dict[str, Any] = Field(default_factory=dict)
     result: Optional[Dict[str, Any]] = None
-    latency_ms: float
     error: Optional[str] = None
+    latency_ms: Optional[float] = None
 
 
 class RetrievedSkill(BaseModel):

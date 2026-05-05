@@ -118,7 +118,7 @@ export default function VersionControl() {
     setLoadingDiff(true)
     try {
       const data = await lifecycleApi.getDiff(id)
-      setDiffData(data as DiffData)
+      setDiffData(data as unknown as DiffData)
     } catch {
       message.error('获取 diff 失败')
     } finally {

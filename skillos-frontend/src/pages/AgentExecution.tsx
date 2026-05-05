@@ -28,6 +28,8 @@ const SKILL_TYPE_COLOR: Record<string, string> = {
 
 function StepCard({ step, index }: { step: ExecutionStepResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
+  const stepResult = step.result ?? {}
+  const latency = step.latency_ms ?? 0
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -48,21 +50,23 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
           <Space>
             {step.status === 'success'
               ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
-              : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+              : step.status === 'failed'
+                ? <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                : <ThunderboltOutlined style={{ color: STATUS_COLOR[step.status] || '#d9d9d9' }} />}
             <Text strong>{step.skill_name}</Text>
             <Text type="secondary" style={{ fontSize: 12 }}>{step.skill_id.slice(0, 8)}...</Text>
           </Space>
           <Space>
             <Tag color={STATUS_COLOR[step.status]}>{step.status}</Tag>
-            <Text type="secondary">{step.latency_ms.toFixed(0)}ms</Text>
+            <Text type="secondary">{latency.toFixed(0)}ms</Text>
           </Space>
         </div>
         {expanded && (
           <div style={{ marginTop: 8 }}>
             {step.error && <Alert type="error" message={step.error} style={{ marginBottom: 8 }} />}
-            {Object.keys(step.outputs).length > 0 && (
+            {Object.keys(stepResult).length > 0 && (
               <pre style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, fontSize: 11, overflow: 'auto' }}>
-                {JSON.stringify(step.outputs, null, 2)}
+                {JSON.stringify(stepResult, null, 2)}
               </pre>
             )}
           </div>
@@ -207,7 +211,7 @@ export default function AgentExecution() {
                   <Statistic
                     title="状态"
                     value={result.status}
-                    valueStyle={{ color: result.status === 'completed' ? '#52c41a' : '#faad14' }}
+                    valueStyle={{ color: result.status === 'success' ? '#52c41a' : result.status === 'failed' ? '#ff4d4f' : '#faad14' }}
                   />
                 </Col>
                 <Col span={6}>

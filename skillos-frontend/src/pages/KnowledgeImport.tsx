@@ -10,6 +10,7 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import { ingestApi } from '@/api/client'
 import type { IngestResponse } from '@/api/client'
 
@@ -287,6 +288,26 @@ export default function KnowledgeImport() {
                       style={{ marginBottom: 12 }}
                     />
                   )}
+
+                  {(result.created_skills?.length ?? 0) > 0 && (
+                    <Alert
+                      type="success"
+                      showIcon
+                      message={`已创建 ${result.created_skills?.length ?? 0} 个候选 Skill`}
+                      description={
+                        <Space wrap>
+                          {result.created_skills?.map(skill => (
+                            <Link key={skill.skill_id} to={`/wiki?skill_id=${encodeURIComponent(skill.skill_id)}`}>
+                              <Tag color={TYPE_COLOR[skill.skill_type] || 'green'} style={{ cursor: 'pointer' }}>
+                                {skill.name}
+                              </Tag>
+                            </Link>
+                          ))}
+                        </Space>
+                      }
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
                 </Card>
 
                 {result.units.length > 0 && (
@@ -326,6 +347,11 @@ export default function KnowledgeImport() {
                                 {unit.proposed_description}
                               </Paragraph>
                             )}
+                            {unit.summary && unit.summary !== unit.proposed_description && (
+                              <Paragraph style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>
+                                {unit.summary}
+                              </Paragraph>
+                            )}
                             {unit.extracted_actions.length > 0 && (
                               <div style={{ marginTop: 4 }}>
                                 {unit.extracted_actions.slice(0, 3).map((a, j) => (
@@ -336,6 +362,15 @@ export default function KnowledgeImport() {
                                     +{unit.extracted_actions.length - 3} 更多
                                   </Text>
                                 )}
+                              </div>
+                            )}
+                            {unit.index_keywords.length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                {unit.index_keywords.slice(0, 5).map(keyword => (
+                                  <Tag key={keyword} color="default" style={{ fontSize: 11, marginBottom: 2 }}>
+                                    {keyword}
+                                  </Tag>
+                                ))}
                               </div>
                             )}
                           </List.Item>
