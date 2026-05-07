@@ -12,17 +12,43 @@ from ..schemas import AddEdgeRequest, GraphData, GraphEdgeData, GraphNodeData, O
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 
+def _get_node_color(skill_type: str) -> str:
+    color_map = {
+        "atomic": "#4A90E2",
+        "functional": "#52C41A",
+        "strategic": "#722ED1",
+    }
+    return color_map.get(skill_type, "#9CA3AF")
+
+
+def _calculate_node_size(usage_count: int) -> int:
+    return min(40, 16 + usage_count // 2)
+
+
 def _skill_to_node(skill) -> GraphNodeData:
+    skill_type = skill.skill_type.value
+    state = skill.state.value
+    usage_count = int(skill.metrics.usage_count or 0)
+    success_rate = float(skill.metrics.success_rate or 0.0)
+    name = skill.name
+
     return GraphNodeData(
         id=skill.skill_id,
-        name=skill.name,
-        skill_type=skill.skill_type.value,
-        state=skill.state.value,
+        name=name,
+        label=name,
+        skill_type=skill_type,
+        state=state,
         tags=skill.tags,
         version=skill.version,
         granularity_level=skill.granularity_level,
-        success_rate=skill.metrics.success_rate,
-        usage_count=skill.metrics.usage_count,
+        success_rate=success_rate,
+        usage_count=usage_count,
+        size=_calculate_node_size(usage_count),
+        color=_get_node_color(skill_type),
+        tooltip=(
+            f"{skill_type} | {state} | "
+            f"success: {success_rate:.1%} | used: {usage_count}"
+        ),
     )
 
 

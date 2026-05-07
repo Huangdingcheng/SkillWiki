@@ -76,6 +76,12 @@ class SkillGraphNode(BaseModel):
     usage_count: int = 0
     tags: List[str] = Field(default_factory=list)
 
+    # 图可视化元数据（供前端 SkillGraph 使用）
+    label: Optional[str] = None
+    size: int = 16
+    color: str = "#9CA3AF"
+    tooltip: Optional[str] = None
+    
     # 图拓扑（由图查询填充）
     out_edges: List[SkillEdge] = Field(default_factory=list)
     in_edges: List[SkillEdge] = Field(default_factory=list)

@@ -344,23 +344,69 @@ class SkillGraphRepository:
         )
 
     # --- Helpers ---
+    def _get_node_color(self, skill_type: SkillType) -> str:
+        """根据 Skill 类型生成图谱节点颜色。"""
+        skill_type_value = skill_type.value if hasattr(skill_type, "value") else str(skill_type)
+        color_map = {
+            "atomic": "#4A90E2",
+            "functional": "#52C41A",
+            "strategic": "#722ED1",
+        }
+        return color_map.get(skill_type_value, "#9CA3AF")
 
+    def _calculate_node_size(self, usage_count: int) -> int:
+        """根据使用次数生成图谱节点大小。"""
+        return min(40, 16 + usage_count // 2)
+
+    def _build_node_tooltip(
+        self,
+        skill_type: SkillType,
+        state: SkillState,
+        success_rate: float,
+        usage_count: int,
+    ) -> str:
+        """生成前端悬浮提示文本。"""
+        skill_type_value = skill_type.value if hasattr(skill_type, "value") else str(skill_type)
+        state_value = state.value if hasattr(state, "value") else str(state)
+        return (
+            f"{skill_type_value} | {state_value} | "
+            f"success: {success_rate:.1%} | used: {usage_count}"
+        )
+    
     def _parse_node_only(self, node_data: Any) -> SkillGraphNode:
         if hasattr(node_data, "items"):
             d = dict(node_data)
         else:
             d = node_data
+            
+        skill_type = SkillType(d.get("skill_type", "atomic"))
+        state = SkillState(d.get("state", "S2"))
+        usage_count = int(d.get("usage_count", 0) or 0)
+        success_rate = float(d.get("success_rate", 0.0) or 0.0)
+        name = d.get("name", "")
+
         return SkillGraphNode(
             skill_id=d["skill_id"],
-            name=d["name"],
+            name=name,
             version=d.get("version", "1.0.0"),
-            skill_type=SkillType(d.get("skill_type", "atomic")),
-            state=SkillState(d.get("state", "S2")),
+            skill_type=skill_type,
+            state=state,
             domain=d.get("domain", "general"),
             granularity_level=d.get("granularity_level", 1),
-            success_rate=d.get("success_rate", 0.0),
-            usage_count=d.get("usage_count", 0),
+            success_rate=success_rate,
+            usage_count=usage_count,
             tags=d.get("tags", []),
+
+            # 图可视化元数据
+            label=name,
+            size=self._calculate_node_size(usage_count),
+            color=self._get_node_color(skill_type),
+            tooltip=self._build_node_tooltip(
+                skill_type=skill_type,
+                state=state,
+                success_rate=success_rate,
+                usage_count=usage_count,
+            ),
         )
 
     def _parse_node_result(self, row: Dict[str, Any]) -> SkillGraphNode:

@@ -105,7 +105,41 @@ async def get_stats() -> Dict[str, Any]
 | `GET` | `/api/v1/graph/{id}/execution-order` | 获取执行顺序 |
 | `GET` | `/api/v1/graph/stats/overview` | 获取图谱统计 |
 
+<<<<<<< HEAD
 ## 第一阶段完成项
+=======
+---
+## Graph Visualization Metadata
+
+为支持前端 SkillGraph 页面进行更直观的图谱渲染，`GET /api/v1/graph` 接口已在每个 Skill 节点中增加可视化元数据字段。
+
+### 新增节点字段
+
+| 字段 | 含义 | 生成逻辑 |
+|------|------|----------|
+| `label` | 图谱节点显示名称 | 默认使用 Skill 的 `name` |
+| `size` | 图谱节点建议大小 | 根据 `usage_count` 计算 |
+| `color` | 图谱节点建议颜色 | 根据 `skill_type` 映射生成 |
+| `tooltip` | 鼠标悬浮提示文本 | 汇总 Skill 类型、状态、成功率和使用次数 |
+
+### 当前节点大小规则
+
+size = min(40, 16 + usage_count // 2)
+
+### 当前颜色映射规则
+
+`color` 字段根据 `skill_type` 自动生成：
+
+| skill_type | color |
+|---|---|
+| `atomic` | `#4A90E2` |
+| `functional` | `#52C41A` |
+| `strategic` | `#722ED1` |
+| `unknown` | `#9CA3AF` |
+
+
+---
+>>>>>>> 1b917e9 (feat(repository): enrich skill graph visualization metadata)
 
 - 稳定 `MemoryWikiManager` 的 CRUD、版本历史、过滤、执行统计和 overview stats。
 - 稳定 `MemorySearchEngine` 对 `SearchQuery` 字段的支持。

@@ -138,7 +138,10 @@ class GraphNodeData(BaseModel):
     granularity_level: int
     success_rate: float
     usage_count: int
-
+    label: str | None = None
+    size: int = 16
+    color: str = "#9CA3AF"
+    tooltip: str | None = None
 
 class GraphEdgeData(BaseModel):
     id: str
