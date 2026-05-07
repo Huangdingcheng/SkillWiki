@@ -105,9 +105,9 @@ async def get_stats() -> Dict[str, Any]
 | `GET` | `/api/v1/graph/{id}/execution-order` | 获取执行顺序 |
 | `GET` | `/api/v1/graph/stats/overview` | 获取图谱统计 |
 
-<<<<<<< HEAD
+
 ## 第一阶段完成项
-=======
+
 ---
 ## Graph Visualization Metadata
 
@@ -139,7 +139,7 @@ size = min(40, 16 + usage_count // 2)
 
 
 ---
->>>>>>> 1b917e9 (feat(repository): enrich skill graph visualization metadata)
+
 
 - 稳定 `MemoryWikiManager` 的 CRUD、版本历史、过滤、执行统计和 overview stats。
 - 稳定 `MemorySearchEngine` 对 `SearchQuery` 字段的支持。
