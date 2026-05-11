@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -93,6 +93,18 @@ class SkillSummary(BaseModel):
     metrics: SkillMetrics
     created_at: datetime
     updated_at: datetime
+
+
+class SkillVersionFieldDiff(BaseModel):
+    field: str
+    change_type: Literal["added", "removed", "modified"]
+    old_value: Any = None
+    new_value: Any = None
+
+
+class SkillVersionHistoryItem(SkillSummary):
+    previous_version: Optional[str] = None
+    diff_to_previous: List[SkillVersionFieldDiff] = Field(default_factory=list)
 
 
 # ─── 生命周期 ─────────────────────────────────────────────────────────────────

@@ -97,7 +97,7 @@ async def get_stats() -> Dict[str, Any]
 | `PATCH` | `/api/v1/skills/{id}` | 更新 description、tags、interface、implementation |
 | `DELETE` | `/api/v1/skills/{id}` | 删除 Skill |
 | `POST` | `/api/v1/skills/search` | 搜索 Skill |
-| `GET` | `/api/v1/skills/{id}/versions` | 获取同名 Skill 版本历史 |
+| `GET` | `/api/v1/skills/{id}/versions` | 获取同名 Skill 版本历史，包含相邻版本 diff |
 | `GET` | `/api/v1/graph` | 获取完整图谱数据 |
 | `POST` | `/api/v1/graph/subgraph` | 获取指定 Skill 的局部子图 |
 | `POST` | `/api/v1/graph/edges` | 添加关系边 |

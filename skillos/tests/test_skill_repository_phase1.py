@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import uuid
 
 import pytest
 from fastapi import FastAPI
@@ -15,6 +16,7 @@ from skillos.models.skill_model import (
     EdgeType,
     Skill,
     SkillImplementation,
+    SkillInterface,
     SkillProvenance,
     SkillState,
     SkillType,
@@ -434,3 +436,123 @@ def test_skill_api_skips_missing_auto_edge_targets(api_app: FastAPI):
     subgraph_resp = client.post("/api/v1/graph/subgraph", json={"skill_id": parent_id, "depth": 1})
     assert subgraph_resp.status_code == 200
     assert subgraph_resp.json()["edges"] == []
+
+
+def test_skill_versions_endpoint_returns_diff_fields(api_app: FastAPI, wiki: MemoryWikiManager):
+    client = TestClient(api_app)
+
+    first_skill = make_skill("versioned_browser_flow", tags=["web"])
+    first_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "interface": SkillInterface(
+                input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+        },
+    )
+    second_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "skill_id": str(uuid.uuid4()),
+            "version": "1.0.1",
+            "description": "versioned_browser_flow handles browser automation with selectors",
+            "tags": ["web", "automation"],
+            "interface": SkillInterface(
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "selector": {"type": "string"},
+                    },
+                },
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+            "implementation": SkillImplementation(
+                language="python",
+                prompt_template=first_skill.implementation.prompt_template,
+                sub_skill_ids=["click_element", "type_text"],
+            ),
+        },
+    )
+
+    import anyio
+
+    anyio.run(wiki.create, first_skill)
+    anyio.run(wiki.create, second_skill)
+
+    response = client.get(f"/api/v1/skills/{first_skill.skill_id}/versions")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert [item["version"] for item in body] == ["1.0.0", "1.0.1"]
+    assert body[0]["previous_version"] is None
+    assert body[0]["diff_to_previous"] == []
+
+    second_item = body[1]
+    assert second_item["previous_version"] == "1.0.0"
+
+    diff_map = {item["field"]: item for item in second_item["diff_to_previous"]}
+    assert set(diff_map) == {
+        "description",
+        "tags",
+        "interface.input_schema",
+        "implementation.sub_skill_ids",
+    }
+    assert diff_map["description"]["change_type"] == "modified"
+    assert diff_map["description"]["old_value"] == "versioned_browser_flow handles browser automation"
+    assert diff_map["description"]["new_value"] == (
+        "versioned_browser_flow handles browser automation with selectors"
+    )
+    assert diff_map["tags"]["old_value"] == ["web"]
+    assert diff_map["tags"]["new_value"] == ["web", "automation"]
+    assert diff_map["implementation.sub_skill_ids"]["old_value"] == []
+    assert diff_map["implementation.sub_skill_ids"]["new_value"] == ["click_element", "type_text"]
+    assert diff_map["interface.input_schema"]["old_value"] == {
+        "type": "object",
+        "properties": {"url": {"type": "string"}},
+    }
+    assert diff_map["interface.input_schema"]["new_value"] == {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "selector": {"type": "string"},
+        },
+    }
+    uuid.UUID(second_skill.skill_id)
+
+
+def test_skill_versions_endpoint_empty_diff_for_unchanged_version(api_app: FastAPI, wiki: MemoryWikiManager):
+    client = TestClient(api_app)
+
+    first_skill = make_skill("stable_browser_flow", tags=["web"])
+    first_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "interface": SkillInterface(
+                input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+        },
+    )
+    second_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "skill_id": str(uuid.uuid4()),
+            "version": "1.0.1",
+        },
+    )
+
+    import anyio
+
+    anyio.run(wiki.create, first_skill)
+    anyio.run(wiki.create, second_skill)
+
+    response = client.get(f"/api/v1/skills/{first_skill.skill_id}/versions")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert [item["version"] for item in body] == ["1.0.0", "1.0.1"]
+    assert body[1]["previous_version"] == "1.0.0"
+    assert body[1]["diff_to_previous"] == []
+    uuid.UUID(second_skill.skill_id)

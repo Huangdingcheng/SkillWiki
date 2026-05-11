@@ -14,6 +14,8 @@ from ..schemas import (
     SkillCreateRequest,
     SkillSearchRequest,
     SkillSearchResult,
+    SkillVersionFieldDiff,
+    SkillVersionHistoryItem,
     SkillSummary,
     SkillUpdateRequest,
 )
@@ -233,13 +235,84 @@ async def search_skills(
     ]
 
 
-@router.get("/{skill_id}/versions", response_model=List[SkillSummary])
+@router.get("/{skill_id}/versions", response_model=List[SkillVersionHistoryItem])
 async def get_version_history(
     skill_id: str,
     app: AppState = Depends(get_app_state),
-) -> List[SkillSummary]:
+) -> List[SkillVersionHistoryItem]:
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     history = await app.wiki.get_version_history(skill.name)
-    return [_to_summary(item) for item in history]
+    return [_to_version_history_item(item, previous) for previous, item in _pair_previous(history)]
+
+
+def _pair_previous(history: List[Skill]) -> List[tuple[Optional[Skill], Skill]]:
+    paired: List[tuple[Optional[Skill], Skill]] = []
+    previous: Optional[Skill] = None
+    for item in history:
+        paired.append((previous, item))
+        previous = item
+    return paired
+
+
+def _to_version_history_item(current: Skill, previous: Optional[Skill]) -> SkillVersionHistoryItem:
+    summary = _to_summary(current)
+    return SkillVersionHistoryItem(
+        **summary.model_dump(),
+        previous_version=previous.version if previous else None,
+        diff_to_previous=_compute_version_diff(previous, current),
+    )
+
+
+def _compute_version_diff(previous: Optional[Skill], current: Skill) -> List[SkillVersionFieldDiff]:
+    if previous is None:
+        return []
+
+    diffs: List[SkillVersionFieldDiff] = []
+    comparisons = [
+        ("description", previous.description, current.description),
+        ("tags", previous.tags, current.tags),
+        ("skill_type", previous.skill_type, current.skill_type),
+        ("state", previous.state, current.state),
+        ("interface.input_schema", previous.interface.input_schema, current.interface.input_schema),
+        ("interface.output_schema", previous.interface.output_schema, current.interface.output_schema),
+        ("interface.preconditions", previous.interface.preconditions, current.interface.preconditions),
+        ("interface.postconditions", previous.interface.postconditions, current.interface.postconditions),
+        (
+            "implementation.language",
+            getattr(previous.implementation, "language", None) if previous.implementation else None,
+            getattr(current.implementation, "language", None) if current.implementation else None,
+        ),
+        (
+            "implementation.prompt_template",
+            getattr(previous.implementation, "prompt_template", None) if previous.implementation else None,
+            getattr(current.implementation, "prompt_template", None) if current.implementation else None,
+        ),
+        (
+            "implementation.sub_skill_ids",
+            list(previous.implementation.sub_skill_ids) if previous.implementation else None,
+            list(current.implementation.sub_skill_ids) if current.implementation else None,
+        ),
+        (
+            "implementation.tool_calls",
+            list(previous.implementation.tool_calls) if previous.implementation else None,
+            list(current.implementation.tool_calls) if current.implementation else None,
+        ),
+    ]
+    for field, old_value, new_value in comparisons:
+        if old_value == new_value:
+            continue
+        if old_value is None:
+            change_type = "added"
+        elif new_value is None:
+            change_type = "removed"
+        else:
+            change_type = "modified"
+        diffs.append(SkillVersionFieldDiff(
+            field=field,
+            change_type=change_type,
+            old_value=old_value,
+            new_value=new_value,
+        ))
+    return diffs
