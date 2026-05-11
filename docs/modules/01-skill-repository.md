@@ -57,7 +57,7 @@ class SearchResult:
     match_reasons: List[str] = field(default_factory=list)
 ```
 
-当前阶段不引入 embedding，搜索仍使用规则型混合评分。`score` 会归一到 `[0, 1]`，`match_reasons` 使用可读文本，避免前端和 C/D 日志出现新的乱码。
+当前阶段不引入 embedding，搜索是 lightweight retrieval，而不是真 embedding 检索。`score` 会归一到 `[0, 1]`，`match_reasons` 使用可读文本，避免前端和 C/D 日志出现新的乱码。
 
 第二阶段已将搜索评分抽成共享逻辑，内存 demo 搜索和未来持久化搜索共用同一套规则：
 

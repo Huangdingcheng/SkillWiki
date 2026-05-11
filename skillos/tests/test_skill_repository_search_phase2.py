@@ -18,6 +18,7 @@ def make_skill(
     tags: list[str] | None = None,
     domain: str = "general",
     state: SkillState = SkillState.RELEASED,
+    skill_type: SkillType = SkillType.ATOMIC,
     version: str = "1.0.0",
 ) -> Skill:
     return Skill(
@@ -26,7 +27,7 @@ def make_skill(
         tags=tags or [],
         domain=domain,
         state=state,
-        skill_type=SkillType.ATOMIC,
+        skill_type=skill_type,
         version=version,
         implementation=SkillImplementation(prompt_template=f"Run {name}"),
     )
@@ -81,6 +82,19 @@ async def test_exact_name_scores_above_partial_token_match(wiki: MemoryWikiManag
 
 
 @pytest.mark.asyncio
+async def test_query_separators_match_snake_case_name(wiki: MemoryWikiManager):
+    direct = await add_skill(wiki, make_skill("fill_form", description="Submit forms"))
+    hyphen = await add_skill(wiki, make_skill("fill_form_page", description="Fill page forms"))
+
+    engine = MemorySearchEngine(wiki)
+    results = await engine.search(SearchQuery(text="fill-form", max_results=5))
+
+    assert results[0].skill.skill_id == direct.skill_id
+    assert any(result.skill.skill_id == hyphen.skill_id for result in results)
+    assert "exact name match" in results[0].match_reasons
+
+
+@pytest.mark.asyncio
 async def test_filters_for_tags_domain_success_rate_and_deprecated(wiki: MemoryWikiManager):
     strong = await add_skill(
         wiki,
@@ -131,6 +145,36 @@ async def test_filters_for_tags_domain_success_rate_and_deprecated(wiki: MemoryW
 
 
 @pytest.mark.asyncio
+async def test_skill_type_and_state_boost_affect_ranking(wiki: MemoryWikiManager):
+    target = await add_skill(
+        wiki,
+        make_skill("api_fetch", description="Fetch APIs", state=SkillState.RELEASED),
+    )
+    other = await add_skill(
+        wiki,
+        make_skill(
+            "api_fetch_draft",
+            description="Fetch APIs",
+            state=SkillState.DRAFT,
+            skill_type=SkillType.FUNCTIONAL,
+        ),
+    )
+
+    engine = MemorySearchEngine(wiki)
+    results = await engine.search(SearchQuery(
+        text="api fetch",
+        skill_type=SkillType.ATOMIC,
+        state=SkillState.RELEASED,
+        max_results=10,
+    ))
+
+    assert results[0].skill.skill_id == target.skill_id
+    assert "skill type match" in results[0].match_reasons
+    assert "state match" in results[0].match_reasons
+    assert all(result.skill.skill_id != other.skill_id for result in results)
+
+
+@pytest.mark.asyncio
 async def test_match_reasons_are_readable_and_stable(wiki: MemoryWikiManager):
     skill = await add_skill(
         wiki,
@@ -176,6 +220,30 @@ async def test_same_name_versions_return_highest_scored_version(wiki: MemoryWiki
 
 
 @pytest.mark.asyncio
+async def test_same_name_versions_keep_highest_scored_result_on_tie_break(wiki: MemoryWikiManager):
+    first = await add_skill(
+        wiki,
+        make_skill("normalize_text", description="Normalize text", version="1.0.0"),
+        successes=2,
+        failures=0,
+    )
+    second = await add_skill(
+        wiki,
+        make_skill("normalize_text", description="Normalize text", version="1.1.0"),
+        successes=8,
+        failures=0,
+    )
+
+    engine = MemorySearchEngine(wiki)
+    results = await engine.search(SearchQuery(text="normalize text", max_results=10))
+
+    same_name = [result for result in results if result.skill.name == "normalize_text"]
+    assert len(same_name) == 1
+    assert same_name[0].skill.skill_id == second.skill_id
+    assert same_name[0].score >= score_skill_match(first, SearchQuery(text="normalize text")).score
+
+
+@pytest.mark.asyncio
 async def test_memory_engine_uses_shared_score_order(wiki: MemoryWikiManager):
     first = await add_skill(wiki, make_skill("click_button", tags=["web"]))
     second = await add_skill(wiki, make_skill("button_detector", tags=["web"]))
@@ -191,6 +259,28 @@ async def test_memory_engine_uses_shared_score_order(wiki: MemoryWikiManager):
     assert [result.skill.skill_id for result in results] == [
         result.skill.skill_id for result in shared_order
     ]
+
+
+@pytest.mark.asyncio
+async def test_match_reasons_remain_stable_and_readable(wiki: MemoryWikiManager):
+    skill = await add_skill(
+        wiki,
+        make_skill("search_data", description="Search data in records", tags=["search", "data"]),
+        successes=3,
+    )
+
+    result = score_skill_match(skill, SearchQuery(
+        text="search data",
+        tags=["search"],
+        domain="general",
+        skill_type=SkillType.ATOMIC,
+        state=SkillState.RELEASED,
+    ))
+
+    assert result.match_reasons
+    assert all(reason.isascii() for reason in result.match_reasons)
+    assert "tag match" in result.match_reasons
+    assert "domain match" in result.match_reasons or "skill type match" in result.match_reasons
 
 
 def test_search_api_accepts_phase_two_fields():

@@ -420,6 +420,7 @@ class MemorySearchEngine:
             skill_type=query.skill_type,
             state=query.state,
             domain=query.domain,
+            tags=query.tags or None,
             limit=10000,
         )
         return rank_search_results(skills, query)
