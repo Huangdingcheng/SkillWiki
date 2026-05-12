@@ -25,6 +25,8 @@ class Feedback:
     goal: str
     success: bool
     root_cause: str = ""
+    failure_type: str = ""
+    recovery_route: str = ""
     failed_skill_ids: List[str] = field(default_factory=list)
     improvement_suggestions: List[str] = field(default_factory=list)
     skill_update_proposals: List[Dict[str, Any]] = field(default_factory=list)
@@ -51,12 +53,16 @@ Rules:
 - Do not claim that a Skill was repaired. Only propose follow-up actions.
 - failed_skill_ids must only include concrete skill ids from the trace.
 - recommended_action must be one of: repair, deprecate, review, no_action.
+- failure_type should align with the verifier when provided.
+- recovery_route should describe the runtime recovery strategy.
 - Use repair for implementation/prompt/runtime failures.
 - Use review when the issue is uncertain or needs human inspection.
 
 Return this JSON shape:
 {{
   "root_cause": "brief root cause",
+  "failure_type": "runtime_error",
+  "recovery_route": "repair_skill",
   "failed_skill_ids": ["skill_id_1"],
   "improvement_suggestions": ["short suggestion"],
   "skill_update_proposals": [
@@ -161,6 +167,8 @@ def _normalize_feedback(
         goal=goal,
         success=success,
         root_cause=str(data.get("root_cause", "")),
+        failure_type=str(data.get("failure_type", "")),
+        recovery_route=str(data.get("recovery_route", "")),
         failed_skill_ids=_string_list(data.get("failed_skill_ids", [])),
         improvement_suggestions=_string_list(data.get("improvement_suggestions", [])),
         skill_update_proposals=proposals,
@@ -183,11 +191,15 @@ def _fallback_feedback(
             task_id=task_id,
             goal=goal,
             success=True,
+            failure_type="none",
+            recovery_route="none",
             experience_summary="Task completed successfully.",
         )
 
     evidence = issues or _extract_failure_evidence(trace)
     root_cause = evidence[0] if evidence else "Runtime execution did not satisfy the goal."
+    failure_type = str(getattr(verification_result, "failure_type", "") or _classify_trace_failure(trace, root_cause))
+    recovery_route = str(getattr(verification_result, "recovery_route", "") or _route_for_failure(failure_type))
     suggestions = _string_list(getattr(verification_result, "suggestions", []))
     if not suggestions:
         suggestions = ["Review failed runtime steps and repair the related skill if needed."]
@@ -197,9 +209,11 @@ def _fallback_feedback(
             "skill_id": skill_id,
             "issue": root_cause,
             "proposed_fix": (
-                "Review runtime failure and repair the skill implementation or prompt."
+                _proposal_fix_for_route(recovery_route)
             ),
             "recommended_action": "repair",
+            "failure_type": failure_type,
+            "recovery_route": recovery_route,
             "evidence": evidence,
         }
         for skill_id in failed_skill_ids
@@ -210,6 +224,8 @@ def _fallback_feedback(
         goal=goal,
         success=False,
         root_cause=root_cause,
+        failure_type=failure_type,
+        recovery_route=recovery_route,
         failed_skill_ids=failed_skill_ids,
         improvement_suggestions=suggestions,
         skill_update_proposals=proposals,
@@ -237,6 +253,8 @@ def _normalize_proposals(value: Any) -> List[Dict[str, Any]]:
                 "issue": str(item.get("issue", "")),
                 "proposed_fix": str(item.get("proposed_fix", "")),
                 "recommended_action": action,
+                "failure_type": str(item.get("failure_type", "")),
+                "recovery_route": str(item.get("recovery_route", "")),
                 "evidence": _string_list(item.get("evidence", [])),
             }
         )
@@ -283,6 +301,43 @@ def _extract_failure_evidence(trace: Any) -> List[str]:
 
     visit(trace)
     return list(dict.fromkeys(evidence))
+
+
+def _classify_trace_failure(trace: Any, root_cause: str) -> str:
+    text = f"{json.dumps(trace, ensure_ascii=False)}\n{root_cause}".lower()
+    if "skill not found" in text or "missing skill" in text:
+        return "missing_skill"
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    if "skipped" in text or "dependency failed" in text:
+        return "dependency_failed"
+    if "exception" in text or "runtimeerror" in text or "error" in text:
+        return "runtime_error"
+    return "unknown"
+
+
+def _route_for_failure(failure_type: str) -> str:
+    routes = {
+        "missing_skill": "retrieve_alternative_skill",
+        "timeout": "retry_with_timeout_adjustment",
+        "runtime_error": "repair_skill",
+        "dependency_failed": "replan_dependencies",
+        "postcondition_failed": "add_postcondition_check",
+        "bad_output": "inspect_output",
+    }
+    return routes.get(failure_type, "review")
+
+
+def _proposal_fix_for_route(route: str) -> str:
+    fixes = {
+        "retrieve_alternative_skill": "Review retrieval candidates or create a missing Skill through the maintenance flow.",
+        "retry_with_timeout_adjustment": "Review timeout behavior and consider a lighter implementation or adjusted timeout.",
+        "repair_skill": "Review runtime failure and repair the skill implementation or prompt.",
+        "replan_dependencies": "Review failed dependencies and adjust the execution plan or skill prerequisites.",
+        "add_postcondition_check": "Add or strengthen postcondition checks for this skill.",
+        "inspect_output": "Inspect the output contract and repair schema or result formatting.",
+    }
+    return fixes.get(route, "Review runtime evidence and decide whether repair is required.")
 
 
 def _string_list(value: Any) -> List[str]:
