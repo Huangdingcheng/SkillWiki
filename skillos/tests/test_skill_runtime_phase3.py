@@ -1,22 +1,36 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
+from skillos.layers.skill_runtime.composition import CompositionAgent
 from skillos.layers.skill_runtime.executor import SkillExecutor
 from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
+from skillos.layers.skill_runtime.retriever import SkillGroup
 from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
 
-def make_skill(name: str, code: str) -> Skill:
+def make_skill(
+    name: str,
+    code: str,
+    inputs: list[str] | None = None,
+    outputs: list[str] | None = None,
+) -> Skill:
     return Skill(
         name=name,
         description=f"{name} test skill",
         state=SkillState.RELEASED,
         interface=SkillInterface(
-            input_schema={"type": "object", "properties": {}},
-            output_schema={"type": "object", "properties": {}},
+            input_schema={
+                "type": "object",
+                "properties": {key: {"type": "string"} for key in (inputs or [])},
+            },
+            output_schema={
+                "type": "object",
+                "properties": {key: {"type": "string"} for key in (outputs or [])},
+            },
         ),
         implementation=SkillImplementation(code=code),
     )
@@ -29,6 +43,74 @@ def make_plan(steps: list[PlanStep]) -> ExecutionPlan:
         task_description="run stable plan",
         steps=steps,
     )
+
+
+def test_composer_builds_dag_from_skill_group():
+    prepare = make_skill("prepare", "output['data'] = 'x'")
+    run = make_skill("run", "output['result'] = 'ok'")
+    check = make_skill("check", "output['ok'] = True")
+    avoid = make_skill("avoid", "output['bad'] = True")
+    group = SkillGroup(
+        anchor_skill_id=run.skill_id,
+        support_skill_ids=[prepare.skill_id],
+        start_skill_ids=[run.skill_id],
+        check_skill_ids=[check.skill_id],
+        avoid_skill_ids=[avoid.skill_id],
+        rationale="support then run then check",
+    )
+
+    graph = CompositionAgent(FakeLLM("{}")).compose(
+        [prepare, run, check, avoid],
+        "run checked flow",
+        skill_group=group,
+    )
+
+    assert [node.skill_id for node in graph.nodes] == [
+        prepare.skill_id,
+        run.skill_id,
+        check.skill_id,
+    ]
+    assert graph.entry_skill_id == run.skill_id
+    assert [(edge.source_id, edge.target_id) for edge in graph.edges] == [
+        (prepare.skill_id, run.skill_id),
+        (run.skill_id, check.skill_id),
+    ]
+    assert graph.metadata["composition_source"] == "skill_group"
+
+
+def test_composer_filters_invalid_edges_and_breaks_cycles():
+    first = make_skill("first", "output['a'] = 1")
+    second = make_skill("second", "output['b'] = 1")
+    payload = {
+        "entry_skill_id": "missing",
+        "edges": [
+            {"source_id": first.skill_id, "target_id": second.skill_id, "edge_type": "sequence"},
+            {"source_id": second.skill_id, "target_id": first.skill_id, "edge_type": "sequence"},
+            {"source_id": first.skill_id, "target_id": "missing", "edge_type": "sequence"},
+            {"source_id": first.skill_id, "target_id": first.skill_id, "edge_type": "sequence"},
+        ],
+    }
+
+    graph = CompositionAgent(FakeLLM(json.dumps(payload))).compose([first, second])
+
+    assert graph.entry_skill_id == first.skill_id
+    assert [(edge.source_id, edge.target_id) for edge in graph.edges] == [
+        (first.skill_id, second.skill_id)
+    ]
+    assert graph.execution_order == [first.skill_id, second.skill_id]
+
+
+def test_composer_uses_schema_fallback_before_sequential_fallback():
+    extract = make_skill("extract", "output['data'] = 'x'", outputs=["data"])
+    submit = make_skill("submit", "output['ok'] = True", inputs=["data"])
+
+    graph = CompositionAgent(FailingLLM()).compose([extract, submit])
+
+    assert graph.metadata["composition_source"] == "schema_fallback"
+    assert [(edge.source_id, edge.target_id, edge.data_mapping) for edge in graph.edges] == [
+        (extract.skill_id, submit.skill_id, {"data": "data"})
+    ]
+    assert graph.parallel_groups == [[extract.skill_id], [submit.skill_id]]
 
 
 def test_independent_step_can_succeed_after_parallel_step_fails():
@@ -217,3 +299,18 @@ class GlobalTimeoutExecutor(SkillExecutor):
             await asyncio.sleep(0.25)
             return {"ok": True, "_state_changes": {"ok": True}}
         return {"done": True, "_state_changes": {"done": True}}
+
+
+class FakeLLM:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def chat(self, messages: object) -> object:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(content=self.content)
+
+
+class FailingLLM:
+    def chat(self, messages: object) -> object:
+        raise RuntimeError("llm unavailable")
