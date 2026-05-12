@@ -4,7 +4,7 @@ from .composition import CompositionAgent, SkillEdge, SkillGraph
 from .executor import SkillExecutor
 from .planner import ExecutionPlan, PlanStep, SkillPlanner, StepStatus
 from .reflection import Feedback, ReflectionAgent
-from .retriever import RetrievalResult, RetrievalStrategy, SkillRetriever
+from .retriever import RetrievalResult, RetrievalStrategy, SkillGroup, SkillRetriever
 from .state_tracker import StateSnapshot, StateTracker
 from .verifier import VerificationResult, VerifierAgent
 
@@ -14,6 +14,7 @@ __all__ = [
     "SkillRetriever",
     "RetrievalResult",
     "RetrievalStrategy",
+    "SkillGroup",
     "SkillPlanner",
     "ExecutionPlan",
     "PlanStep",

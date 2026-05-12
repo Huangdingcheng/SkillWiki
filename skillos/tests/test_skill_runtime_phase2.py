@@ -9,6 +9,7 @@ from skillos.layers.skill_repository.indexing import SearchResult
 from skillos.layers.skill_runtime.planner import SkillPlanner, _PLAN_PROMPT
 from skillos.layers.skill_runtime.retriever import (
     RetrievalStrategy,
+    SkillGroup,
     SkillRetriever,
     _RETRIEVAL_PROMPT,
 )
@@ -136,6 +137,8 @@ async def test_retriever_normalizes_strategy_confidence_and_execution_order():
     assert retrieval.execution_order == [second.skill_id]
     assert retrieval.confidence == 1.0
     assert retrieval.parameter_mapping == {}
+    assert retrieval.skill_group is not None
+    assert retrieval.skill_group.start_skill_ids == [second.skill_id]
 
 
 @pytest.mark.asyncio
@@ -158,6 +161,8 @@ async def test_retriever_falls_back_when_selected_ids_are_missing():
     assert retrieval.execution_order == [best.skill_id]
     assert retrieval.confidence == 0.76
     assert "highest-scoring" in retrieval.rationale
+    assert retrieval.skill_group is not None
+    assert retrieval.skill_group.anchor_skill_id == best.skill_id
 
 
 @pytest.mark.asyncio
@@ -181,6 +186,48 @@ async def test_retriever_no_search_results_requests_generation():
     assert retrieval.strategy == RetrievalStrategy.GENERATE
     assert retrieval.needs_generation is True
     assert retrieval.generation_hint == "new capability"
+    assert retrieval.skill_group is None
+
+
+@pytest.mark.asyncio
+async def test_retriever_normalizes_skill_group_and_filters_avoid_ids():
+    prepare = make_skill("prepare")
+    run = make_skill("run")
+    check = make_skill("check")
+    avoid = make_skill("avoid")
+    llm_payload = {
+        "strategy": "compose",
+        "selected_skill_ids": [prepare.skill_id, run.skill_id, check.skill_id, avoid.skill_id],
+        "execution_order": [prepare.skill_id, run.skill_id, check.skill_id, avoid.skill_id],
+        "confidence": 0.8,
+        "skill_group": {
+            "anchor_skill_id": run.skill_id,
+            "start_skill_ids": [run.skill_id, "missing"],
+            "support_skill_ids": [prepare.skill_id],
+            "check_skill_ids": [check.skill_id],
+            "avoid_skill_ids": [avoid.skill_id, "missing"],
+            "rationale": "structured group",
+        },
+    }
+    retriever = SkillRetriever(
+        FakeLLM(json.dumps(llm_payload)),
+        FakeSearch([result(prepare), result(run), result(check), result(avoid)]),
+    )
+
+    retrieval = await retriever.retrieve("prepare run check")
+
+    assert isinstance(retrieval.skill_group, SkillGroup)
+    assert retrieval.skill_group.anchor_skill_id == run.skill_id
+    assert retrieval.skill_group.support_skill_ids == [prepare.skill_id]
+    assert retrieval.skill_group.start_skill_ids == [run.skill_id]
+    assert retrieval.skill_group.check_skill_ids == [check.skill_id]
+    assert retrieval.skill_group.avoid_skill_ids == [avoid.skill_id]
+    assert retrieval.execution_order == [prepare.skill_id, run.skill_id, check.skill_id]
+    assert [skill.skill_id for skill in retrieval.skills] == [
+        prepare.skill_id,
+        run.skill_id,
+        check.skill_id,
+    ]
 
 
 @pytest.mark.asyncio
