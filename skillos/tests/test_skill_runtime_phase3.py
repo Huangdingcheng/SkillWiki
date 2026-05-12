@@ -142,6 +142,12 @@ def test_independent_step_can_succeed_after_parallel_step_fails():
     assert failing_step.status == StepStatus.FAILED
     assert success_step.status == StepStatus.SUCCESS
     assert final_state["ok_skill_executed"] is True
+    assert executor.last_runtime_memory is not None
+    assert executor.last_runtime_memory.to_summary()["selected_skills"] == [
+        fail_skill.skill_id,
+        ok_skill.skill_id,
+    ]
+    assert executor.last_runtime_memory.to_summary()["failure_count"] == 1
     assert _event(events, "plan_completed")["status"] == "partial"
 
 
@@ -175,6 +181,8 @@ def test_dependent_step_is_skipped_when_dependency_fails():
     assert failing_step.status == StepStatus.FAILED
     assert dependent_step.status == StepStatus.SKIPPED
     assert failing_step.step_id in dependent_step.error
+    assert executor.last_runtime_memory is not None
+    assert executor.last_runtime_memory.to_summary()["failure_count"] == 2
     skipped_event = _event(events, "step_skipped")
     assert skipped_event["step_id"] == dependent_step.step_id
     assert skipped_event["failed_dependency"] == failing_step.step_id

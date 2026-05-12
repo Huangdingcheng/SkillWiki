@@ -14,7 +14,7 @@ from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 from .planner import ExecutionPlan, PlanStep, StepStatus
-from .state_tracker import StateTracker
+from .state_tracker import RuntimeMemory, StateTracker
 
 logger = get_logger(__name__)
 
@@ -47,6 +47,7 @@ class SkillExecutor:
         self._step_timeout = step_timeout_s
         self._global_timeout = global_timeout_s
         self._event_callbacks: List[ExecutionEventCallback] = []
+        self.last_runtime_memory: Optional[RuntimeMemory] = None
 
     def add_event_callback(self, callback: ExecutionEventCallback) -> None:
         """注册事件回调（用于 WebSocket 推送）。"""
@@ -81,6 +82,7 @@ class SkillExecutor:
             最终状态字典
         """
         tracker = StateTracker(plan.task_id, initial_state)
+        tracker.memory.goal = plan.task_description
         execution_records: List[SkillExecutionRecord] = []
         deadline = (
             time.monotonic() + self._global_timeout
@@ -96,6 +98,11 @@ class SkillExecutor:
             "task": plan.task_description,
             "total_steps": plan.total_steps,
         })
+        tracker.memory.remember_event("plan_started", {
+            "plan_id": plan.plan_id,
+            "goal": plan.task_description,
+            "step_count": plan.total_steps,
+        })
 
         while _has_pending_steps(plan):
             remaining = _remaining_seconds(deadline)
@@ -104,7 +111,7 @@ class SkillExecutor:
                 self._mark_global_timeout(plan, tracker, plan.plan_id)
                 break
 
-            skipped = self._skip_blocked_steps(plan)
+            skipped = self._skip_blocked_steps(plan, tracker)
             ready_steps = _ready_steps(plan)
             if not ready_steps:
                 if not skipped:
@@ -171,6 +178,13 @@ class SkillExecutor:
                 "total_latency_ms": total_latency_ms,
                 "remaining_steps": [step.step_id for step in plan.steps if step.status == StepStatus.PENDING],
             })
+            tracker.memory.remember_event("plan_timed_out", {
+                "plan_id": plan.plan_id,
+                "remaining_steps": [
+                    step.step_id for step in plan.steps
+                    if step.status == StepStatus.PENDING
+                ],
+            })
         self._emit("plan_completed", {
             "plan_id": plan.plan_id,
             "status": status,
@@ -179,10 +193,16 @@ class SkillExecutor:
             "summary": plan.to_summary(),
             "final_state": final_state,
         })
+        tracker.memory.remember_event("plan_completed", {
+            "plan_id": plan.plan_id,
+            "status": status,
+            "total_latency_ms": total_latency_ms,
+        })
+        self.last_runtime_memory = tracker.memory
 
         return final_state
 
-    def _skip_blocked_steps(self, plan: ExecutionPlan) -> bool:
+    def _skip_blocked_steps(self, plan: ExecutionPlan, tracker: StateTracker) -> bool:
         skipped_any = False
         blocked_step_ids = {
             step.step_id
@@ -216,6 +236,12 @@ class SkillExecutor:
                 "reason": step.error,
                 "failed_dependency": failed_dependency,
             })
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "dependency_failed",
+            )
             skipped_any = True
         return skipped_any
 
@@ -245,10 +271,22 @@ class SkillExecutor:
             step.error = f"Skill not found: {step.skill_id}"
             step.completed_at = datetime.utcnow()
             self._emit_step_failed(tracker._task_id, step, step.error)
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "missing_skill",
+            )
             return None
 
         step.status = StepStatus.RUNNING
         step.started_at = datetime.utcnow()
+        tracker.memory.remember_step_start(
+            step.step_id,
+            skill.skill_id,
+            skill.name,
+            step.input_mapping,
+        )
         self._emit("step_started", {
             "plan_id": tracker._task_id,
             "step_id": step.step_id,
@@ -286,6 +324,7 @@ class SkillExecutor:
                 step.completed_at = datetime.utcnow()
 
                 record.complete(output, tracker.current)
+                tracker.memory.remember_step_success(step.step_id, skill.skill_id, output)
                 self._emit("step_completed", {
                     "plan_id": tracker._task_id,
                     "step_id": step.step_id,
@@ -308,6 +347,12 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "timeout",
+                )
                 self._emit_step_failed(tracker._task_id, step, error)
                 return record
             except asyncio.CancelledError:
@@ -317,6 +362,12 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "CancelledError")
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "timeout",
+                )
                 self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
@@ -331,6 +382,12 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, type(e).__name__)
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "runtime_error",
+                )
                 self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
@@ -345,6 +402,12 @@ class SkillExecutor:
             step.started_at = step.started_at or now
             step.completed_at = now
             step.error = "Skipped because plan exceeded the global timeout"
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "timeout",
+            )
             self._emit_step_failed(plan_id, step, step.error)
 
     async def _run_skill(
