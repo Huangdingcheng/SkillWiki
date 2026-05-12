@@ -1,0 +1,558 @@
+from __future__ import annotations
+
+from datetime import datetime
+import uuid
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from skillos.api.deps import app_state
+from skillos.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
+from skillos.api.routes import graph, skills
+from skillos.layers.skill_repository.indexing import SearchQuery
+from skillos.models.graph_model import SkillEdge
+from skillos.models.skill_model import (
+    EdgeType,
+    Skill,
+    SkillImplementation,
+    SkillInterface,
+    SkillProvenance,
+    SkillState,
+    SkillType,
+)
+
+
+def make_skill(
+    name: str,
+    *,
+    state: SkillState = SkillState.RELEASED,
+    skill_type: SkillType = SkillType.ATOMIC,
+    tags: list[str] | None = None,
+    domain: str = "general",
+    version: str = "1.0.0",
+) -> Skill:
+    return Skill(
+        name=name,
+        description=f"{name} handles browser automation",
+        state=state,
+        skill_type=skill_type,
+        tags=tags or [],
+        domain=domain,
+        version=version,
+        implementation=SkillImplementation(
+            language="python",
+            prompt_template=f"Run {name}",
+        ),
+    )
+
+
+def create_skill_payload(
+    name: str,
+    *,
+    skill_type: str = "atomic",
+    sub_skill_ids: list[str] | None = None,
+) -> dict:
+    implementation = (
+        {"language": "python", "sub_skill_ids": sub_skill_ids}
+        if sub_skill_ids is not None
+        else {"language": "python", "prompt_template": f"Run {name}"}
+    )
+    return {
+        "name": name,
+        "description": f"{name} handles browser automation",
+        "skill_type": skill_type,
+        "tags": ["web"],
+        "interface": {
+            "input_schema": {"type": "object", "properties": {}},
+            "output_schema": {"type": "object", "properties": {}},
+        },
+        "implementation": implementation,
+    }
+
+
+@pytest.fixture
+def wiki() -> MemoryWikiManager:
+    return MemoryWikiManager()
+
+
+@pytest.fixture
+def graph_mgr() -> MemoryGraphManager:
+    return MemoryGraphManager()
+
+
+@pytest.fixture
+def api_app(wiki: MemoryWikiManager, graph_mgr: MemoryGraphManager) -> FastAPI:
+    app_state.wiki = wiki
+    app_state.graph = graph_mgr
+    app_state.search = MemorySearchEngine(wiki)
+    app = FastAPI()
+    app.include_router(skills.router, prefix="/api/v1")
+    app.include_router(graph.router, prefix="/api/v1")
+    return app
+
+
+@pytest.mark.asyncio
+async def test_memory_wiki_crud_and_duplicate_guard(wiki: MemoryWikiManager):
+    skill = make_skill("click_button", tags=["web"], domain="browser")
+
+    created = await wiki.create(skill)
+    assert await wiki.get(created.skill_id) == created
+    assert await wiki.get_by_name("click_button", "1.0.0") == created
+
+    with pytest.raises(ValueError, match="already exists"):
+        await wiki.create(skill)
+
+    updated = await wiki.update(created.skill_id, description="Updated description")
+    assert updated is not None
+    assert updated.description == "Updated description"
+    assert updated.skill_id == created.skill_id
+    assert updated.created_at == created.created_at
+    assert updated.updated_at >= created.updated_at
+
+    assert await wiki.delete(created.skill_id) is True
+    assert await wiki.get(created.skill_id) is None
+
+
+@pytest.mark.asyncio
+async def test_memory_wiki_list_filters_versions_and_metrics(wiki: MemoryWikiManager):
+    web = await wiki.create(make_skill("web_click", tags=["web", "ui"], domain="browser"))
+    api = await wiki.create(make_skill("api_call", tags=["api"], domain="backend"))
+    old = await wiki.create(make_skill("web_click", version="1.1.0", tags=["web"]))
+
+    assert [skill.name for skill in await wiki.list(tags=["web"])] == ["web_click", "web_click"]
+    assert [skill.name for skill in await wiki.list(domain="backend")] == ["api_call"]
+    assert [skill.name for skill in await wiki.list(skill_type=SkillType.ATOMIC)] == [
+        "web_click",
+        "api_call",
+        "web_click",
+    ]
+    assert len(await wiki.list(limit=1, offset=1)) == 1
+
+    history = await wiki.get_version_history("web_click")
+    assert [skill.version for skill in history] == ["1.0.0", "1.1.0"]
+
+    await wiki.record_execution(web.skill_id, success=True, latency_ms=120)
+    await wiki.record_execution(web.skill_id, success=False, latency_ms=240)
+    refreshed = await wiki.get(web.skill_id)
+    assert refreshed.metrics.usage_count == 2
+    assert refreshed.metrics.success_rate == pytest.approx(0.5)
+
+    stats = await wiki.get_overview_stats()
+    assert stats["total_skills"] == 3
+    assert stats["by_type"][SkillType.ATOMIC.value] == 3
+    assert api.created_at <= datetime.utcnow()
+    assert old.created_at <= datetime.utcnow()
+
+
+@pytest.mark.asyncio
+async def test_memory_search_respects_filters_and_scores(wiki: MemoryWikiManager):
+    released = await wiki.create(
+        make_skill("search_web_page", tags=["web", "search"], domain="browser")
+    )
+    deprecated = await wiki.create(
+        make_skill("old_search_tool", state=SkillState.DEPRECATED, tags=["search"], domain="browser")
+    )
+    backend = await wiki.create(
+        make_skill("database_query", tags=["database"], domain="backend")
+    )
+    for _ in range(5):
+        released.record_execution(success=True, latency_ms=50)
+    for _ in range(5):
+        backend.record_execution(success=False, latency_ms=50)
+
+    engine = MemorySearchEngine(wiki)
+    results = await engine.search(SearchQuery(
+        text="search web",
+        tags=["search"],
+        domain="browser",
+        min_success_rate=0.8,
+        max_results=5,
+    ))
+    assert [result.skill.name for result in results] == ["search_web_page"]
+    assert 0 <= results[0].score <= 1
+    assert results[0].match_reasons
+
+    hidden = await engine.search(SearchQuery(text="old", max_results=5))
+    assert all(result.skill.skill_id != deprecated.skill_id for result in hidden)
+
+    included = await engine.search(SearchQuery(
+        text="old",
+        include_deprecated=True,
+        max_results=5,
+    ))
+    assert any(result.skill.skill_id == deprecated.skill_id for result in included)
+
+
+@pytest.mark.asyncio
+async def test_memory_graph_edges_subgraph_stats_and_order(
+    wiki: MemoryWikiManager,
+    graph_mgr: MemoryGraphManager,
+):
+    parent = await wiki.create(make_skill("fill_form", skill_type=SkillType.FUNCTIONAL))
+    child = await wiki.create(make_skill("click_button"))
+    dependency = await wiki.create(make_skill("locate_element"))
+    for skill in (parent, child, dependency):
+        await graph_mgr.sync_skill(skill)
+
+    await graph_mgr.create_edge(SkillEdge(
+        source_id=parent.skill_id,
+        target_id=child.skill_id,
+        edge_type=EdgeType.COMPOSES_WITH,
+        weight=0.8,
+    ))
+    await graph_mgr.add_dependency(child.skill_id, dependency.skill_id, weight=0.9)
+
+    subgraph = await graph_mgr.get_subgraph([parent.skill_id], depth=2)
+    assert {edge.edge_type for edge in subgraph.edges} == {
+        EdgeType.COMPOSES_WITH,
+        EdgeType.DEPENDS_ON,
+    }
+
+    stats = await graph_mgr.get_stats()
+    assert stats["nodes"] == 3
+    assert stats["edges"] == 2
+
+    order = await graph_mgr.get_execution_order([parent.skill_id, child.skill_id, dependency.skill_id])
+    assert order.index(dependency.skill_id) < order.index(child.skill_id)
+
+    chain = await graph_mgr.get_dependency_chain(child.skill_id)
+    assert chain == [dependency.skill_id]
+
+
+@pytest.mark.asyncio
+async def test_memory_graph_auto_edges_from_skill_relationships(
+    wiki: MemoryWikiManager,
+    graph_mgr: MemoryGraphManager,
+):
+    parent = await wiki.create(make_skill("form_flow", skill_type=SkillType.FUNCTIONAL))
+    first_child = await wiki.create(make_skill("click_button"))
+    second_child = await wiki.create(make_skill("type_text"))
+    previous = await wiki.create(make_skill("old_form_flow"))
+    for skill in (parent, first_child, second_child, previous):
+        await graph_mgr.sync_skill(skill)
+
+    parent = parent.model_copy(
+        update={
+            "implementation": SkillImplementation(sub_skill_ids=[first_child.skill_id]),
+            "provenance": SkillProvenance(
+                source_type="adapt",
+                parent_skill_ids=[previous.skill_id],
+            ),
+        },
+        deep=True,
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+
+    subgraph = await graph_mgr.get_subgraph([parent.skill_id], depth=1)
+    edge_pairs = {(edge.edge_type, edge.source_id, edge.target_id) for edge in subgraph.edges}
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, first_child.skill_id) in edge_pairs
+    assert (EdgeType.EVOLVED_FROM, parent.skill_id, previous.skill_id) in edge_pairs
+    assert all(edge.metadata.get("auto_generated") is True for edge in subgraph.edges)
+
+    parent = parent.model_copy(
+        update={"implementation": SkillImplementation(sub_skill_ids=[second_child.skill_id])},
+        deep=True,
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+    await graph_mgr.sync_auto_edges(
+        parent,
+        [parent.skill_id, first_child.skill_id, second_child.skill_id, previous.skill_id],
+    )
+
+    subgraph = await graph_mgr.get_subgraph([parent.skill_id], depth=1)
+    edge_pairs = {(edge.edge_type, edge.source_id, edge.target_id) for edge in subgraph.edges}
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, first_child.skill_id) not in edge_pairs
+    assert (EdgeType.COMPOSES_WITH, parent.skill_id, second_child.skill_id) in edge_pairs
+    assert len(subgraph.edges) == 2
+
+
+def test_skill_and_graph_api_smoke(
+    api_app: FastAPI,
+    wiki: MemoryWikiManager,
+    graph_mgr: MemoryGraphManager,
+):
+    first = make_skill("api_click", tags=["web"], domain="browser")
+    second = make_skill("api_locate", tags=["web"], domain="browser")
+    import anyio
+
+    anyio.run(wiki.create, first)
+    anyio.run(wiki.create, second)
+    anyio.run(graph_mgr.sync_skill, first)
+    anyio.run(graph_mgr.sync_skill, second)
+
+    client = TestClient(api_app)
+
+    listed = client.get("/api/v1/skills").json()
+    assert len(listed) == 2
+
+    search_resp = client.post("/api/v1/skills/search", json={"query": "click", "limit": 5})
+    assert search_resp.status_code == 200
+    assert search_resp.json()[0]["name"] == "api_click"
+
+    patch_resp = client.patch(
+        f"/api/v1/skills/{first.skill_id}",
+        json={"description": "Patched from API"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["description"] == "Patched from API"
+
+    edge_resp = client.post(
+        "/api/v1/graph/edges",
+        json={
+            "source_id": first.skill_id,
+            "target_id": second.skill_id,
+            "edge_type": "depends_on",
+            "weight": 0.7,
+        },
+    )
+    assert edge_resp.status_code == 200
+
+    graph_resp = client.get("/api/v1/graph")
+    assert graph_resp.status_code == 200
+    assert len(graph_resp.json()["edges"]) == 1
+
+    subgraph_resp = client.post(
+        "/api/v1/graph/subgraph",
+        json={"skill_id": first.skill_id, "depth": 2},
+    )
+    assert subgraph_resp.status_code == 200
+    assert {node["id"] for node in subgraph_resp.json()["nodes"]} == {
+        first.skill_id,
+        second.skill_id,
+    }
+
+    delete_resp = client.delete(f"/api/v1/skills/{second.skill_id}")
+    assert delete_resp.status_code == 200
+
+
+def test_skill_api_auto_syncs_graph_relations(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    child_resp = client.post("/api/v1/skills", json=create_skill_payload("api_child_one"))
+    assert child_resp.status_code == 201
+    child_id = child_resp.json()["skill_id"]
+
+    other_resp = client.post("/api/v1/skills", json=create_skill_payload("api_child_two"))
+    assert other_resp.status_code == 201
+    other_id = other_resp.json()["skill_id"]
+
+    parent_resp = client.post(
+        "/api/v1/skills",
+        json=create_skill_payload(
+            "api_parent_flow",
+            skill_type="functional",
+            sub_skill_ids=[child_id],
+        ),
+    )
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["skill_id"]
+
+    graph_resp = client.get("/api/v1/graph")
+    assert graph_resp.status_code == 200
+    edges = graph_resp.json()["edges"]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "composes_with"
+    ]
+
+    update_resp = client.patch(
+        f"/api/v1/skills/{parent_id}",
+        json={"implementation": {"language": "python", "sub_skill_ids": [other_id]}},
+    )
+    assert update_resp.status_code == 200
+
+    manual_resp = client.post(
+        "/api/v1/graph/edges",
+        json={
+            "source_id": parent_id,
+            "target_id": child_id,
+            "edge_type": "depends_on",
+            "weight": 0.7,
+        },
+    )
+    assert manual_resp.status_code == 200
+
+    graph_resp = client.get("/api/v1/graph")
+    edges = graph_resp.json()["edges"]
+    assert not [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "composes_with"
+    ]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == other_id
+        and edge["edge_type"] == "composes_with"
+    ]
+    assert [
+        edge for edge in edges
+        if edge["source"] == parent_id
+        and edge["target"] == child_id
+        and edge["edge_type"] == "depends_on"
+    ]
+
+    stats_resp = client.get("/api/v1/graph/stats/overview")
+    assert stats_resp.status_code == 200
+    assert stats_resp.json()["edge_type_distribution"]["composes_with"] == 1
+
+    subgraph_resp = client.post("/api/v1/graph/subgraph", json={"skill_id": parent_id, "depth": 1})
+    assert subgraph_resp.status_code == 200
+    assert any(edge["target"] == other_id for edge in subgraph_resp.json()["edges"])
+
+    delete_resp = client.delete(f"/api/v1/skills/{other_id}")
+    assert delete_resp.status_code == 200
+    graph_resp = client.get("/api/v1/graph")
+    assert all(
+        other_id not in {edge["source"], edge["target"]}
+        for edge in graph_resp.json()["edges"]
+    )
+
+
+def test_skill_api_skips_missing_auto_edge_targets(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    parent_resp = client.post(
+        "/api/v1/skills",
+        json=create_skill_payload(
+            "api_missing_child_flow",
+            skill_type="functional",
+            sub_skill_ids=["missing-skill-id"],
+        ),
+    )
+    assert parent_resp.status_code == 201
+    parent_id = parent_resp.json()["skill_id"]
+
+    subgraph_resp = client.post("/api/v1/graph/subgraph", json={"skill_id": parent_id, "depth": 1})
+    assert subgraph_resp.status_code == 200
+    assert subgraph_resp.json()["edges"] == []
+
+
+def test_skill_versions_endpoint_returns_diff_fields(api_app: FastAPI, wiki: MemoryWikiManager):
+    client = TestClient(api_app)
+
+    first_skill = make_skill("versioned_browser_flow", tags=["web"])
+    first_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "interface": SkillInterface(
+                input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+        },
+    )
+    second_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "skill_id": str(uuid.uuid4()),
+            "version": "1.0.1",
+            "description": "versioned_browser_flow handles browser automation with selectors",
+            "tags": ["web", "automation"],
+            "interface": SkillInterface(
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "selector": {"type": "string"},
+                    },
+                },
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+            "implementation": SkillImplementation(
+                language="python",
+                prompt_template=first_skill.implementation.prompt_template,
+                sub_skill_ids=["click_element", "type_text"],
+            ),
+        },
+    )
+
+    import anyio
+
+    anyio.run(wiki.create, first_skill)
+    anyio.run(wiki.create, second_skill)
+
+    response = client.get(f"/api/v1/skills/{first_skill.skill_id}/versions")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert [item["version"] for item in body] == ["1.0.0", "1.0.1"]
+    assert body[0]["previous_version"] is None
+    assert body[0]["diff_to_previous"] == []
+
+    second_item = body[1]
+    assert second_item["previous_version"] == "1.0.0"
+
+    diff_map = {item["field"]: item for item in second_item["diff_to_previous"]}
+    assert set(diff_map) == {
+        "description",
+        "tags",
+        "interface.input_schema",
+        "implementation.sub_skill_ids",
+    }
+    assert diff_map["description"]["change_type"] == "modified"
+    assert diff_map["description"]["old_value"] == "versioned_browser_flow handles browser automation"
+    assert diff_map["description"]["new_value"] == (
+        "versioned_browser_flow handles browser automation with selectors"
+    )
+    assert diff_map["tags"]["old_value"] == ["web"]
+    assert diff_map["tags"]["new_value"] == ["web", "automation"]
+    assert diff_map["implementation.sub_skill_ids"]["old_value"] == []
+    assert diff_map["implementation.sub_skill_ids"]["new_value"] == ["click_element", "type_text"]
+    assert diff_map["interface.input_schema"]["old_value"] == {
+        "type": "object",
+        "properties": {"url": {"type": "string"}},
+    }
+    assert diff_map["interface.input_schema"]["new_value"] == {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "selector": {"type": "string"},
+        },
+    }
+    uuid.UUID(second_skill.skill_id)
+
+
+def test_skill_versions_endpoint_empty_diff_for_unchanged_version(api_app: FastAPI, wiki: MemoryWikiManager):
+    client = TestClient(api_app)
+
+    first_skill = make_skill("stable_browser_flow", tags=["web"])
+    first_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "interface": SkillInterface(
+                input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+                output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+            ),
+        },
+    )
+    second_skill = first_skill.model_copy(
+        deep=True,
+        update={
+            "skill_id": str(uuid.uuid4()),
+            "version": "1.0.1",
+        },
+    )
+
+    import anyio
+
+    anyio.run(wiki.create, first_skill)
+    anyio.run(wiki.create, second_skill)
+
+    response = client.get(f"/api/v1/skills/{first_skill.skill_id}/versions")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert [item["version"] for item in body] == ["1.0.0", "1.0.1"]
+    assert body[1]["previous_version"] == "1.0.0"
+    assert body[1]["diff_to_previous"] == []
+    uuid.UUID(second_skill.skill_id)

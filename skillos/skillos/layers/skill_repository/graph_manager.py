@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from ...models.graph_model import (
     EdgeType,
@@ -128,6 +128,38 @@ class SkillGraphManager:
     async def remove_edge(self, edge_id: str) -> None:
         await self._graph.delete_edge(edge_id)
 
+    async def sync_auto_edges(self, skill: Skill, valid_skill_ids: Iterable[str]) -> None:
+        valid_ids = set(valid_skill_ids)
+        for edge in await self.get_edges(skill.skill_id, direction="out"):
+            if (
+                edge.edge_type in {EdgeType.COMPOSES_WITH, EdgeType.EVOLVED_FROM}
+                and edge.metadata.get("auto_generated") is True
+                and edge.metadata.get("source") == "skill_repository"
+            ):
+                await self.remove_edge(edge.edge_id)
+
+        sub_skill_ids = skill.implementation.sub_skill_ids if skill.implementation else []
+        for child_id in _unique_ids(sub_skill_ids):
+            if child_id == skill.skill_id or child_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing child Skill: %s -> %s", skill.skill_id, child_id)
+                continue
+            await self._graph.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=child_id,
+                edge_type=EdgeType.COMPOSES_WITH,
+            ))
+
+        parent_ids = skill.provenance.parent_skill_ids if skill.provenance else []
+        for parent_id in _unique_ids(parent_ids):
+            if parent_id == skill.skill_id or parent_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing parent Skill: %s -> %s", skill.skill_id, parent_id)
+                continue
+            await self._graph.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=parent_id,
+                edge_type=EdgeType.EVOLVED_FROM,
+            ))
+
     async def get_edges(
         self,
         skill_id: str,
@@ -140,9 +172,39 @@ class SkillGraphManager:
     # Subgraph & Path Analysis
     # ------------------------------------------------------------------
 
-    async def get_subgraph(self, skill_id: str, depth: int = 2) -> SkillSubgraph:
+    async def get_subgraph(
+        self,
+        skill_id: Any = None,
+        depth: int = 2,
+        skill_ids: Optional[List[str]] = None,
+    ) -> SkillSubgraph:
         """获取以指定节点为中心的子图。"""
-        return await self._graph.get_subgraph(skill_id, depth=depth)
+        if skill_ids is not None:
+            roots = list(skill_ids)
+        elif isinstance(skill_id, list):
+            roots = skill_id
+        elif skill_id is None:
+            roots = []
+        else:
+            roots = [skill_id]
+        roots = [root for root in roots if root]
+        if not roots:
+            return SkillSubgraph()
+        if len(roots) == 1:
+            return await self._graph.get_subgraph(roots[0], depth=depth)
+
+        merged = SkillSubgraph()
+        seen_edges: Set[str] = set()
+        for root in roots:
+            subgraph = await self._graph.get_subgraph(root, depth=depth)
+            for node in subgraph.nodes.values():
+                merged.nodes[node.skill_id] = node
+            for edge in subgraph.edges:
+                if edge.edge_id in seen_edges:
+                    continue
+                seen_edges.add(edge.edge_id)
+                merged.edges.append(edge)
+        return merged
 
     async def get_dependency_chain(self, skill_id: str) -> List[str]:
         """获取完整递归依赖链（所有传递依赖）。"""
@@ -240,3 +302,25 @@ class SkillGraphManager:
         """
         results = await self._graph._conn.run(cypher)
         return [r["cycle"] for r in results]
+
+
+def _auto_edge(source_id: str, target_id: str, edge_type: EdgeType) -> SkillEdge:
+    return SkillEdge(
+        edge_id=f"auto:{edge_type.value}:{source_id}:{target_id}",
+        source_id=source_id,
+        target_id=target_id,
+        edge_type=edge_type,
+        weight=1.0,
+        metadata={"auto_generated": True, "source": "skill_repository"},
+    )
+
+
+def _unique_ids(skill_ids: Iterable[str]) -> List[str]:
+    seen: Set[str] = set()
+    result: List[str] = []
+    for skill_id in skill_ids:
+        if not skill_id or skill_id in seen:
+            continue
+        seen.add(skill_id)
+        result.append(skill_id)
+    return result

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -62,7 +62,10 @@ class SkillSearchRequest(BaseModel):
     query: str
     tags: Optional[List[str]] = None
     skill_type: Optional[SkillType] = None
+    domain: Optional[str] = None
     state: Optional[SkillState] = None
+    min_success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    include_deprecated: bool = False
     limit: int = Field(default=20, ge=1, le=100)
 
 
@@ -90,6 +93,18 @@ class SkillSummary(BaseModel):
     metrics: SkillMetrics
     created_at: datetime
     updated_at: datetime
+
+
+class SkillVersionFieldDiff(BaseModel):
+    field: str
+    change_type: Literal["added", "removed", "modified"]
+    old_value: Any = None
+    new_value: Any = None
+
+
+class SkillVersionHistoryItem(SkillSummary):
+    previous_version: Optional[str] = None
+    diff_to_previous: List[SkillVersionFieldDiff] = Field(default_factory=list)
 
 
 # ─── 生命周期 ─────────────────────────────────────────────────────────────────
@@ -135,7 +150,10 @@ class GraphNodeData(BaseModel):
     granularity_level: int
     success_rate: float
     usage_count: int
-
+    label: str | None = None
+    size: int = 16
+    color: str = "#9CA3AF"
+    tooltip: str | None = None
 
 class GraphEdgeData(BaseModel):
     id: str
