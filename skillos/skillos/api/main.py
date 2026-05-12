@@ -1,8 +1,9 @@
-"""SkillOS FastAPI 应用入口。"""
+"""SkillOS FastAPI application entry point."""
 
 from __future__ import annotations
 
 import argparse
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
@@ -14,8 +15,14 @@ from fastapi.responses import JSONResponse
 
 from ..utils.llm_client import LLMClient
 from .deps import app_state
-from .memory_store import MemoryGraphManager
-from .routes import evolution, execution, graph, ingest, lifecycle, skills, ws
+from .memory_store import MemoryGraphManager, MemoryWikiManager
+from .routes import evolution, execution, graph, ingest, lifecycle, repository, skills, ws
+
+logger = logging.getLogger(__name__)
+
+
+def _default_skill_storage_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "storage" / "skill_repo" / "SkillStorage"
 
 
 def _default_skill_repo_dir() -> Path:
@@ -41,28 +48,22 @@ def _default_skill_repo_dir() -> Path:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     llm_cfg = app.state.llm_cfg
     llm = LLMClient(llm_cfg)
+    if app.state.repository_backend == "memory":
+        wiki = MemoryWikiManager()
+    else:
+        from ..layers.skill_repository import SkillWikiManager
 
-    skill_repo_dir: Path = app.state.skill_repo_dir
-
-    # 这里接入你负责的 repository-backed wiki manager。
-    #
-    # 你需要在 skillos/api/repository_store.py 里实现 RepositoryWikiManager，
-    # 并保证它至少兼容 MemoryWikiManager 被 routes 使用到的方法。
-    from .repository_store import RepositoryWikiManager
-
-    wiki = RepositoryWikiManager(base_dir=skill_repo_dir)
-
-    # Graph 先保留内存版，降低改动面。
-    # 如果后续你也有 GraphRepository，再把这里替换掉。
+        wiki = SkillWikiManager(storage_dir=app.state.skill_storage_dir)
     graph_mgr = MemoryGraphManager()
 
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
 
-    # 持久化 repository 默认不 seed demo，避免每次启动重复写入。
+    # Seed demo data, then mirror the Wiki state into the in-memory graph.
     if app.state.seed_demo:
         await _seed_demo_skills(wiki)
+        await _sync_graph_from_wiki(wiki, graph_mgr)
 
-    # 注入 WebSocket 广播到 executor
+    # Wire WebSocket broadcast events into the executor.
     from .routes.ws import broadcast
 
     if app_state.executor:
@@ -75,8 +76,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-async def _seed_demo_skills(wiki: Any) -> None:
-    """预加载 demo Skill + 12 个 Meta-Skill（Strategic）。"""
+async def _sync_graph_from_wiki(wiki: Any, graph_mgr: MemoryGraphManager) -> None:
+    """Best-effort startup sync from the Wiki store into the in-memory graph."""
+    try:
+        seeded_skills = await wiki.list(limit=10000)
+        skill_ids = [skill.skill_id for skill in seeded_skills]
+        for skill in seeded_skills:
+            await graph_mgr.sync_skill(skill)
+
+        if hasattr(graph_mgr, "sync_auto_edges"):
+            for skill in seeded_skills:
+                await graph_mgr.sync_auto_edges(skill, skill_ids)
+    except Exception as exc:  # pragma: no cover - startup should survive graph issues
+        logger.warning("Failed to sync seeded Skills into graph: %s", exc)
+
+
+async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
+    """Seed demo Skills and Meta-Skills with readable static text."""
     from ..models.skill_model import (
         Skill,
         SkillImplementation,
@@ -87,14 +103,11 @@ async def _seed_demo_skills(wiki: Any) -> None:
     )
 
     def iface(
-        inputs: list,
-        outputs: list,
-        pre: Optional[list] = None,
-        post: Optional[list] = None,
+        inputs: list[dict[str, Any]],
+        outputs: list[dict[str, Any]],
+        pre: Optional[list[str]] = None,
+        post: Optional[list[str]] = None,
     ) -> SkillInterface:
-        pre = pre or []
-        post = post or []
-
         return SkillInterface(
             input_schema={
                 "type": "object",
@@ -117,91 +130,52 @@ async def _seed_demo_skills(wiki: Any) -> None:
                     for p in outputs
                 },
             },
-            preconditions=pre,
-            postconditions=post,
+            preconditions=pre or [],
+            postconditions=post or [],
         )
 
-    # ── 基础 Demo Skills ──────────────────────────────────────────────────────
     demos = [
-        dict(
-            name="click_element",
-            description="在网页上点击指定元素",
-            skill_type=SkillType.ATOMIC,
-            tags=["web", "ui", "interaction"],
-            interface=iface(
-                [
-                    {
-                        "name": "selector",
-                        "type": "string",
-                        "description": "CSS 选择器",
-                        "required": True,
-                    }
-                ],
-                [
-                    {
-                        "name": "success",
-                        "type": "boolean",
-                        "description": "是否成功",
-                    }
-                ],
-                pre=["页面已加载"],
-                post=["元素已被点击"],
-            ),
-            implementation=SkillImplementation(
-                language="python",
-                code='output["success"] = True  # 模拟点击 selector',
-            ),
-        ),
+        # dict(
+        #     name="click_element",
+        #     description="Click a target element on a web page.",
+        #     skill_type=SkillType.ATOMIC,
+        #     tags=["web", "ui", "interaction"],
+        #     interface=iface(
+        #         [{"name": "selector", "type": "string", "description": "CSS selector", "required": True}],
+        #         [{"name": "success", "type": "boolean", "description": "Whether the click was simulated successfully"}],
+        #         pre=["Page is loaded"],
+        #         post=["The target element has been clicked"],
+        #     ),
+        #     implementation=SkillImplementation(
+        #         language="python",
+        #         code='output["success"] = True  # Simulated click',
+        #     ),
+        # ),
         dict(
             name="type_text",
-            description="在输入框中输入文本",
+            description="Type text into an input field.",
             skill_type=SkillType.ATOMIC,
             tags=["web", "ui", "input"],
             interface=iface(
                 [
-                    {
-                        "name": "selector",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "text",
-                        "type": "string",
-                        "required": True,
-                    },
+                    {"name": "selector", "type": "string", "description": "CSS selector", "required": True},
+                    {"name": "text", "type": "string", "description": "Text to type", "required": True},
                 ],
-                [
-                    {
-                        "name": "success",
-                        "type": "boolean",
-                    }
-                ],
+                [{"name": "success", "type": "boolean", "description": "Whether the text was entered"}],
             ),
             implementation=SkillImplementation(
                 language="python",
-                code='output["success"] = True',
+                code='output["success"] = True  # Simulated typing',
             ),
         ),
         dict(
             name="fill_form",
-            description="填写并提交表单（组合 click + type）",
+            description="Fill and submit a form by composing click and type skills.",
             skill_type=SkillType.FUNCTIONAL,
             tags=["web", "form", "functional"],
             interface=iface(
-                [
-                    {
-                        "name": "form_data",
-                        "type": "object",
-                        "description": "表单字段字典",
-                        "required": True,
-                    }
-                ],
-                [
-                    {
-                        "name": "submitted",
-                        "type": "boolean",
-                    }
-                ],
+                [{"name": "form_data", "type": "object", "description": "Form field dictionary", "required": True}],
+                [{"name": "submitted", "type": "boolean", "description": "Whether the form was submitted"}],
             ),
             implementation=SkillImplementation(
                 language="python",
@@ -210,55 +184,34 @@ async def _seed_demo_skills(wiki: Any) -> None:
         ),
         dict(
             name="locate_element",
-            description="在页面上定位元素并返回其属性",
+            description="Locate an element on a page and return a CSS selector.",
             skill_type=SkillType.ATOMIC,
             tags=["web", "ui", "query"],
             interface=iface(
-                [
-                    {
-                        "name": "description",
-                        "type": "string",
-                        "required": True,
-                    }
-                ],
-                [
-                    {
-                        "name": "selector",
-                        "type": "string",
-                    }
-                ],
+                [{"name": "description", "type": "string", "description": "Element description", "required": True}],
+                [{"name": "selector", "type": "string", "description": "Suggested CSS selector"}],
             ),
             implementation=SkillImplementation(
                 language="python",
                 prompt_template=(
-                    "在页面上找到描述为 '{description}' 的元素，"
-                    "返回其 CSS 选择器。只输出选择器字符串，不要其他内容。"
+                    "Find the element described by '{description}' on the page. "
+                    "Return only one CSS selector string."
                 ),
             ),
         ),
     ]
 
-    # ── 12 个 Meta-Skill（Strategic L3）────────────────────────────────────────
     meta_skills = [
         dict(
             name="generate_skill_from_task",
-            description="从任务描述自动生成 Skill 定义草稿",
+            description="Generate a reusable Skill draft from a task description.",
             skill_type=SkillType.STRATEGIC,
             meta_category="generation",
             tags=["meta", "generation", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "task_description",
-                        "type": "string",
-                        "description": "任务描述",
-                        "required": True,
-                    },
-                    {
-                        "name": "context",
-                        "type": "object",
-                        "description": "上下文信息",
-                    },
+                    {"name": "task_description", "type": "string", "description": "Task description", "required": True},
+                    {"name": "context", "type": "object", "description": "Optional context"},
                 ],
                 [
                     {"name": "skill_name", "type": "string"},
@@ -268,125 +221,82 @@ async def _seed_demo_skills(wiki: Any) -> None:
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "你是 SkillOS Skill Builder。从以下任务描述中提取可复用的 Skill：\n\n"
-                    "任务：{task_description}\n\n"
-                    "请生成一个 JSON 格式的 Skill 定义，包含 "
-                    "name、description、input_schema、output_schema、prompt_template。"
+                    "You are the SkillOS Skill Builder. Extract a reusable Skill from this task:\n\n"
+                    "{task_description}\n\n"
+                    "Return JSON with name, description, input_schema, output_schema, and prompt_template."
                 ),
             ),
         ),
         dict(
             name="generate_skill_from_trajectory",
-            description="从执行轨迹中提取并生成 Skill",
+            description="Extract a reusable Skill from an execution trajectory.",
             skill_type=SkillType.STRATEGIC,
             meta_category="generation",
             tags=["meta", "generation", "trajectory", "strategic"],
             interface=iface(
-                [
-                    {
-                        "name": "trajectory",
-                        "type": "string",
-                        "description": "执行轨迹文本",
-                        "required": True,
-                    }
-                ],
-                [
-                    {"name": "skill_name", "type": "string"},
-                    {"name": "skill_draft", "type": "object"},
-                ],
+                [{"name": "trajectory", "type": "string", "description": "Execution trajectory text", "required": True}],
+                [{"name": "skill_name", "type": "string"}, {"name": "skill_draft", "type": "object"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "你是 SkillOS Skill Builder。分析以下执行轨迹，"
-                    "提取可复用的操作模式并生成 Skill：\n\n"
-                    "轨迹：{trajectory}\n\n"
-                    "输出 JSON 格式的 Skill 定义。"
+                    "Analyze this execution trajectory and extract a reusable Skill pattern:\n\n"
+                    "{trajectory}\n\n"
+                    "Return a JSON Skill definition."
                 ),
             ),
         ),
         dict(
             name="formalize_skill_schema",
-            description="将非正式 Skill 描述规范化为标准 JSON Schema",
+            description="Convert an informal Skill description into JSON schemas.",
             skill_type=SkillType.STRATEGIC,
             meta_category="knowledge_management",
             tags=["meta", "schema", "formalization", "strategic"],
             interface=iface(
-                [
-                    {
-                        "name": "informal_description",
-                        "type": "string",
-                        "required": True,
-                    }
-                ],
-                [
-                    {"name": "input_schema", "type": "object"},
-                    {"name": "output_schema", "type": "object"},
-                ],
+                [{"name": "informal_description", "type": "string", "description": "Informal Skill description", "required": True}],
+                [{"name": "input_schema", "type": "object"}, {"name": "output_schema", "type": "object"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "将以下非正式 Skill 描述规范化为标准 JSON Schema：\n\n"
+                    "Convert this informal Skill description into standard JSON Schema:\n\n"
                     "{informal_description}\n\n"
-                    "输出包含 input_schema 和 output_schema 的 JSON 对象。"
+                    "Return JSON with input_schema and output_schema."
                 ),
             ),
         ),
         dict(
             name="generate_skill_tests",
-            description="为 Skill 自动生成测试用例",
+            description="Generate test cases for a Skill.",
             skill_type=SkillType.STRATEGIC,
             meta_category="quality_assurance",
             tags=["meta", "testing", "quality", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "skill_description",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "input_schema",
-                        "type": "object",
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "skill_description", "type": "string", "required": True},
+                    {"name": "input_schema", "type": "object"},
                 ],
-                [
-                    {"name": "test_cases", "type": "array"},
-                    {"name": "test_count", "type": "integer"},
-                ],
+                [{"name": "test_cases", "type": "array"}, {"name": "test_count", "type": "integer"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "为以下 Skill 生成测试用例：\n\n"
-                    "Skill 名称：{skill_name}\n"
-                    "描述：{skill_description}\n"
-                    "输入 Schema：{input_schema}\n\n"
-                    "生成 3-5 个测试用例，包含正常情况、边界情况和异常情况。"
-                    "输出 JSON 数组。"
+                    "Generate 3 to 5 test cases for this Skill.\n\n"
+                    "Skill: {skill_name}\n"
+                    "Description: {skill_description}\n"
+                    "Input schema: {input_schema}\n\n"
+                    "Return JSON covering normal, boundary, and failure cases."
                 ),
             ),
         ),
         dict(
             name="audit_skill_safety",
-            description="审计 Skill 的安全性，检测潜在危险操作",
+            description="Audit a Skill implementation for safety risks.",
             skill_type=SkillType.STRATEGIC,
             meta_category="quality_assurance",
             tags=["meta", "safety", "audit", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "implementation_code",
-                        "type": "string",
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "implementation_code", "type": "string"},
                 ],
                 [
                     {"name": "is_safe", "type": "boolean"},
@@ -396,74 +306,47 @@ async def _seed_demo_skills(wiki: Any) -> None:
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "审计以下 Skill 的安全性：\n\n"
-                    "Skill：{skill_name}\n"
-                    "实现代码：{implementation_code}\n\n"
-                    "检查：代码注入、权限越界、资源滥用、数据泄露风险。"
-                    "输出 JSON：{{is_safe, risks: [], audit_score: 0.0-1.0}}"
+                    "Audit this Skill for code injection, privilege escalation, resource abuse, and data leakage.\n\n"
+                    "Skill: {skill_name}\n"
+                    "Implementation code: {implementation_code}\n\n"
+                    "Return JSON: {\"is_safe\": true, \"risks\": [], \"audit_score\": 0.0}."
                 ),
             ),
         ),
         dict(
             name="verify_skill_postcondition",
-            description="验证 Skill 执行结果是否满足后置条件",
+            description="Verify whether execution output satisfies postconditions.",
             skill_type=SkillType.STRATEGIC,
             meta_category="quality_assurance",
             tags=["meta", "verification", "postcondition", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "postconditions",
-                        "type": "array",
-                        "required": True,
-                    },
-                    {
-                        "name": "execution_output",
-                        "type": "object",
-                        "required": True,
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "postconditions", "type": "array", "required": True},
+                    {"name": "execution_output", "type": "object", "required": True},
                 ],
-                [
-                    {"name": "satisfied", "type": "boolean"},
-                    {"name": "violations", "type": "array"},
-                ],
+                [{"name": "satisfied", "type": "boolean"}, {"name": "violations", "type": "array"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "验证 Skill '{skill_name}' 的执行结果是否满足后置条件：\n\n"
-                    "后置条件：{postconditions}\n"
-                    "执行输出：{execution_output}\n\n"
-                    "输出 JSON：{{satisfied: bool, violations: []}}"
+                    "Verify whether Skill '{skill_name}' satisfies these postconditions.\n\n"
+                    "Postconditions: {postconditions}\n"
+                    "Execution output: {execution_output}\n\n"
+                    "Return JSON: {\"satisfied\": true, \"violations\": []}."
                 ),
             ),
         ),
         dict(
             name="repair_failed_skill",
-            description="分析 Skill 失败原因并生成修复方案",
+            description="Analyze a failed Skill and propose a repair.",
             skill_type=SkillType.STRATEGIC,
             meta_category="maintenance",
             tags=["meta", "repair", "maintenance", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "failure_info",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "current_implementation",
-                        "type": "string",
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "failure_info", "type": "string", "required": True},
+                    {"name": "current_implementation", "type": "string"},
                 ],
                 [
                     {"name": "repaired_implementation", "type": "string"},
@@ -472,220 +355,136 @@ async def _seed_demo_skills(wiki: Any) -> None:
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "修复失败的 Skill '{skill_name}'：\n\n"
-                    "失败信息：{failure_info}\n"
-                    "当前实现：{current_implementation}\n\n"
-                    "分析根因并提供修复后的实现。"
-                    "输出 JSON：{{repaired_implementation, repair_notes}}"
+                    "Repair failed Skill '{skill_name}'.\n\n"
+                    "Failure info: {failure_info}\n"
+                    "Current implementation: {current_implementation}\n\n"
+                    "Return JSON with repaired_implementation and repair_notes."
                 ),
             ),
         ),
         dict(
             name="split_oversized_skill",
-            description="将功能过于复杂的 Skill 拆分为多个子 Skill",
+            description="Split an oversized Skill into smaller child Skills.",
             skill_type=SkillType.STRATEGIC,
             meta_category="maintenance",
             tags=["meta", "split", "decomposition", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "skill_description",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "split_reason",
-                        "type": "string",
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "skill_description", "type": "string", "required": True},
+                    {"name": "split_reason", "type": "string"},
                 ],
-                [
-                    {"name": "sub_skills", "type": "array"},
-                    {"name": "split_count", "type": "integer"},
-                ],
+                [{"name": "sub_skills", "type": "array"}, {"name": "split_count", "type": "integer"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "将以下过于复杂的 Skill 拆分为多个子 Skill：\n\n"
-                    "Skill：{skill_name}\n"
-                    "描述：{skill_description}\n"
-                    "拆分原因：{split_reason}\n\n"
-                    "输出 JSON 数组，每个元素包含 name、description、prompt_template。"
+                    "Split this oversized Skill into smaller Skills.\n\n"
+                    "Skill: {skill_name}\n"
+                    "Description: {skill_description}\n"
+                    "Reason: {split_reason}\n\n"
+                    "Return a JSON array where each item has name, description, and prompt_template."
                 ),
             ),
         ),
         dict(
             name="merge_redundant_skills",
-            description="将功能重复的多个 Skill 合并为一个统一 Skill",
+            description="Merge redundant Skills into one canonical Skill.",
             skill_type=SkillType.STRATEGIC,
             meta_category="maintenance",
             tags=["meta", "merge", "deduplication", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_names",
-                        "type": "array",
-                        "description": "待合并的 Skill 名称列表",
-                        "required": True,
-                    },
-                    {
-                        "name": "skill_descriptions",
-                        "type": "array",
-                    },
+                    {"name": "skill_names", "type": "array", "description": "Skill names to merge", "required": True},
+                    {"name": "skill_descriptions", "type": "array"},
                 ],
-                [
-                    {"name": "merged_skill", "type": "object"},
-                    {"name": "merge_notes", "type": "string"},
-                ],
+                [{"name": "merged_skill", "type": "object"}, {"name": "merge_notes", "type": "string"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "将以下功能重复的 Skill 合并为一个统一 Skill：\n\n"
-                    "待合并：{skill_names}\n"
-                    "描述：{skill_descriptions}\n\n"
-                    "输出合并后的 Skill JSON 定义，包含 name、description、prompt_template。"
+                    "Merge these redundant Skills into one canonical Skill.\n\n"
+                    "Skill names: {skill_names}\n"
+                    "Descriptions: {skill_descriptions}\n\n"
+                    "Return a merged Skill JSON definition with name, description, and prompt_template."
                 ),
             ),
         ),
         dict(
             name="deprecate_low_utility_skill",
-            description="识别并废弃低使用率/低质量的 Skill",
+            description="Decide whether a low-utility Skill should be deprecated.",
             skill_type=SkillType.STRATEGIC,
             meta_category="lifecycle",
             tags=["meta", "deprecation", "maintenance", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_name",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "usage_count",
-                        "type": "integer",
-                        "required": True,
-                    },
-                    {
-                        "name": "success_rate",
-                        "type": "number",
-                        "required": True,
-                    },
-                    {
-                        "name": "last_used_days_ago",
-                        "type": "integer",
-                    },
+                    {"name": "skill_name", "type": "string", "required": True},
+                    {"name": "usage_count", "type": "integer", "required": True},
+                    {"name": "success_rate", "type": "number", "required": True},
+                    {"name": "last_used_days_ago", "type": "integer"},
                 ],
-                [
-                    {"name": "should_deprecate", "type": "boolean"},
-                    {"name": "reason", "type": "string"},
-                ],
+                [{"name": "should_deprecate", "type": "boolean"}, {"name": "reason", "type": "string"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "评估 Skill '{skill_name}' 是否应该废弃：\n\n"
-                    "使用次数：{usage_count}\n"
-                    "成功率：{success_rate}\n"
-                    "最后使用：{last_used_days_ago} 天前\n\n"
-                    "输出 JSON：{{should_deprecate: bool, reason: string}}"
+                    "Evaluate whether Skill '{skill_name}' should be deprecated.\n\n"
+                    "Usage count: {usage_count}\n"
+                    "Success rate: {success_rate}\n"
+                    "Last used days ago: {last_used_days_ago}\n\n"
+                    "Return JSON: {\"should_deprecate\": false, \"reason\": \"...\"}."
                 ),
             ),
         ),
         dict(
             name="update_skill_wiki_page",
-            description="更新 Skill Wiki 页面的描述、标签和文档",
+            description="Generate updated Wiki documentation for a Skill.",
             skill_type=SkillType.STRATEGIC,
             meta_category="knowledge_management",
             tags=["meta", "wiki", "documentation", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "skill_id",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "update_reason",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "new_description",
-                        "type": "string",
-                    },
-                    {
-                        "name": "new_tags",
-                        "type": "array",
-                    },
+                    {"name": "skill_id", "type": "string", "required": True},
+                    {"name": "update_reason", "type": "string", "required": True},
+                    {"name": "new_description", "type": "string"},
+                    {"name": "new_tags", "type": "array"},
                 ],
-                [
-                    {"name": "updated", "type": "boolean"},
-                    {"name": "wiki_url", "type": "string"},
-                ],
+                [{"name": "updated", "type": "boolean"}, {"name": "wiki_url", "type": "string"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "为 Skill '{skill_id}' 生成更新后的 Wiki 页面内容：\n\n"
-                    "更新原因：{update_reason}\n"
-                    "新描述：{new_description}\n\n"
-                    "输出 Markdown 格式的 Wiki 页面。"
+                    "Generate updated Wiki page content for Skill '{skill_id}'.\n\n"
+                    "Update reason: {update_reason}\n"
+                    "New description: {new_description}\n\n"
+                    "Return Markdown documentation."
                 ),
             ),
         ),
         dict(
             name="update_skill_graph_relation",
-            description="更新 Skill Graph 中的关系边（依赖/组合/替代）",
+            description="Validate and update a Skill Graph relation.",
             skill_type=SkillType.STRATEGIC,
             meta_category="graph",
             tags=["meta", "graph", "relations", "strategic"],
             interface=iface(
                 [
-                    {
-                        "name": "source_skill",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "target_skill",
-                        "type": "string",
-                        "required": True,
-                    },
-                    {
-                        "name": "relation_type",
-                        "type": "string",
-                        "description": "depends_on/composes/replaces",
-                        "required": True,
-                    },
-                    {
-                        "name": "weight",
-                        "type": "number",
-                    },
+                    {"name": "source_skill", "type": "string", "required": True},
+                    {"name": "target_skill", "type": "string", "required": True},
+                    {"name": "relation_type", "type": "string", "description": "depends_on/composes/replaces", "required": True},
+                    {"name": "weight", "type": "number"},
                 ],
-                [
-                    {"name": "edge_added", "type": "boolean"},
-                    {"name": "graph_updated", "type": "boolean"},
-                ],
+                [{"name": "edge_added", "type": "boolean"}, {"name": "graph_updated", "type": "boolean"}],
             ),
             implementation=SkillImplementation(
                 prompt_template=(
-                    "分析 Skill '{source_skill}' 和 '{target_skill}' 之间的 "
-                    "'{relation_type}' 关系：\n\n"
-                    "验证这个关系是否合理，并说明理由。"
-                    "输出 JSON：{{valid: bool, reasoning: string}}"
+                    "Analyze whether relation '{relation_type}' between '{source_skill}' and '{target_skill}' is valid.\n\n"
+                    "Return JSON: {\"valid\": true, \"reasoning\": \"...\"}."
                 ),
             ),
         ),
     ]
 
-    all_skills = demos + meta_skills
-
-    for d in all_skills:
+    for data in demos + meta_skills:
         skill = Skill(
-            **d,
-            provenance=SkillProvenance(source_type="demo", author="system"),
+            **data,
+            provenance=SkillProvenance(source_type="demo", created_by_agent="system"),
         )
         skill.transition_to(SkillState.VERIFIED)
         skill.transition_to(SkillState.RELEASED)
@@ -705,8 +504,10 @@ async def _seed_demo_skills(wiki: Any) -> None:
 def create_app(
     api_key: str,
     model: str = "claude-sonnet-4-6",
-    seed_demo: bool = False,
-    skill_repo_dir: Optional[Path] = None,
+    *,
+    repository_backend: str = "git",
+    skill_storage_dir: Optional[Path] = None,
+    seed_demo: bool = True,
 ) -> FastAPI:
     from ..config.llm_config import LLMConfig
 
@@ -722,8 +523,9 @@ def create_app(
     )
 
     app.state.llm_cfg = llm_cfg
+    app.state.repository_backend = repository_backend
+    app.state.skill_storage_dir = (skill_storage_dir or _default_skill_storage_dir()).resolve()
     app.state.seed_demo = seed_demo
-    app.state.skill_repo_dir = (skill_repo_dir or _default_skill_repo_dir()).resolve()
 
     app.add_middleware(
         CORSMiddleware,
@@ -752,6 +554,7 @@ def create_app(
     app.include_router(execution.router, prefix="/api/v1")
     app.include_router(evolution.router, prefix="/api/v1")
     app.include_router(ingest.router, prefix="/api/v1")
+    app.include_router(repository.router, prefix="/api/v1")
     app.include_router(ws.router)
 
     @app.get("/")
@@ -778,37 +581,20 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
-    parser.add_argument(
-        "--seed-demo",
-        action="store_true",
-        help="启动时向 repository 写入 demo skills。默认关闭。",
-    )
-    parser.add_argument(
-        "--skill-repo-dir",
-        default=None,
-        help=(
-            "Skill repository 路径。"
-            "默认使用 outer-skillos/layers/storage/skill_repo/SkillStorage。"
-        ),
-    )
-
+    parser.add_argument("--repository-backend", choices=["git", "memory"], default="git")
+    parser.add_argument("--skill-storage-dir", default=None)
+    parser.add_argument("--no-seed-demo", action="store_true")
     args = parser.parse_args()
 
-    skill_repo_dir = Path(args.skill_repo_dir).resolve() if args.skill_repo_dir else None
-
+    storage_dir = Path(args.skill_storage_dir).resolve() if args.skill_storage_dir else None
     app = create_app(
         api_key=args.api_key,
         model=args.model,
-        seed_demo=args.seed_demo,
-        skill_repo_dir=skill_repo_dir,
+        repository_backend=args.repository_backend,
+        skill_storage_dir=storage_dir,
+        seed_demo=not args.no_seed_demo,
     )
-
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-    )
+    uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

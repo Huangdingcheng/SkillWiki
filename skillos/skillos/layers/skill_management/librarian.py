@@ -43,11 +43,17 @@ class SkillLibrarianAgent:
             try:
                 existing = await self._wiki.get(skill.skill_id)
                 if existing:
-                    await self._wiki.db.update(skill.skill_id, {
+                    updates = {
                         "description": skill.description,
                         "tags": skill.tags,
                         "implementation": skill.implementation.model_dump() if skill.implementation else None,
-                    })
+                    }
+                    if hasattr(self._wiki, "update"):
+                        await self._wiki.update(skill.skill_id, **updates)
+                    elif hasattr(self._wiki, "db"):
+                        await self._wiki.db.update(skill.skill_id, updates)
+                    else:
+                        raise RuntimeError("Wiki manager does not expose update")
                 else:
                     await self._wiki.create(skill)
                 result.wiki_updated = True
@@ -58,7 +64,14 @@ class SkillLibrarianAgent:
         # 更新 Graph（确保节点存在）
         if self._graph:
             try:
-                self._graph.add_skill(skill)
+                if hasattr(self._graph, "sync_skill"):
+                    await self._graph.sync_skill(skill)
+                elif hasattr(self._graph, "add_skill"):
+                    maybe_result = self._graph.add_skill(skill)
+                    if hasattr(maybe_result, "__await__"):
+                        await maybe_result
+                else:
+                    raise RuntimeError("Graph manager does not expose sync_skill")
                 result.graph_updated = True
                 logger.info(f"Librarian: Graph 节点已更新 {skill.name}")
             except Exception as exc:
@@ -94,7 +107,14 @@ class SkillLibrarianAgent:
 
         if self._graph:
             try:
-                self._graph.add_skill(skill)
+                if hasattr(self._graph, "sync_skill"):
+                    await self._graph.sync_skill(skill)
+                elif hasattr(self._graph, "add_skill"):
+                    maybe_result = self._graph.add_skill(skill)
+                    if hasattr(maybe_result, "__await__"):
+                        await maybe_result
+                else:
+                    raise RuntimeError("Graph manager does not expose sync_skill")
                 result.graph_updated = True
             except Exception as exc:
                 result.errors.append(f"Graph 注册失败: {exc}")
@@ -108,7 +128,23 @@ class SkillLibrarianAgent:
         if not self._graph:
             return False
         try:
-            self._graph.add_edge(source_id, target_id, edge_type, weight=weight)
+            from ...models.graph_model import SkillEdge
+            from ...models.skill_model import EdgeType
+
+            edge = SkillEdge(
+                source_id=source_id,
+                target_id=target_id,
+                edge_type=EdgeType(edge_type),
+                weight=weight,
+            )
+            if hasattr(self._graph, "create_edge"):
+                await self._graph.create_edge(edge)
+            elif hasattr(self._graph, "add_edge"):
+                maybe_result = self._graph.add_edge(edge)
+                if hasattr(maybe_result, "__await__"):
+                    await maybe_result
+            else:
+                raise RuntimeError("Graph manager does not expose create_edge")
             return True
         except Exception as exc:
             logger.warning(f"Librarian: 添加关系失败 {source_id}→{target_id}: {exc}")

@@ -40,7 +40,7 @@ export const skillsApi = {
 
 export const lifecycleApi = {
   release: (id: string) =>
-    http.post<SkillSummary>(`/lifecycle/${id}/release`).then(r => r.data),
+    http.post<SkillSummary>(`/lifecycle/${id}/release`, {}).then(r => r.data),
 
   deprecate: (id: string, reason: string) =>
     http.post<SkillSummary>(`/lifecycle/${id}/deprecate`, { reason }).then(r => r.data),
@@ -54,8 +54,19 @@ export const lifecycleApi = {
   reviewAndRelease: (id: string) =>
     http.post<SkillSummary>(`/lifecycle/${id}/review-and-release`).then(r => r.data),
 
-  newVersion: (id: string, bump: 'major' | 'minor' | 'patch' = 'patch') =>
-    http.post<SkillSummary>(`/lifecycle/${id}/new-version`, { bump }).then(r => r.data),
+newVersion: (
+  id: string,
+  payload: {
+    bump: 'major' | 'minor' | 'patch'
+    description?: string
+    tags?: string[]
+    interface?: unknown
+    implementation?: unknown | null
+    domain?: string
+    granularity_level?: number
+  }
+) =>
+  http.post<SkillSummary>(`/lifecycle/${id}/new-version`, payload).then(r => r.data),
 
   getDiff: (id: string, compare_to?: string) =>
     http.get<Record<string, unknown>>(`/lifecycle/${id}/diff`, { params: compare_to ? { compare_to } : {} }).then(r => r.data),

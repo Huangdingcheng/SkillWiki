@@ -1,10 +1,10 @@
-"""Skill 搜索引擎 — 全文搜索 + 语义相似度检索。"""
+"""Rule-based Skill search and ranking utilities."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ...models.skill_model import Skill, SkillState, SkillType
 from ...storage.postgres_db import PostgresConnection, SkillRepository
@@ -15,19 +15,21 @@ logger = get_logger(__name__)
 
 @dataclass
 class SearchResult:
-    """搜索结果条目。"""
+    """Search result entry."""
+
     skill: Skill
-    score: float                    # 综合相关性分数 [0, 1]
+    score: float
     match_reasons: List[str] = field(default_factory=list)
 
     def __lt__(self, other: "SearchResult") -> bool:
-        return self.score < other.score
+        return _result_sort_key(self) < _result_sort_key(other)
 
 
 @dataclass
 class SearchQuery:
-    """结构化搜索查询。"""
-    text: str = ""                              # 自然语言查询
+    """Structured Skill search query."""
+
+    text: str = ""
     tags: List[str] = field(default_factory=list)
     skill_type: Optional[SkillType] = None
     domain: Optional[str] = None
@@ -38,18 +40,12 @@ class SearchQuery:
 
 
 class SkillSearchEngine:
-    """Skill 检索引擎。
-
-    当前实现：基于 PostgreSQL 的关键词匹配 + 多维度评分。
-    未来可替换为向量数据库（pgvector / Milvus）实现语义检索。
-    """
+    """Repository-backed search engine using the shared rule-based scorer."""
 
     def __init__(self, pg_conn: PostgresConnection) -> None:
         self._repo = SkillRepository(pg_conn)
 
     async def search(self, query: SearchQuery) -> List[SearchResult]:
-        """执行搜索，返回按相关性排序的结果列表。"""
-        # 1. 构建过滤条件
         filters: Dict[str, Any] = {}
         if query.skill_type:
             filters["skill_type"] = query.skill_type.value
@@ -57,173 +53,265 @@ class SkillSearchEngine:
             filters["domain"] = query.domain
         if query.state:
             filters["state"] = query.state.value
-        elif not query.include_deprecated:
-            # 默认排除 deprecated 和 archived
-            pass  # 在后处理中过滤
 
-        # 2. 候选集获取
         candidates: List[Skill] = []
-
         if query.text:
-            # 名称模糊匹配
-            name_matches = await self._repo.list(
+            candidates.extend(await self._repo.list(
+                filters={**filters, "name_like": query.text.replace(" ", "_")},
+                limit=query.max_results * 5,
+            ))
+            candidates.extend(await self._repo.list(
                 filters={**filters, "name_like": query.text},
-                limit=query.max_results * 3,
-            )
-            candidates.extend(name_matches)
-
+                limit=query.max_results * 5,
+            ))
+            known_ids = {skill.skill_id for skill in candidates}
+            for skill in await self._repo.list(filters=filters, limit=query.max_results * 20):
+                if skill.skill_id not in known_ids:
+                    candidates.append(skill)
+                    known_ids.add(skill.skill_id)
         if query.tags:
-            tag_matches = await self._repo.search_by_tags(
-                query.tags, limit=query.max_results * 2
-            )
-            # 去重
-            existing_ids = {s.skill_id for s in candidates}
-            candidates.extend(s for s in tag_matches if s.skill_id not in existing_ids)
-
+            known_ids = {skill.skill_id for skill in candidates}
+            for skill in await self._repo.search_by_tags(query.tags, limit=query.max_results * 5):
+                if skill.skill_id not in known_ids:
+                    candidates.append(skill)
+                    known_ids.add(skill.skill_id)
         if not candidates:
-            # 无特定条件时返回全量（按使用量排序）
-            candidates = await self._repo.list(filters=filters, limit=query.max_results * 2)
+            candidates = await self._repo.list(filters=filters, limit=query.max_results * 5)
 
-        # 3. 后处理过滤
-        if not query.include_deprecated:
-            candidates = [
-                s for s in candidates
-                if s.state not in (SkillState.DEPRECATED, SkillState.ARCHIVED)
-            ]
-        if query.min_success_rate > 0:
-            candidates = [
-                s for s in candidates
-                if s.metrics.success_rate >= query.min_success_rate
-            ]
-
-        # 4. 评分排序
-        results = [self._score(s, query) for s in candidates]
-        results.sort(reverse=True)
-
-        # 5. 去重（同名取最高版本）
-        seen_names: Dict[str, SearchResult] = {}
-        for r in results:
-            name = r.skill.name
-            if name not in seen_names or r.score > seen_names[name].score:
-                seen_names[name] = r
-
-        return list(seen_names.values())[: query.max_results]
+        return rank_search_results(candidates, query)
 
     async def search_text(self, text: str, limit: int = 10) -> List[SearchResult]:
-        """快捷方法：纯文本搜索。"""
         return await self.search(SearchQuery(text=text, max_results=limit))
+
+    def _score(self, skill: Skill, query: SearchQuery) -> SearchResult:
+        """Compatibility wrapper for existing tests and callers."""
+
+        return score_skill_match(skill, query)
+
+    def _text_relevance(self, skill: Skill, query_text: str) -> float:
+        """Return text-only relevance for legacy tests."""
+
+        normalized_query = normalize_text(query_text)
+        if not normalized_query:
+            return 0.0
+
+        normalized_name = normalize_text(skill.name)
+        normalized_display_name = normalize_text(skill.display_name)
+        if normalized_query in {normalized_name, normalized_display_name}:
+            return 1.0
+
+        query_tokens = set(extract_query_tokens(query_text))
+        if not query_tokens:
+            return 0.0
+
+        name_tokens = set(extract_query_tokens(f"{skill.name} {skill.display_name}"))
+        name_overlap = query_tokens & name_tokens
+        if name_overlap:
+            return 0.5 + 0.4 * len(name_overlap) / len(query_tokens)
+
+        description_tokens = set(extract_query_tokens(skill.description))
+        desc_overlap = query_tokens & description_tokens
+        if desc_overlap:
+            return 0.4 * len(desc_overlap) / len(query_tokens)
+
+        tag_overlap = query_tokens & normalize_tags(skill.tags)
+        if tag_overlap:
+            return 0.3 * len(tag_overlap) / len(query_tokens)
+
+        return 0.0
+
+    def _extract_keywords(self, text: str) -> List[str]:
+        """Compatibility wrapper around the shared tokenizer."""
+
+        keywords = extract_query_tokens(text)
+        keywords.sort(key=len, reverse=True)
+        return keywords
 
     async def find_by_capability(
         self,
         capability_description: str,
         domain: Optional[str] = None,
     ) -> List[SearchResult]:
-        """按能力描述查找 Skill（关键词提取 + 多字段匹配）。"""
-        keywords = self._extract_keywords(capability_description)
+        keywords = extract_query_tokens(capability_description)
         results: List[SearchResult] = []
-        seen: set = set()
-
-        for kw in keywords[:5]:  # 取前 5 个关键词
-            matches = await self.search(
-                SearchQuery(text=kw, domain=domain, max_results=10)
-            )
-            for r in matches:
-                if r.skill.skill_id not in seen:
-                    seen.add(r.skill.skill_id)
-                    results.append(r)
-
+        seen: Set[str] = set()
+        for keyword in keywords[:5]:
+            for result in await self.search(SearchQuery(
+                text=keyword,
+                domain=domain,
+                max_results=10,
+            )):
+                if result.skill.skill_id not in seen:
+                    seen.add(result.skill.skill_id)
+                    results.append(result)
         results.sort(reverse=True)
         return results[:10]
 
-    # ------------------------------------------------------------------
-    # Scoring
-    # ------------------------------------------------------------------
 
-    def _score(self, skill: Skill, query: SearchQuery) -> SearchResult:
-        """多维度评分：相关性 + 质量 + 新鲜度。"""
-        score = 0.0
-        reasons: List[str] = []
+def rank_search_results(skills: Iterable[Skill], query: SearchQuery) -> List[SearchResult]:
+    """Filter, score, deduplicate, and stably sort Skills for a query."""
 
-        # --- 文本相关性 (40%) ---
-        if query.text:
-            text_score = self._text_relevance(skill, query.text)
-            score += text_score * 0.4
-            if text_score > 0:
-                reasons.append(f"文本匹配 {text_score:.2f}")
+    results: List[SearchResult] = []
+    for skill in skills:
+        if not skill_matches_filters(skill, query):
+            continue
+        result = score_skill_match(skill, query)
+        if result.score <= 0 and query.text:
+            continue
+        results.append(result)
 
-        # --- 标签匹配 (20%) ---
-        if query.tags:
-            tag_hits = sum(1 for t in query.tags if t in skill.tags)
-            tag_score = tag_hits / len(query.tags)
-            score += tag_score * 0.2
-            if tag_hits:
-                reasons.append(f"标签匹配 {tag_hits}/{len(query.tags)}")
+    results.sort(reverse=True)
+    best_by_name: Dict[str, SearchResult] = {}
+    for result in results:
+        existing = best_by_name.get(result.skill.name)
+        if existing is None or _result_sort_key(result) > _result_sort_key(existing):
+            best_by_name[result.skill.name] = result
+    deduped = list(best_by_name.values())
+    deduped.sort(reverse=True)
+    return deduped[: query.max_results]
 
-        # --- 质量分 (25%): 成功率 + 使用量 ---
-        quality = skill.metrics.success_rate * 0.6
-        usage_norm = min(skill.metrics.usage_count / 1000, 1.0) * 0.4
-        quality_score = quality + usage_norm
-        score += quality_score * 0.25
-        if skill.metrics.usage_count > 0:
-            reasons.append(f"成功率 {skill.metrics.success_rate:.0%}")
 
-        # --- 状态加成 (15%) ---
-        state_bonus = {
-            SkillState.RELEASED: 1.0,
-            SkillState.VERIFIED: 0.8,
-            SkillState.DEGRADED: 0.5,
-            SkillState.DRAFT: 0.3,
-        }.get(skill.state, 0.1)
-        score += state_bonus * 0.15
+def skill_matches_filters(skill: Skill, query: SearchQuery) -> bool:
+    if query.skill_type and skill.skill_type != query.skill_type:
+        return False
+    if query.domain and skill.domain != query.domain:
+        return False
+    if query.state and skill.state != query.state:
+        return False
+    if not query.include_deprecated and skill.state in (SkillState.DEPRECATED, SkillState.ARCHIVED):
+        return False
+    if query.tags:
+        requested_tags = normalize_tags(query.tags)
+        if not requested_tags & set(skill.tags):
+            return False
+    if query.min_success_rate > 0 and skill.metrics.success_rate < query.min_success_rate:
+        return False
+    return True
 
-        # 无文本和标签查询时，直接用质量分
-        if not query.text and not query.tags:
-            score = quality_score * 0.7 + state_bonus * 0.3
 
-        return SearchResult(skill=skill, score=min(score, 1.0), match_reasons=reasons)
+def score_skill_match(skill: Skill, query: SearchQuery) -> SearchResult:
+    """Return a deterministic rule-based relevance score for one Skill."""
 
-    def _text_relevance(self, skill: Skill, query_text: str) -> float:
-        """计算文本相关性分数。"""
-        query_lower = query_text.lower()
-        query_tokens = set(re.split(r"[\s_\-]+", query_lower))
+    score = 0.0
+    reasons: List[str] = []
+    query_tokens = set(extract_query_tokens(query.text))
+    normalized_query = normalize_text(query.text)
+    normalized_name = normalize_text(skill.name)
+    normalized_display_name = normalize_text(skill.display_name)
 
-        # 名称完全匹配
-        if skill.name == query_lower.replace(" ", "_"):
-            return 1.0
+    if query_tokens:
+        if normalized_query and normalized_query in {normalized_name, normalized_display_name}:
+            score += 0.42
+            reasons.append("exact name match")
+        else:
+            name_tokens = set(extract_query_tokens(f"{skill.name} {skill.display_name}"))
+            overlap = query_tokens & name_tokens
+            if overlap:
+                score += 0.30 * len(overlap) / len(query_tokens)
+                reasons.append("name token match")
 
-        # 名称包含查询
-        if query_lower.replace(" ", "_") in skill.name:
-            return 0.9
+            description_tokens = set(extract_query_tokens(skill.description))
+            desc_overlap = query_tokens & description_tokens
+            if desc_overlap:
+                score += 0.16 * len(desc_overlap) / len(query_tokens)
+                reasons.append("description match")
 
-        # 名称 token 匹配
-        name_tokens = set(re.split(r"[\s_\-]+", skill.name))
-        token_overlap = len(query_tokens & name_tokens) / max(len(query_tokens), 1)
-        if token_overlap > 0:
-            return 0.5 + token_overlap * 0.4
+            tag_overlap = query_tokens & set(skill.tags)
+            if tag_overlap:
+                score += 0.10 * len(tag_overlap) / len(query_tokens)
+                reasons.append("tag match")
 
-        # 描述匹配
-        desc_lower = skill.description.lower()
-        if query_lower in desc_lower:
-            return 0.4
+            if skill.domain and skill.domain.lower() in query_tokens:
+                score += 0.06
+                reasons.append("domain match")
 
-        # 标签匹配
-        if any(query_lower in tag for tag in skill.tags):
-            return 0.3
+    requested_tags = normalize_tags(query.tags)
+    if requested_tags:
+        matched_tags = requested_tags & set(skill.tags)
+        if matched_tags:
+            score += 0.12 * len(matched_tags) / len(requested_tags)
+            reasons.append("tag match")
 
-        return 0.0
+    if query.domain and skill.domain == query.domain:
+        score += 0.05
+        reasons.append("domain match")
 
-    def _extract_keywords(self, text: str) -> List[str]:
-        """从自然语言描述中提取关键词（简单规则，无 NLP 依赖）。"""
-        # 去除停用词
-        stopwords = {
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "to", "of", "in", "on", "at", "for", "with", "by", "from",
-            "that", "this", "it", "its", "and", "or", "but", "not",
-            "can", "will", "should", "would", "could", "may", "might",
-            "how", "what", "when", "where", "which", "who",
-        }
-        tokens = re.split(r"[\s\.,;:!?\-_/\\]+", text.lower())
-        keywords = [t for t in tokens if t and t not in stopwords and len(t) > 2]
-        # 按长度降序（更长的词通常更具体）
-        keywords.sort(key=len, reverse=True)
-        return keywords
+    quality_score = _quality_score(skill)
+    score += quality_score * 0.16
+    if skill.metrics.total_executions:
+        reasons.append("success rate boost")
+
+    state_boost = _state_score(skill.state) * 0.09
+    score += state_boost
+    if state_boost > 0:
+        reasons.append("state boost")
+
+    if not query_tokens and not requested_tags and not query.domain:
+        score = quality_score * 0.65 + _state_score(skill.state) * 0.35
+
+    return SearchResult(
+        skill=skill,
+        score=max(0.0, min(round(score, 6), 1.0)),
+        match_reasons=_unique_reasons(reasons),
+    )
+
+
+def extract_query_tokens(text: str) -> List[str]:
+    tokens = re.split(r"[\s\.,;:!?\-_/\\]+", normalize_text(text))
+    return [token for token in tokens if token and token not in STOPWORDS]
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("_", " ").strip().lower())
+
+
+def normalize_tags(tags: Iterable[str]) -> Set[str]:
+    return {tag.strip().lower() for tag in tags if tag and tag.strip()}
+
+
+def _quality_score(skill: Skill) -> float:
+    success = skill.metrics.success_rate if skill.metrics.total_executions else 0.5
+    usage = min(skill.metrics.usage_count / 100, 1.0)
+    return success * 0.75 + usage * 0.25
+
+
+def _state_score(state: SkillState) -> float:
+    return {
+        SkillState.RELEASED: 1.0,
+        SkillState.VERIFIED: 0.75,
+        SkillState.DEGRADED: 0.45,
+        SkillState.SKILL_CANDIDATE: 0.35,
+        SkillState.DRAFT: 0.25,
+    }.get(state, 0.05)
+
+
+def _result_sort_key(result: SearchResult) -> tuple:
+    skill = result.skill
+    return (
+        result.score,
+        _state_score(skill.state),
+        skill.metrics.success_rate,
+        skill.metrics.usage_count,
+        skill.updated_at,
+        skill.name,
+        skill.version,
+    )
+
+
+def _unique_reasons(reasons: Iterable[str]) -> List[str]:
+    seen: Set[str] = set()
+    unique: List[str] = []
+    for reason in reasons:
+        if reason not in seen:
+            seen.add(reason)
+            unique.append(reason)
+    return unique
+
+
+STOPWORDS = {
+    "the", "a", "an", "is", "are", "was", "were", "be", "been",
+    "to", "of", "in", "on", "at", "for", "with", "by", "from",
+    "that", "this", "it", "its", "and", "or", "but", "not",
+    "can", "will", "should", "would", "could", "may", "might",
+    "how", "what", "when", "where", "which", "who",
+}

@@ -14,6 +14,8 @@ from ..schemas import (
     ReleaseRequest,
     SkillSummary,
     TransitionRequest,
+    MergeSkillsRequest,
+    SplitSkillRequest,
 )
 
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
@@ -22,6 +24,268 @@ router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
 def _to_summary(skill):
     from .skills import _to_summary as ts
     return ts(skill)
+
+@router.post("/merge", response_model=Dict[str, Any])
+async def merge_skills(
+    req: MergeSkillsRequest,
+    app: AppState = Depends(get_app_state),
+) -> Dict[str, Any]:
+    if not app.merger:
+        raise HTTPException(status_code=500, detail="SkillMerger 未初始化")
+
+    skill_a = await app.wiki.get(req.skill_a_id)
+    skill_b = await app.wiki.get(req.skill_b_id)
+    if not skill_a:
+        raise HTTPException(status_code=404, detail=f"Skill {req.skill_a_id} 不存在")
+    if not skill_b:
+        raise HTTPException(status_code=404, detail=f"Skill {req.skill_b_id} 不存在")
+
+    result = await app.merger.merge(skill_a, skill_b)
+    if not result.success or not result.merged_skill:
+        raise HTTPException(status_code=400, detail=result.error or "Skill 合并失败")
+
+    created_skill = result.merged_skill
+    if req.persist:
+        created_skill = await app.wiki.create(result.merged_skill)
+        if app.graph:
+            try:
+                await app.graph.sync_skill(created_skill)
+                for edge in result.edges_to_create:
+                    if hasattr(app.graph, "add_edge"):
+                        await app.graph.add_edge(edge)
+            except Exception:
+                pass
+
+    return {
+        "success": True,
+        "merged_skill": _to_summary(created_skill),
+        "source_skill_ids": result.source_skill_ids,
+        "rationale": result.rationale,
+        "edges_to_create": [
+            edge.model_dump(mode="json") if hasattr(edge, "model_dump") else edge.__dict__
+            for edge in result.edges_to_create
+        ],
+    }
+
+
+@router.post("/{skill_id}/split", response_model=Dict[str, Any])
+async def split_skill(
+    skill_id: str,
+    req: SplitSkillRequest,
+    app: AppState = Depends(get_app_state),
+) -> Dict[str, Any]:
+    if not app.merger:
+        raise HTTPException(status_code=500, detail="SkillMerger 未初始化")
+
+    skill = await app.wiki.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+
+    result = await app.merger.split(skill)
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.error or "Skill 拆分失败")
+
+    created_skills = []
+    if req.persist:
+        for sub_skill in result.sub_skills:
+            created = await app.wiki.create(sub_skill)
+            created_skills.append(created)
+            if app.graph:
+                try:
+                    await app.graph.sync_skill(created)
+                except Exception:
+                    pass
+    else:
+        created_skills = result.sub_skills
+
+    return {
+        "success": True,
+        "source_skill_id": result.source_skill_id,
+        "sub_skills": [_to_summary(skill) for skill in created_skills],
+        "rationale": result.rationale,
+        "composition_order": result.composition_order,
+        "edges_to_create": [
+            edge.model_dump(mode="json") if hasattr(edge, "model_dump") else edge.__dict__
+            for edge in result.edges_to_create
+        ],
+    }
+
+def _business_skill_diff(old_skill: Any, new_skill: Any) -> List[Dict[str, Any]]:
+    """生成面向用户的业务字段 diff。
+
+    过滤系统元数据，只比较真正代表 Skill 内容变化的字段。
+    """
+    lines: List[Dict[str, Any]] = []
+
+    simple_fields = [
+        "name",
+        "display_name",
+        "description",
+        "skill_type",
+        "domain",
+        "granularity_level",
+        "tags",
+    ]
+
+    for field in simple_fields:
+        old_val = getattr(old_skill, field, None)
+        new_val = getattr(new_skill, field, None)
+
+        old_val = _normalize_diff_value(old_val)
+        new_val = _normalize_diff_value(new_val)
+
+        if old_val != new_val:
+            lines.append(_make_diff_line(field, old_val, new_val))
+
+    old_interface = (
+        old_skill.interface.model_dump(mode="json")
+        if getattr(old_skill, "interface", None)
+        else {}
+    )
+    new_interface = (
+        new_skill.interface.model_dump(mode="json")
+        if getattr(new_skill, "interface", None)
+        else {}
+    )
+
+    for key in [
+        "input_schema",
+        "output_schema",
+        "preconditions",
+        "postconditions",
+        "side_effects",
+    ]:
+        old_val = old_interface.get(key)
+        new_val = new_interface.get(key)
+        if old_val != new_val:
+            lines.append(_make_diff_line(f"interface.{key}", old_val, new_val))
+
+    old_impl = (
+        old_skill.implementation.model_dump(mode="json")
+        if getattr(old_skill, "implementation", None)
+        else {}
+    )
+    new_impl = (
+        new_skill.implementation.model_dump(mode="json")
+        if getattr(new_skill, "implementation", None)
+        else {}
+    )
+
+    for key in [
+        "language",
+        "code",
+        "prompt_template",
+        "tool_calls",
+        "sub_skill_ids",
+        "execution_order",
+    ]:
+        old_val = old_impl.get(key)
+        new_val = new_impl.get(key)
+        if old_val != new_val:
+            lines.append(_make_diff_line(f"implementation.{key}", old_val, new_val))
+
+    return lines
+
+
+def _normalize_diff_value(value: Any) -> Any:
+    """把 Enum 等对象转换成适合比较和展示的值。"""
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _make_diff_line(field: str, old_value: Any, new_value: Any) -> Dict[str, Any]:
+    old_str = _pretty_diff_value(old_value)
+    new_str = _pretty_diff_value(new_value)
+
+    if old_value in (None, "", [], {}) and new_value not in (None, "", [], {}):
+        change_type = "added"
+    elif new_value in (None, "", [], {}) and old_value not in (None, "", [], {}):
+        change_type = "removed"
+    else:
+        change_type = "modified"
+
+    return {
+        "field": field,
+        "type": change_type,
+        "old_value": old_str,
+        "new_value": new_str,
+        "old_lines": old_str.splitlines() if old_str else [],
+        "new_lines": new_str.splitlines() if new_str else [],
+    }
+
+
+def _pretty_diff_value(value: Any) -> str:
+    import json
+
+    value = _normalize_diff_value(value)
+
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def _infer_change_type(diff_lines: List[Dict[str, Any]]) -> str:
+    fields = [item.get("field", "") for item in diff_lines]
+
+    if any(field.startswith("interface.") for field in fields):
+        return "interface_changed"
+    if any(field.startswith("implementation.") for field in fields):
+        return "implementation_changed"
+    if "description" in fields:
+        return "description_updated"
+    if "tags" in fields:
+        return "tags_updated"
+    if any(field in fields for field in ("skill_type", "domain", "granularity_level")):
+        return "metadata_updated"
+    if not diff_lines:
+        return "metadata_only"
+
+    return "updated"
+
+
+def _is_breaking_diff(diff_lines: List[Dict[str, Any]]) -> bool:
+    """接口变化视为 breaking change。"""
+    return any(
+        item.get("field", "").startswith("interface.")
+        for item in diff_lines
+    )
+
+
+def _suggest_bump_from_diff(diff_lines: List[Dict[str, Any]]) -> str:
+    if _is_breaking_diff(diff_lines):
+        return "major"
+
+    fields = [item.get("field", "") for item in diff_lines]
+    if any(field in fields for field in ("skill_type", "domain", "granularity_level")):
+        return "minor"
+
+    return "patch"
+
+
+def _summarize_diff(
+    from_version: str,
+    to_version: str,
+    diff_lines: List[Dict[str, Any]],
+) -> str:
+    if not diff_lines:
+        return f"版本 {from_version} → {to_version}：仅版本号、状态或系统元数据变化"
+
+    fields = [item.get("field", "") for item in diff_lines]
+    shown = ", ".join(fields[:3])
+    suffix = " ..." if len(fields) > 3 else ""
+
+    return f"版本 {from_version} → {to_version}：修改 {shown}{suffix}"
+
+
+def _get_skill_author(skill: Any) -> str:
+    provenance = getattr(skill, "provenance", None)
+    if provenance and getattr(provenance, "created_by_agent", None):
+        return provenance.created_by_agent
+    return "repository"
+
 
 
 @router.post("/{skill_id}/transition", response_model=SkillSummary)
@@ -40,7 +304,7 @@ async def transition_state(
 @router.post("/{skill_id}/release", response_model=SkillSummary)
 async def release_skill(
     skill_id: str,
-    req: ReleaseRequest,
+    req: Optional[ReleaseRequest] = None,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
     """发布 Skill。若当前为 Draft，自动推进到 Verified 再发布。"""
@@ -69,18 +333,65 @@ async def deprecate_skill(
         raise HTTPException(status_code=400, detail=str(e))
     return _to_summary(skill)
 
-
 @router.post("/{skill_id}/new-version", response_model=SkillSummary)
 async def create_new_version(
     skill_id: str,
     req: NewVersionRequest,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
-    overrides = {}
-    if req.description:
+    """基于当前 Skill 创建一个新版本。
+
+    语义：
+    - bump 负责版本号递增：major / minor / patch
+    - description / tags / interface / implementation 等字段作为新版本覆盖内容
+    - 原版本不变，新版本以新的 skill_id 存储
+    """
+    old_skill = await app.wiki.get(skill_id)
+    if not old_skill:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+
+    overrides: Dict[str, Any] = {}
+
+    if req.description is not None:
         overrides["description"] = req.description
-    skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
-    return _to_summary(skill)
+    if req.tags is not None:
+        overrides["tags"] = req.tags
+    if req.interface is not None:
+        overrides["interface"] = req.interface
+    if req.implementation is not None:
+        overrides["implementation"] = req.implementation
+    if req.domain is not None:
+        overrides["domain"] = req.domain
+    if req.granularity_level is not None:
+        overrides["granularity_level"] = req.granularity_level
+
+    try:
+        new_skill = await app.wiki.create_new_version(
+            skill_id,
+            req.bump,
+            **overrides,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 记录内存态变更记录，供当前进程内 VersionController 使用。
+    # 注意：真正稳定的 diff 仍然应该从 Git 版本文件 / skill 快照中计算。
+    if app.version_ctrl:
+        try:
+            diff = app.version_ctrl.compute_diff(old_skill, new_skill)
+            change_type = app.version_ctrl.determine_change_type(diff)
+            app.version_ctrl.record_change(
+                new_skill,
+                change_type=change_type,
+                summary=_summarize_diff(old_skill.version, new_skill.version, _business_skill_diff(old_skill, new_skill)),
+                diff=diff,
+                author=req.author,
+                from_version=old_skill.version,
+            )
+        except Exception:
+            pass
+
+    return _to_summary(new_skill)
 
 
 @router.post("/{skill_id}/review", response_model=dict)
@@ -88,9 +399,13 @@ async def review_skill(
     skill_id: str,
     app: AppState = Depends(get_app_state),
 ) -> dict:
+    if not app.reviewer:
+        raise HTTPException(status_code=500, detail="SkillReviewer 未初始化")
+
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+
     result = await app.reviewer.review(skill)
     return {
         "review_id": result.review_id,
@@ -98,27 +413,49 @@ async def review_skill(
         "overall_score": result.overall_score,
         "summary": result.summary,
         "comments": [
-            {"field": c.field, "severity": c.severity, "message": c.message, "score": c.score}
+            {
+                "field": c.field,
+                "severity": c.severity,
+                "message": c.message,
+                "suggestion": c.suggestion,
+            }
             for c in result.comments
         ],
+        "auto_fix_suggestions": result.auto_fix_suggestions,
         "is_approved": result.is_approved,
     }
-
 
 @router.post("/{skill_id}/review-and-release", response_model=SkillSummary)
 async def review_and_release(
     skill_id: str,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
+    if not app.reviewer:
+        raise HTTPException(status_code=500, detail="SkillReviewer 未初始化")
+
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+
     try:
-        released = await app.reviewer.review_and_release(skill, app.wiki)
+        reviewed_skill, result = await app.reviewer.review_and_release(skill)
+        if not result.is_approved:
+            raise HTTPException(
+                status_code=400,
+                detail=f"审核未通过: {result.status.value}, score={result.overall_score}",
+            )
+
+        updated = await app.wiki.update(
+            skill_id,
+            state=reviewed_skill.state,
+            released_at=reviewed_skill.released_at,
+        )
+
+        return _to_summary(updated or reviewed_skill)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _to_summary(released)
-
 
 @router.post("/{skill_id}/record-execution", response_model=OKResponse)
 async def record_execution(
@@ -131,38 +468,125 @@ async def record_execution(
     return OKResponse(message="执行记录已更新")
 
 
+def _infer_change_type(diff: List[Dict[str, Any]]) -> str:
+    fields = [item["field"] for item in diff]
+    if any(field.startswith("interface.") for field in fields):
+        return "interface_changed"
+    if any(field.startswith("implementation.") for field in fields):
+        return "implementation_changed"
+    if "description" in fields:
+        return "description_updated"
+    if "tags" in fields:
+        return "tags_updated"
+    return "version"
+
+
+def _summarize_diff(from_version: str, to_version: str, diff: List[Dict[str, Any]]) -> str:
+    if not diff:
+        return f"版本 {from_version} → {to_version}：仅版本/状态元数据变化"
+    fields = ", ".join(item["field"] for item in diff[:3])
+    suffix = " ..." if len(diff) > 3 else ""
+    return f"版本 {from_version} → {to_version}：修改 {fields}{suffix}"
+
 @router.get("/{skill_id}/diff", response_model=Dict[str, Any])
 async def get_skill_diff(
     skill_id: str,
     compare_to: Optional[str] = None,
     app: AppState = Depends(get_app_state),
 ) -> Dict[str, Any]:
-    """获取 Skill 的变更历史和 diff 信息。
+    """获取 Skill 的业务级 diff。
 
-    compare_to: 可选的另一个 skill_id（同名旧版本），不传则返回变更历史。
+    设计原则：
+    - 不直接返回完整 JSON 文件 diff
+    - 默认过滤 skill_id、version、state、created_at、updated_at、released_at、metrics、provenance 等系统元数据
+    - 只展示用户真正关心的业务字段变化，例如 description、tags、interface、implementation
     """
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
 
-    history = app.version_ctrl.get_history(skill_id) if app.version_ctrl else []
-
+    # 对比指定版本 / 指定 skill_id
     if compare_to:
         other = await app.wiki.get(compare_to)
         if not other:
             raise HTTPException(status_code=404, detail=f"对比 Skill {compare_to} 不存在")
-        diff = app.version_ctrl.compute_diff(other, skill) if app.version_ctrl else {}
+
+        diff_lines = _business_skill_diff(other, skill)
+
         return {
             "skill_id": skill_id,
             "compare_to": compare_to,
-            "diff": _format_diff(diff),
-            "suggested_bump": app.version_ctrl.suggest_version_bump(diff) if app.version_ctrl else "patch",
+            "skill_name": skill.name,
+            "current_version": skill.version,
+            "source": "business_diff",
+            "diff": diff_lines,
+            "suggested_bump": _suggest_bump_from_diff(diff_lines),
+            "summary": _summarize_diff(other.version, skill.version, diff_lines),
         }
+
+    # 默认：返回同名 Skill 的完整版本历史，并对相邻版本做业务字段 diff
+    if hasattr(app.wiki, "get_version_history"):
+        try:
+            repo_history = await app.wiki.get_version_history(skill.name)
+            repo_history = sorted(
+                repo_history,
+                key=lambda item: tuple(map(int, item.version.split("."))),
+            )
+
+            rows: List[Dict[str, Any]] = []
+
+            for i, item in enumerate(repo_history):
+                if i == 0:
+                    rows.append({
+                        "record_id": f"{item.name}:{item.version}",
+                        "from_version": "",
+                        "to_version": item.version,
+                        "change_type": "created",
+                        "summary": item.description or f"创建版本 {item.version}",
+                        "author": _get_skill_author(item),
+                        "created_at": item.created_at.isoformat(),
+                        "diff": [],
+                        "is_breaking": False,
+                        "skill_id": item.skill_id,
+                        "state": item.state.value,
+                    })
+                    continue
+
+                prev = repo_history[i - 1]
+                diff_lines = _business_skill_diff(prev, item)
+
+                rows.append({
+                    "record_id": f"{item.name}:{prev.version}->{item.version}",
+                    "from_version": prev.version,
+                    "to_version": item.version,
+                    "change_type": _infer_change_type(diff_lines),
+                    "summary": _summarize_diff(prev.version, item.version, diff_lines),
+                    "author": _get_skill_author(item),
+                    "created_at": item.created_at.isoformat(),
+                    "diff": diff_lines,
+                    "is_breaking": _is_breaking_diff(diff_lines),
+                    "skill_id": item.skill_id,
+                    "state": item.state.value,
+                })
+
+            return {
+                "skill_id": skill_id,
+                "skill_name": skill.name,
+                "current_version": skill.version,
+                "source": "business_diff",
+                "history": list(reversed(rows)),
+            }
+        except Exception:
+            pass
+
+    # fallback：如果 Git 版本历史不可用，则退回 VersionController 的内存记录
+    history = app.version_ctrl.get_history(skill_id) if app.version_ctrl else []
 
     return {
         "skill_id": skill_id,
         "skill_name": skill.name,
         "current_version": skill.version,
+        "source": "version_controller",
         "history": [
             {
                 "record_id": r.record_id,
@@ -227,3 +651,30 @@ def _format_diff(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "new_lines": str(change).splitlines() or [str(change)],
             })
     return lines
+
+
+def _format_unified_diff(raw_diff: str) -> List[Dict[str, Any]]:
+    """Format a unified diff string for the existing frontend diff viewer."""
+    if not raw_diff:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    current: Dict[str, Any] = {
+        "field": "skill_json",
+        "type": "modified",
+        "old_value": "",
+        "new_value": "",
+        "old_lines": [],
+        "new_lines": [],
+    }
+    for line in raw_diff.splitlines():
+        if line.startswith("---") or line.startswith("+++") or line.startswith("@@"):
+            continue
+        if line.startswith("-"):
+            current["old_lines"].append(line[1:])
+        elif line.startswith("+"):
+            current["new_lines"].append(line[1:])
+    current["old_value"] = "\n".join(current["old_lines"])
+    current["new_value"] = "\n".join(current["new_lines"])
+    rows.append(current)
+    return rows

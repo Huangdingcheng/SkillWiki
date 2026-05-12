@@ -16,6 +16,16 @@ from ..models.skill_model import (
     SkillType,
 )
 
+class MergeSkillsRequest(BaseModel):
+    skill_a_id: str
+    skill_b_id: str
+    author: str = "api"
+    persist: bool = True
+
+
+class SplitSkillRequest(BaseModel):
+    author: str = "api"
+    persist: bool = True
 
 # ─── 通用 ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +72,10 @@ class SkillSearchRequest(BaseModel):
     query: str
     tags: Optional[List[str]] = None
     skill_type: Optional[SkillType] = None
+    domain: Optional[str] = None
     state: Optional[SkillState] = None
+    min_success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    include_deprecated: bool = False
     limit: int = Field(default=20, ge=1, le=100)
 
 
@@ -111,9 +124,16 @@ class DeprecateRequest(BaseModel):
 
 class NewVersionRequest(BaseModel):
     bump: str = Field(default="patch", pattern=r"^(major|minor|patch)$")
-    description: Optional[str] = None
-    author: str = "api"
 
+    # 允许创建新版本时修改业务内容
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    interface: Optional[SkillInterface] = None
+    implementation: Optional[SkillImplementation] = None
+    domain: Optional[str] = None
+    granularity_level: Optional[int] = Field(default=None, ge=1, le=5)
+
+    author: str = "api"
 
 # ─── 图谱 ─────────────────────────────────────────────────────────────────────
 
@@ -172,10 +192,12 @@ class ExecutePlanRequest(BaseModel):
 
 class ExecutionStepResult(BaseModel):
     step_id: str
+    step_index: int = 0
     skill_id: str
     skill_name: str
     status: str
-    outputs: Dict[str, Any]
+    outputs: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Dict[str, Any]] = None
     latency_ms: float
     error: Optional[str] = None
 

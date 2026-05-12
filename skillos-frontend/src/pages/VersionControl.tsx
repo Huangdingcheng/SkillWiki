@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Card, Select, Table, Tag, Button, Space, Typography,
   Timeline, Badge, Descriptions, Drawer, Popconfirm, message, Row, Col, Collapse, Empty,
+  Modal, Form, Input, InputNumber,
 } from 'antd'
 import {
   BranchesOutlined, TagOutlined, HistoryOutlined,
@@ -9,9 +10,10 @@ import {
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
 import { skillsApi, lifecycleApi } from '@/api/client'
-import type { SkillSummary } from '@/api/types'
+import type { SkillFull, SkillSummary } from '@/api/types'
 
 const { Text } = Typography
+const { TextArea } = Input
 
 const STATE_COLOR: Record<string, string> = {
   S4: 'green', S3: 'cyan', S2: 'blue', S1: 'orange',
@@ -57,6 +59,26 @@ function semverCompare(a: string, b: string) {
   return 0
 }
 
+function formatJson(value: unknown) {
+  if (value === undefined || value === null) return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function parseJsonField(text: string, fieldName: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return undefined
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    throw new Error(`${fieldName} 不是合法 JSON`)
+  }
+}
+
 function DiffView({ lines }: { lines: DiffLine[] }) {
   if (!lines.length) return <Empty description="无变更记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
   return (
@@ -100,6 +122,12 @@ export default function VersionControl() {
   const [diffData, setDiffData] = useState<DiffData | null>(null)
   const [loadingDiff, setLoadingDiff] = useState(false)
 
+  const [versionForm] = Form.useForm()
+  const [newVersionOpen, setNewVersionOpen] = useState(false)
+  const [newVersionBump, setNewVersionBump] = useState<'major' | 'minor' | 'patch'>('patch')
+  const [baseSkillFull, setBaseSkillFull] = useState<SkillFull | null>(null)
+  const [loadingBaseSkill, setLoadingBaseSkill] = useState(false)
+
   useEffect(() => {
     skillsApi.list({ limit: 200 }).then(setSkills)
   }, [])
@@ -132,21 +160,79 @@ export default function VersionControl() {
     loadVersions(id)
   }
 
-  const handleBump = async (bump: 'major' | 'minor' | 'patch') => {
-    if (!selectedId) return
-    setBumpLoading(true)
-    try {
-      const newSkill = await lifecycleApi.newVersion(selectedId, bump)
-      message.success(`已创建新版本 v${newSkill.version}`)
-      const allSkills = await skillsApi.list({ limit: 200 })
-      setSkills(allSkills)
-      loadVersions(selectedId)
-    } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '创建失败')
-    } finally {
-      setBumpLoading(false)
-    }
+const openNewVersionModal = async (bump: 'major' | 'minor' | 'patch') => {
+  if (!selectedId) return
+
+  setNewVersionBump(bump)
+  setNewVersionOpen(true)
+  setLoadingBaseSkill(true)
+
+  try {
+    const full = await skillsApi.getFull(selectedId)
+    setBaseSkillFull(full)
+
+    versionForm.setFieldsValue({
+      bump,
+      description: full.description,
+      tags: full.tags,
+      domain: full.domain || 'general',
+      granularity_level: full.granularity_level,
+      interface_json: formatJson(full.interface),
+      implementation_json: formatJson(full.implementation),
+    })
+  } catch (e: unknown) {
+    message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '加载 Skill 详情失败')
+    setNewVersionOpen(false)
+  } finally {
+    setLoadingBaseSkill(false)
   }
+}
+
+const handleCreateVersion = async () => {
+  if (!selectedId) return
+
+  setBumpLoading(true)
+  try {
+    const values = await versionForm.validateFields()
+
+    let interfacePayload: unknown
+    let implementationPayload: unknown | null | undefined
+
+    try {
+      interfacePayload = parseJsonField(values.interface_json || '', '接口定义')
+      implementationPayload = parseJsonField(values.implementation_json || '', '实现定义')
+    } catch (err) {
+      message.error((err as Error).message)
+      return
+    }
+
+    const newSkill = await lifecycleApi.newVersion(selectedId, {
+      bump: values.bump || newVersionBump,
+      description: values.description,
+      tags: values.tags || [],
+      domain: values.domain,
+      granularity_level: values.granularity_level,
+      interface: interfacePayload,
+      implementation: implementationPayload ?? null,
+    })
+
+    message.success(`已创建新版本 v${newSkill.version}`)
+
+    const allSkills = await skillsApi.list({ limit: 200 })
+    setSkills(allSkills)
+
+    setSelectedId(newSkill.skill_id)
+    await loadVersions(newSkill.skill_id)
+    await loadDiff(newSkill.skill_id)
+
+    setNewVersionOpen(false)
+    setBaseSkillFull(null)
+  } catch (e: unknown) {
+    message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '创建失败')
+  } finally {
+    setBumpLoading(false)
+  }
+}
 
   const handleRelease = async (id: string) => {
     try {
@@ -232,16 +318,16 @@ export default function VersionControl() {
                   </Button>
                   <Text type="secondary" style={{ fontSize: 12 }}>新版本：</Text>
                   {(['patch', 'minor', 'major'] as const).map(bump => (
-                    <Button
-                      key={bump}
-                      size="small"
-                      icon={<PlusOutlined />}
-                      loading={bumpLoading}
-                      onClick={() => handleBump(bump)}
-                    >
-                      {bump}
-                    </Button>
-                  ))}
+                  <Button
+                    key={bump}
+                    size="small"
+                    icon={<PlusOutlined />}
+                    loading={bumpLoading}
+                    onClick={() => openNewVersionModal(bump)}
+                  >
+                    {bump}
+                  </Button>
+                ))}
                 </Space>
               )
             }
@@ -401,6 +487,106 @@ export default function VersionControl() {
           </Descriptions>
         )}
       </Drawer>
+
+      <Modal
+        title={`创建新版本：${baseSkillFull?.name || selectedSkill?.name || ''}`}
+        open={newVersionOpen}
+        onCancel={() => {
+          setNewVersionOpen(false)
+          setBaseSkillFull(null)
+        }}
+        onOk={handleCreateVersion}
+        confirmLoading={bumpLoading}
+        okText="创建新版本"
+        cancelText="取消"
+        width={760}
+        destroyOnHidden
+      >
+        <Form
+          form={versionForm}
+          layout="vertical"
+          disabled={loadingBaseSkill}
+        >
+          <Form.Item
+            label="版本递增类型"
+            name="bump"
+            rules={[{ required: true, message: '请选择版本递增类型' }]}
+          >
+            <Select
+              options={[
+                { label: 'patch：兼容性小修改，例如描述、Prompt、实现细节', value: 'patch' },
+                { label: 'minor：功能增强或分类变化', value: 'minor' },
+                { label: 'major：接口变更或破坏性变化', value: 'major' },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="描述"
+            name="description"
+            rules={[{ required: true, message: '请输入 Skill 描述' }]}
+          >
+            <TextArea rows={3} placeholder="描述这个新版本的 Skill 能力" />
+          </Form.Item>
+
+          <Form.Item
+            label="标签"
+            name="tags"
+          >
+            <Select
+              mode="tags"
+              placeholder="输入标签后回车"
+              tokenSeparators={[',']}
+            />
+          </Form.Item>
+
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                label="领域"
+                name="domain"
+              >
+                <Input placeholder="general / web / file / api ..." />
+              </Form.Item>
+            </Col>
+
+            <Col span={12}>
+              <Form.Item
+                label="粒度级别"
+                name="granularity_level"
+                rules={[{ required: true, message: '请输入粒度级别' }]}
+              >
+                <InputNumber min={1} max={5} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            label="接口定义 JSON"
+            name="interface_json"
+            tooltip="对应后端 SkillInterface。修改 input_schema / output_schema 通常属于接口变更。"
+            rules={[{ required: true, message: '请输入接口 JSON' }]}
+          >
+            <TextArea
+              rows={10}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+              placeholder='{"input_schema": {}, "output_schema": {}, "preconditions": [], "postconditions": [], "side_effects": []}'
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="实现定义 JSON"
+            name="implementation_json"
+            tooltip="可以为空。至少需要包含 code、prompt_template 或 sub_skill_ids 之一。"
+          >
+            <TextArea
+              rows={8}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+              placeholder='{"language": "python", "prompt_template": "...", "tool_calls": [], "sub_skill_ids": []}'
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

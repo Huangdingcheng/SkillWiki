@@ -56,3 +56,5 @@ idea.txt
 
 skillos/skillos/storage/skill_repo/SkillStorage
 **/storage/skill_repo/SkillStorage
+# Runtime SkillStorage repository
+skillos/skillos/storage/skill_repo/SkillStorage/
