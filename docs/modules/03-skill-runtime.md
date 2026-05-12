@@ -376,3 +376,119 @@ git diff --check
 ---
 
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
+
+---
+
+## Version 2026-05-12: Paper-Guided Member C Runtime Update
+
+This version applies four paper-guided optimizations while keeping the existing Member C REST contract compatible with A/B/D/E.
+
+### 1. Group-Structured Runtime Retrieval
+
+Inspired by Group of Skills, SkillRetriever now supports a structured SkillGroup in addition to the existing flat RetrievalResult.skills and execution_order fields.
+
+- SkillGroup.start_skill_ids: entry skills that should execute the main task.
+- SkillGroup.support_skill_ids: preparation, conversion, or helper skills.
+- SkillGroup.check_skill_ids: validation or postcondition skills.
+- SkillGroup.avoid_skill_ids: candidates that should not enter the runtime plan.
+- Fallback retrieval still returns the highest-scoring skill as before.
+- Existing callers can continue to consume skills, execution_order, strategy, confidence, and parameter_mapping.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/retriever.py
+skillos/skillos/layers/skill_runtime/__init__.py
+skillos/tests/test_skill_runtime_phase2.py
+```
+
+### 2. DAG Composition From Skill Groups and Schemas
+
+Inspired by AgentSkillOS, CompositionAgent now builds a safer executable Skill DAG.
+
+- It can consume SkillGroup directly: Support -> Start -> Check.
+- It filters Avoid skills before graph construction.
+- It validates LLM-produced edges by removing unknown nodes, self-loops, duplicate edges, invalid edge types, and cycles.
+- If LLM composition fails, it tries schema-based dependency inference using overlapping output and input schema keys.
+- If schema inference cannot build a graph, it keeps the previous sequential fallback behavior.
+- SkillGraph.parallel_groups exposes dependency layers for executor-side scheduling diagnostics.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/composition.py
+skillos/tests/test_skill_runtime_phase3.py
+```
+
+### 3. Failure-State-Aware Verification and Reflection
+
+Inspired by Skill-RAG, runtime failures are now typed and routed instead of being treated as a generic retry signal.
+
+VerifierAgent adds compatible fields:
+
+- failure_type: none, missing_skill, timeout, runtime_error, dependency_failed, postcondition_failed, bad_output, or unknown.
+- recovery_route: none, retrieve_alternative_skill, retry_with_timeout_adjustment, repair_skill, replan_dependencies, add_postcondition_check, inspect_output, or review.
+
+ReflectionAgent propagates the same fields into maintenance feedback while preserving D-compatible skill_update_proposals.
+
+Member C still does not mutate Skills and does not call D Maintainer directly. It only produces structured evidence and recommended routes.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/verifier.py
+skillos/skillos/layers/skill_runtime/reflection.py
+skillos/tests/test_skill_runtime_phase4.py
+```
+
+### 4. Task-Local Runtime Memory
+
+Inspired by M*, StateTracker now owns a lightweight RuntimeMemory for a single execution task.
+
+Runtime memory records:
+
+- goal and selected skills
+- step inputs and step outputs
+- failure events with failure type
+- lightweight lifecycle events
+- optional verification and reflection summaries
+
+SkillExecutor.last_runtime_memory exposes the memory after execution. The memory is intentionally not injected into ExecutionResult.final_state, so existing API consumers keep the previous response shape.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/state_tracker.py
+skillos/skillos/layers/skill_runtime/executor.py
+skillos/skillos/layers/skill_runtime/__init__.py
+skillos/tests/test_skill_runtime_memory.py
+```
+
+### Compatibility Notes
+
+- No new REST endpoint was added.
+- ExecutionResult, ExecutionStepResult, RetrievedSkill, and ExecutionHistoryItem schemas remain compatible.
+- Member C does not take over Member A repository indexing, Member B governance, Member D repair/build operations, or Member E UI rendering.
+- The backend directory is now tracked as normal files in the top-level repo instead of being stored as an unresolved gitlink.
+
+### Verification
+
+Commands run during this update:
+
+```powershell
+python -m compileall -q skillos\skillos\layers\skill_runtime\retriever.py skillos\skillos\layers\skill_runtime\__init__.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\composition.py skillos\tests\test_skill_runtime_phase3.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\verifier.py skillos\skillos\layers\skill_runtime\reflection.py skillos\tests\test_skill_runtime_phase4.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\state_tracker.py skillos\skillos\layers\skill_runtime\executor.py skillos\skillos\layers\skill_runtime\__init__.py skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py
+python -m pytest skillos\tests\test_skill_runtime_phase3.py -q
+python -m pytest skillos\tests\test_skill_runtime_phase4.py -q
+python -m pytest skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py -q
+```
+
+Known environment issue:
+
+```text
+python -m pytest skillos\tests\test_skill_runtime_phase2.py -q
+```
+
+The command currently fails before assertions because the active Python environment does not load pytest-asyncio; pytest reports `async def functions are not natively supported` and warns that `pytest.mark.asyncio` is unknown. The dependency is declared in skillos/requirements.txt and skillos/pyproject.toml, but it is not active in the current interpreter.
