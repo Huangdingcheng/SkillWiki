@@ -1,0 +1,258 @@
+[
+  {
+    "task_id": "web_fill_login_form",
+    "domain": "web",
+    "goal": "Fill a login form and reach the dashboard.",
+    "input": {
+      "url": "https://demo.local/login",
+      "form_data": {
+        "username": "demo",
+        "password": "secret"
+      }
+    },
+    "expected_skills": ["fill_form"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.success", "value": true},
+      {"type": "json_exists", "path": "output.final_state.submitted"},
+      {"type": "contains", "path": "output.page", "value": "dashboard"}
+    ],
+    "expected_output": {
+      "success": true,
+      "page": "dashboard",
+      "final_state": {"submitted": true}
+    },
+    "raw_context": "Login page with username and password fields.",
+    "notes": "WebXSkill-style form task using an existing fill_form skill."
+  },
+  {
+    "task_id": "web_click_and_type",
+    "domain": "web",
+    "goal": "Click a search box and type the query.",
+    "input": {
+      "selector": "#search",
+      "text": "SkillOS"
+    },
+    "expected_skills": ["click_element", "type_text"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.success", "value": true},
+      {"type": "contains", "path": "output.actions", "value": "type:SkillOS"}
+    ],
+    "expected_output": {
+      "success": true,
+      "actions": ["click:#search", "type:SkillOS"]
+    },
+    "raw_context": "A fake DOM contains a single search input.",
+    "notes": "Atomic web action composition."
+  },
+  {
+    "task_id": "web_extract_selector",
+    "domain": "web",
+    "goal": "Extract the stable selector for an email input.",
+    "input": {
+      "html": "<form id=\"login-form\"><input name=\"email\" /></form>"
+    },
+    "expected_skills": ["extract_selector"],
+    "success_verifier": [
+      {"type": "contains", "path": "output.selector", "value": "input[name=email]"}
+    ],
+    "expected_output": {
+      "success": true,
+      "selector": "#login-form input[name=email]"
+    },
+    "raw_context": "Simple HTML snippet.",
+    "notes": "Selector extraction fixture for web skills."
+  },
+  {
+    "task_id": "web_submit_form",
+    "domain": "web",
+    "goal": "Submit a prepared form.",
+    "input": {
+      "selector": "#submit"
+    },
+    "expected_skills": ["submit_form"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.status", "value": "submitted"},
+      {"type": "json_equals", "path": "output.success", "value": true}
+    ],
+    "expected_output": {
+      "success": true,
+      "status": "submitted"
+    },
+    "raw_context": "Prepared fake form state.",
+    "notes": "Checks postcondition-oriented verification."
+  },
+  {
+    "task_id": "api_parse_openapi_endpoint",
+    "domain": "api",
+    "goal": "Parse an OpenAPI endpoint into method and path.",
+    "input": {
+      "openapi_fragment": "POST /users createUser"
+    },
+    "expected_skills": ["parse_openapi_endpoint"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.method", "value": "POST"},
+      {"type": "json_equals", "path": "output.path", "value": "/users"}
+    ],
+    "expected_output": {
+      "success": true,
+      "method": "POST",
+      "path": "/users",
+      "operation_id": "createUser"
+    },
+    "raw_context": "API-Bank-style endpoint parsing.",
+    "notes": "Tool-use benchmark fixture."
+  },
+  {
+    "task_id": "api_build_tool_call",
+    "domain": "api",
+    "goal": "Build a tool call from parsed endpoint data.",
+    "input": {
+      "operation_id": "createUser",
+      "arguments": {"name": "Ada"}
+    },
+    "expected_skills": ["build_tool_call"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.tool_call.name", "value": "createUser"},
+      {"type": "json_exists", "path": "output.tool_call.arguments.name"}
+    ],
+    "expected_output": {
+      "success": true,
+      "tool_call": {
+        "name": "createUser",
+        "arguments": {"name": "Ada"}
+      }
+    },
+    "raw_context": "ToolLLM/Gorilla-style argument mapping.",
+    "notes": "API skill schema fixture."
+  },
+  {
+    "task_id": "api_validate_response_schema",
+    "domain": "api",
+    "goal": "Validate that an API response has required fields.",
+    "input": {
+      "response": {"id": "u1", "name": "Ada"},
+      "required": ["id", "name"]
+    },
+    "expected_skills": ["validate_response_schema"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.valid", "value": true},
+      {"type": "json_equals", "path": "output.missing_fields", "value": []}
+    ],
+    "expected_output": {
+      "success": true,
+      "valid": true,
+      "missing_fields": []
+    },
+    "raw_context": "Small deterministic schema validation task.",
+    "notes": "Verifier-aligned API task."
+  },
+  {
+    "task_id": "doc_extract_steps",
+    "domain": "doc",
+    "goal": "Extract reusable procedural steps from a document snippet.",
+    "input": {
+      "text": "Open settings, select profile, then save changes."
+    },
+    "expected_skills": ["extract_steps"],
+    "success_verifier": [
+      {"type": "contains", "path": "output.steps", "value": "save changes"}
+    ],
+    "expected_output": {
+      "success": true,
+      "steps": ["open settings", "select profile", "save changes"]
+    },
+    "raw_context": "Trace2Skill-style local lesson extraction.",
+    "notes": "Document-to-experience fixture."
+  },
+  {
+    "task_id": "script_extract_function_skill",
+    "domain": "script",
+    "goal": "Extract a candidate skill from a helper function.",
+    "input": {
+      "code": "def normalize_email(email): return email.strip().lower()"
+    },
+    "expected_skills": ["extract_function_skill"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.skill_name", "value": "normalize_email"},
+      {"type": "contains", "path": "output.inputs", "value": "email"}
+    ],
+    "expected_output": {
+      "success": true,
+      "skill_name": "normalize_email",
+      "inputs": ["email"]
+    },
+    "raw_context": "Script analyzer fixture.",
+    "notes": "Experience-to-candidate skill support."
+  },
+  {
+    "task_id": "skill_repair_failed_postcondition",
+    "domain": "runtime",
+    "goal": "Convert a failed postcondition into a repair proposal.",
+    "input": {
+      "failed_skill_id": "fill_form",
+      "issue": "submitted flag missing"
+    },
+    "expected_skills": ["reflect_failure"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.proposal.recommended_action", "value": "repair"},
+      {"type": "json_exists", "path": "output.proposal.patch_hint"}
+    ],
+    "expected_output": {
+      "success": true,
+      "proposal": {
+        "failed_skill_ids": ["fill_form"],
+        "recommended_action": "repair",
+        "patch_hint": "Check the submit step postcondition."
+      }
+    },
+    "raw_context": "Reflexion/ExpeL-style failure feedback.",
+    "notes": "C produces evidence; D decides whether to repair."
+  },
+  {
+    "task_id": "skill_detect_breaking_schema_change",
+    "domain": "governance",
+    "goal": "Detect whether a schema diff breaks skill input compatibility.",
+    "input": {
+      "before": {"required": ["email"]},
+      "after": {"required": ["email", "otp"]}
+    },
+    "expected_skills": ["detect_schema_change"],
+    "success_verifier": [
+      {"type": "json_equals", "path": "output.breaking_change", "value": true},
+      {"type": "contains", "path": "output.changed_fields", "value": "interface.input_schema"}
+    ],
+    "expected_output": {
+      "success": true,
+      "breaking_change": true,
+      "changed_fields": ["interface.input_schema"]
+    },
+    "raw_context": "Governance-oriented runtime validation task.",
+    "notes": "C only reports evidence; B owns Git governance."
+  },
+  {
+    "task_id": "skill_graph_trace_provenance",
+    "domain": "graph",
+    "goal": "Trace a Source -> Skill -> Execution -> Validation -> Version chain.",
+    "input": {
+      "start": "source_demo_trajectory",
+      "target": "version_demo"
+    },
+    "expected_skills": ["trace_provenance"],
+    "success_verifier": [
+      {"type": "contains", "path": "output.path", "value": "fill_form"},
+      {"type": "contains", "path": "output.path", "value": "version_demo"}
+    ],
+    "expected_output": {
+      "success": true,
+      "path": [
+        "source_demo_trajectory",
+        "fill_form",
+        "execution_demo",
+        "validation_demo",
+        "version_demo"
+      ]
+    },
+    "raw_context": "SKILLFOUNDRY/HIN-style provenance trace.",
+    "notes": "Consumes the heterogeneous demo chain without changing graph APIs."
+  }
+]
