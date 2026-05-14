@@ -6,7 +6,8 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
@@ -14,6 +15,14 @@ from ...utils.logger import get_logger
 from .retriever import SkillGroup
 
 logger = get_logger(__name__)
+
+
+class OrchestrationStrategy(str, Enum):
+    """AgentSkillOS-style runtime orchestration preference."""
+
+    QUALITY_FIRST = "quality_first"
+    EFFICIENCY_FIRST = "efficiency_first"
+    SIMPLICITY_FIRST = "simplicity_first"
 
 
 @dataclass
@@ -95,6 +104,12 @@ You are the SkillOS Composition Agent. Compose listed skills into an executable 
 Task:
 {task_description}
 
+User-selected orchestration strategy:
+{strategy}
+
+Strategy rules:
+{strategy_rules}
+
 Available skills:
 {skills_info}
 
@@ -132,12 +147,15 @@ class CompositionAgent:
         skills: List[Skill],
         task_description: str = "",
         skill_group: Optional[SkillGroup] = None,
+        strategy: Union[OrchestrationStrategy, str] = OrchestrationStrategy.QUALITY_FIRST,
     ) -> SkillGraph:
-        skills = _filter_group_skills(skills, skill_group)
+        strategy = _normalize_strategy(strategy)
+        skills = _filter_group_skills(skills, skill_group, strategy)
         graph = SkillGraph(
             graph_id=str(uuid.uuid4()),
             task_description=task_description,
             nodes=list(skills),
+            metadata={"orchestration_strategy": strategy.value},
         )
 
         if not skills:
@@ -160,6 +178,8 @@ class CompositionAgent:
         )
         prompt = _COMPOSE_PROMPT.format(
             task_description=task_description or "Execute all skills",
+            strategy=strategy.value,
+            strategy_rules=_strategy_rules(strategy),
             skills_info=skills_info,
         )
 
@@ -196,6 +216,12 @@ class CompositionAgent:
         if schema_graph.edges:
             return schema_graph
 
+        if strategy == OrchestrationStrategy.EFFICIENCY_FIRST:
+            graph.entry_skill_id = skills[0].skill_id
+            graph.metadata["composition_source"] = "parallel_fallback"
+            graph.metadata["parallel_groups"] = graph.parallel_groups
+            return graph
+
         graph.entry_skill_id = skills[0].skill_id
         for index in range(len(skills) - 1):
             graph.edges.append(SkillEdge(
@@ -227,13 +253,26 @@ class CompositionAgent:
         return None
 
 
-def _filter_group_skills(skills: List[Skill], skill_group: Optional[SkillGroup]) -> List[Skill]:
+def _filter_group_skills(
+    skills: List[Skill],
+    skill_group: Optional[SkillGroup],
+    strategy: OrchestrationStrategy = OrchestrationStrategy.QUALITY_FIRST,
+) -> List[Skill]:
     if not skill_group:
+        if strategy == OrchestrationStrategy.SIMPLICITY_FIRST and skills:
+            return [skills[0]]
         return list(skills)
     avoid = set(skill_group.avoid_skill_ids)
-    preferred = skill_group.ordered_ids()
+    if strategy == OrchestrationStrategy.SIMPLICITY_FIRST:
+        preferred = skill_group.start_skill_ids or (
+            [skill_group.anchor_skill_id] if skill_group.anchor_skill_id else []
+        )
+    else:
+        preferred = skill_group.ordered_ids()
     skill_map = {skill.skill_id: skill for skill in skills if skill.skill_id not in avoid}
     ordered = [skill_map[skill_id] for skill_id in preferred if skill_id in skill_map]
+    if strategy == OrchestrationStrategy.SIMPLICITY_FIRST:
+        return ordered[:1] if ordered else list(skill_map.values())[:1]
     for skill in skills:
         if skill.skill_id not in avoid and skill not in ordered:
             ordered.append(skill)
@@ -262,6 +301,35 @@ def _compose_from_skill_group(graph: SkillGraph, skill_group: SkillGroup) -> Opt
     return _sanitize_graph(graph)
 
 
+def _normalize_strategy(value: Union[OrchestrationStrategy, str]) -> OrchestrationStrategy:
+    if isinstance(value, OrchestrationStrategy):
+        return value
+    try:
+        return OrchestrationStrategy(str(value))
+    except ValueError:
+        return OrchestrationStrategy.QUALITY_FIRST
+
+
+def _strategy_rules(strategy: OrchestrationStrategy) -> str:
+    if strategy == OrchestrationStrategy.QUALITY_FIRST:
+        return (
+            "- Prefer complete support -> start -> check workflows.\n"
+            "- Keep useful validation and postcondition skills.\n"
+            "- Use extra sequential steps when they improve correctness."
+        )
+    if strategy == OrchestrationStrategy.EFFICIENCY_FIRST:
+        return (
+            "- Maximize independent parallel groups.\n"
+            "- Add dependencies only when outputs, schemas, or task constraints require them.\n"
+            "- Avoid non-essential refinement steps."
+        )
+    return (
+        "- Use the minimum skill set that can satisfy the task.\n"
+        "- Prefer one strong start skill over multi-step composition.\n"
+        "- Drop non-essential support and check skills."
+    )
+
+
 def _compose_from_schema(graph: SkillGraph) -> SkillGraph:
     edges: List[SkillEdge] = []
     for source in graph.nodes:
@@ -288,7 +356,7 @@ def _compose_from_schema(graph: SkillGraph) -> SkillGraph:
 def _sanitize_graph(graph: SkillGraph) -> SkillGraph:
     node_ids = {node.skill_id for node in graph.nodes}
     clean_edges: List[SkillEdge] = []
-    seen: Set[tuple[str, str, str]] = set()
+    seen: Set[Tuple[str, str, str]] = set()
     for edge in graph.edges:
         if edge.source_id not in node_ids or edge.target_id not in node_ids:
             continue

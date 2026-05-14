@@ -212,6 +212,10 @@ class ExecutePlanRequest(BaseModel):
     goal: str
     context: Dict[str, Any] = Field(default_factory=dict)
     max_skills: int = Field(default=10, ge=1, le=50)
+    orchestration_strategy: str = Field(
+        default="quality_first",
+        pattern=r"^(quality_first|efficiency_first|simplicity_first)$",
+    )
 
 
 class ExecutionStepResult(BaseModel):
@@ -245,6 +249,9 @@ class ExecutionResult(BaseModel):
     retrieved_skills: List[RetrievedSkill] = Field(default_factory=list)
     experience_recorded: bool = False
     suggested_skill: Optional[Dict[str, Any]] = None
+    orchestration_strategy: str = "quality_first"
+    parallel_groups: List[List[str]] = Field(default_factory=list)
+    composition_source: str = ""
 
 
 class ExecutionHistoryItem(BaseModel):

@@ -81,8 +81,12 @@ export const executionApi = {
   executeSkill: (skill_id: string, inputs: Record<string, unknown> = {}) =>
     http.post<ExecutionResult>('/execution/skill', { skill_id, inputs }).then(r => r.data),
 
-  executePlan: (goal: string, context: Record<string, unknown> = {}) =>
-    http.post<ExecutionResult>('/execution/plan', { goal, context }).then(r => r.data),
+  executePlan: (
+    goal: string,
+    context: Record<string, unknown> = {},
+    orchestration_strategy: 'quality_first' | 'efficiency_first' | 'simplicity_first' = 'quality_first',
+  ) =>
+    http.post<ExecutionResult>('/execution/plan', { goal, context, orchestration_strategy }).then(r => r.data),
 
   getState: () =>
     http.get<Record<string, unknown>>('/execution/state').then(r => r.data),

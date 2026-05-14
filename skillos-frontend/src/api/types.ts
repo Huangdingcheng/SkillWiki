@@ -177,6 +177,9 @@ export interface ExecutionResult {
   retrieved_skills: RetrievedSkill[]
   experience_recorded: boolean
   suggested_skill?: Record<string, unknown>
+  orchestration_strategy: 'quality_first' | 'efficiency_first' | 'simplicity_first'
+  parallel_groups: string[][]
+  composition_source: string
 }
 
 export interface ExecutionHistoryItem {

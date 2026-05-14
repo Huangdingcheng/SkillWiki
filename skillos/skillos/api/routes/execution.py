@@ -114,6 +114,10 @@ async def execute_plan(
     t0 = time.monotonic()
 
     from ...layers.skill_repository.indexing import SearchQuery
+    from ...layers.skill_runtime import (
+        OrchestrationStrategy,
+        execution_plan_from_skill_graph,
+    )
 
     search_results = await app.search.search(
         SearchQuery(
@@ -135,11 +139,23 @@ async def execute_plan(
         for r in search_results
     ]
 
-    plan = await app.planner.plan(
+    strategy = OrchestrationStrategy(req.orchestration_strategy)
+    graph = app.composer.compose(
+        available_skills,
         task_description=req.goal,
-        available_skills=available_skills,
-        current_state=app.state_tracker.current,
+        strategy=strategy,
     )
+    plan = execution_plan_from_skill_graph(
+        graph,
+        task_description=req.goal,
+    )
+    if not plan.steps:
+        plan = await app.planner.plan(
+            task_description=req.goal,
+            available_skills=available_skills,
+            current_state=app.state_tracker.current,
+        )
+        plan.metadata.setdefault("orchestration_strategy", strategy.value)
 
     skill_ids = list({step.skill_id for step in plan.steps})
     skill_map_result = await app.wiki.get_many(skill_ids)
@@ -196,6 +212,9 @@ async def execute_plan(
         final_state=app.state_tracker.current,
         retrieved_skills=retrieved,
         experience_recorded=True,
+        orchestration_strategy=strategy.value,
+        parallel_groups=plan.metadata.get("parallel_groups", []),
+        composition_source=plan.metadata.get("composition_source", ""),
     )
 
     history_item = {
@@ -206,6 +225,7 @@ async def execute_plan(
         "success_count": success_count,
         "total_latency_ms": total_latency,
         "retrieved_skill_count": len(retrieved),
+        "orchestration_strategy": strategy.value,
         "created_at": datetime.utcnow().isoformat(),
     }
     _execution_history.append(history_item)

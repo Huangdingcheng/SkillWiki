@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Card, Input, Button, Tag, Alert, Spin, Divider,
-  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip, Table, Empty,
+  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip, Table, Empty, Segmented,
 } from 'antd'
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
@@ -14,6 +14,14 @@ import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, Retrie
 
 const { TextArea } = Input
 const { Text } = Typography
+
+type OrchestrationStrategy = 'quality_first' | 'efficiency_first' | 'simplicity_first'
+
+const STRATEGY_LABEL: Record<OrchestrationStrategy, string> = {
+  quality_first: 'Quality',
+  efficiency_first: 'Efficiency',
+  simplicity_first: 'Simplicity',
+}
 
 const STATUS_COLOR: Record<string, string> = {
   success: '#52c41a',
@@ -87,6 +95,7 @@ export default function AgentExecution() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [strategy, setStrategy] = useState<OrchestrationStrategy>('quality_first')
   const [history, setHistory] = useState<ExecutionHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -113,7 +122,7 @@ export default function AgentExecution() {
     setError(null)
     setResult(null)
     try {
-      const res = await executionApi.executePlan(goal)
+      const res = await executionApi.executePlan(goal, {}, strategy)
       setResult(res)
       void loadHistory()
     } catch (e: unknown) {
@@ -142,6 +151,23 @@ export default function AgentExecution() {
             rows={3}
             style={{ marginBottom: 12, fontSize: 14 }}
           />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <Space direction="vertical" size={2}>
+              <Text strong style={{ fontSize: 13 }}>Execution strategy</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Compose retrieved skills for quality, speed, or simplicity.
+              </Text>
+            </Space>
+            <Segmented
+              value={strategy}
+              onChange={value => setStrategy(value as OrchestrationStrategy)}
+              options={[
+                { label: 'Quality', value: 'quality_first' },
+                { label: 'Efficiency', value: 'efficiency_first' },
+                { label: 'Simplicity', value: 'simplicity_first' },
+              ]}
+            />
+          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
               SkillOS 将自动分解任务、检索 Skill 并生成执行计划
@@ -290,6 +316,18 @@ export default function AgentExecution() {
             )}
 
             {/* 执行摘要 */}
+            <Card
+              variant="borderless"
+              size="small"
+              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+            >
+              <Space wrap>
+                <Tag color="blue">Strategy: {STRATEGY_LABEL[result.orchestration_strategy] || result.orchestration_strategy}</Tag>
+                <Tag color="purple">DAG: {result.composition_source || 'planner'}</Tag>
+                <Tag color="green">Parallel groups: {result.parallel_groups?.length || 0}</Tag>
+              </Space>
+            </Card>
+
             <Card
               variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}

@@ -5,9 +5,14 @@ import json
 
 import pytest
 
-from skillos.layers.skill_runtime.composition import CompositionAgent
+from skillos.layers.skill_runtime.composition import CompositionAgent, OrchestrationStrategy
 from skillos.layers.skill_runtime.executor import SkillExecutor
-from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
+from skillos.layers.skill_runtime.planner import (
+    ExecutionPlan,
+    PlanStep,
+    StepStatus,
+    execution_plan_from_skill_graph,
+)
 from skillos.layers.skill_runtime.retriever import SkillGroup
 from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
@@ -76,6 +81,80 @@ def test_composer_builds_dag_from_skill_group():
         (run.skill_id, check.skill_id),
     ]
     assert graph.metadata["composition_source"] == "skill_group"
+
+
+def test_composer_supports_agent_skill_os_orchestration_strategies():
+    prepare = make_skill("prepare", "output['data'] = 'x'")
+    run = make_skill("run", "output['result'] = 'ok'")
+    check = make_skill("check", "output['ok'] = True")
+    group = SkillGroup(
+        anchor_skill_id=run.skill_id,
+        support_skill_ids=[prepare.skill_id],
+        start_skill_ids=[run.skill_id],
+        check_skill_ids=[check.skill_id],
+    )
+
+    quality = CompositionAgent(FakeLLM("{}")).compose(
+        [prepare, run, check],
+        "run checked flow",
+        skill_group=group,
+        strategy=OrchestrationStrategy.QUALITY_FIRST,
+    )
+    simple = CompositionAgent(FakeLLM("{}")).compose(
+        [prepare, run, check],
+        "run checked flow",
+        skill_group=group,
+        strategy=OrchestrationStrategy.SIMPLICITY_FIRST,
+    )
+    efficient = CompositionAgent(FailingLLM()).compose(
+        [prepare, run, check],
+        "run independent skills",
+        strategy=OrchestrationStrategy.EFFICIENCY_FIRST,
+    )
+
+    assert [node.skill_id for node in quality.nodes] == [
+        prepare.skill_id,
+        run.skill_id,
+        check.skill_id,
+    ]
+    assert [node.skill_id for node in simple.nodes] == [run.skill_id]
+    assert efficient.metadata["composition_source"] == "parallel_fallback"
+    assert efficient.parallel_groups == [[prepare.skill_id, run.skill_id, check.skill_id]]
+
+
+def test_execution_plan_from_skill_graph_preserves_dag_dependencies():
+    profile = make_skill("extract_profile", "output['profile'] = 'p'")
+    items = make_skill("extract_items", "output['items'] = 'i'")
+    process = make_skill("process_order", "output['order'] = 'ok'")
+    validate = make_skill("validate_order", "output['valid'] = True")
+
+    graph = CompositionAgent(FakeLLM(json.dumps({
+        "entry_skill_id": profile.skill_id,
+        "edges": [
+            {"source_id": profile.skill_id, "target_id": process.skill_id},
+            {"source_id": items.skill_id, "target_id": process.skill_id},
+            {"source_id": process.skill_id, "target_id": validate.skill_id},
+        ],
+    }))).compose(
+        [profile, items, process, validate],
+        "process and validate order",
+        strategy=OrchestrationStrategy.EFFICIENCY_FIRST,
+    )
+
+    plan = execution_plan_from_skill_graph(graph)
+    step_by_skill = {step.skill_id: step for step in plan.steps}
+
+    assert plan.metadata["source"] == "skill_graph"
+    assert plan.metadata["orchestration_strategy"] == "efficiency_first"
+    assert step_by_skill[profile.skill_id].depends_on == []
+    assert step_by_skill[items.skill_id].depends_on == []
+    assert set(step_by_skill[process.skill_id].depends_on) == {
+        step_by_skill[profile.skill_id].step_id,
+        step_by_skill[items.skill_id].step_id,
+    }
+    assert step_by_skill[validate.skill_id].depends_on == [
+        step_by_skill[process.skill_id].step_id
+    ]
 
 
 def test_composer_filters_invalid_edges_and_breaks_cycles():

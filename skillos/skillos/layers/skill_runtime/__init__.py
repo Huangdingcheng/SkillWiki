@@ -1,8 +1,14 @@
 """skill_runtime 层包导出。"""
 
-from .composition import CompositionAgent, SkillEdge, SkillGraph
+from .composition import CompositionAgent, OrchestrationStrategy, SkillEdge, SkillGraph
 from .executor import SkillExecutor
-from .planner import ExecutionPlan, PlanStep, SkillPlanner, StepStatus
+from .planner import (
+    ExecutionPlan,
+    PlanStep,
+    SkillPlanner,
+    StepStatus,
+    execution_plan_from_skill_graph,
+)
 from .reflection import Feedback, ReflectionAgent
 from .retriever import RetrievalResult, RetrievalStrategy, SkillGroup, SkillRetriever
 from .state_tracker import RuntimeMemory, StateSnapshot, StateTracker
@@ -20,8 +26,10 @@ __all__ = [
     "ExecutionPlan",
     "PlanStep",
     "StepStatus",
+    "execution_plan_from_skill_graph",
     "SkillExecutor",
     "CompositionAgent",
+    "OrchestrationStrategy",
     "SkillGraph",
     "SkillEdge",
     "VerifierAgent",

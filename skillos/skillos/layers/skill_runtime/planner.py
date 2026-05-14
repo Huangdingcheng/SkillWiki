@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from .composition import SkillGraph
 
 logger = get_logger(__name__)
 
@@ -325,3 +326,62 @@ def _normalize_plan_steps(raw_steps: Any, available_skills: List[Skill]) -> List
         normalized.append(step)
 
     return normalized
+
+
+def execution_plan_from_skill_graph(
+    graph: SkillGraph,
+    task_description: str = "",
+    task_id: Optional[str] = None,
+) -> ExecutionPlan:
+    """Convert a composed Skill DAG into the executor's dependency plan."""
+
+    plan = ExecutionPlan(
+        task_id=task_id or str(uuid.uuid4()),
+        task_description=task_description or graph.task_description,
+        metadata={
+            "source": "skill_graph",
+            "graph_id": graph.graph_id,
+            "entry_skill_id": graph.entry_skill_id,
+            "parallel_groups": graph.parallel_groups,
+            "composition_source": graph.metadata.get("composition_source", ""),
+            "orchestration_strategy": graph.metadata.get("orchestration_strategy", ""),
+        },
+    )
+    node_order = graph.execution_order or [skill.skill_id for skill in graph.nodes]
+    skill_by_id = {skill.skill_id: skill for skill in graph.nodes}
+    step_by_skill_id: Dict[str, PlanStep] = {}
+
+    for skill_id in node_order:
+        skill = skill_by_id.get(skill_id)
+        if not skill:
+            continue
+        step = PlanStep(
+            step_index=len(plan.steps),
+            skill_id=skill.skill_id,
+            skill_name=skill.name,
+            description=skill.description or f"Execute {skill.name}",
+        )
+        plan.steps.append(step)
+        step_by_skill_id[skill.skill_id] = step
+
+    dependency_ids: Dict[str, List[str]] = {step.step_id: [] for step in plan.steps}
+    for edge in graph.edges:
+        if edge.edge_type == "parallel":
+            continue
+        source_step = step_by_skill_id.get(edge.source_id)
+        target_step = step_by_skill_id.get(edge.target_id)
+        if not source_step or not target_step:
+            continue
+        deps = dependency_ids[target_step.step_id]
+        if source_step.step_id not in deps:
+            deps.append(source_step.step_id)
+        if edge.data_mapping:
+            target_step.input_mapping.update({
+                target_param: f"${{{source_step.step_id}.{source_field}}}"
+                for target_param, source_field in edge.data_mapping.items()
+            })
+
+    for step in plan.steps:
+        step.depends_on = dependency_ids.get(step.step_id, [])
+
+    return plan
