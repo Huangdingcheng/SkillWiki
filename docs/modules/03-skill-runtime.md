@@ -492,3 +492,129 @@ python -m pytest skillos\tests\test_skill_runtime_phase2.py -q
 ```
 
 The command currently fails before assertions because the active Python environment does not load pytest-asyncio; pytest reports `async def functions are not natively supported` and warns that `pytest.mark.asyncio` is unknown. The dependency is declared in skillos/requirements.txt and skillos/pyproject.toml, but it is not active in the current interpreter.
+
+---
+
+## Version 2026-05-14: Paper-Guided Runtime Path and Execution Graph Update
+
+This version turns the paper-guided Member C runtime mechanisms from isolated layer capabilities into the live Agent Execution path, and adds a frontend execution graph view for demos and debugging.
+
+### 1. Runtime Execution Uses SkillRetriever and SkillGroup
+
+The `/api/v1/execution/plan` route now uses `SkillRetriever.retrieve()` before composition. This connects the Group-of-Skills style runtime contract to the real API path:
+
+- `SkillGroup.support_skill_ids` feed preparation/helper skills.
+- `SkillGroup.start_skill_ids` feed the main entry skill.
+- `SkillGroup.check_skill_ids` feed validation/postcondition skills.
+- `SkillGroup.avoid_skill_ids` stay out of the execution graph.
+- If retriever selection fails, the route falls back to direct search filtering so the API remains available.
+
+Commit:
+
+```text
+ee8089d feat(runtime): route execution through skill retriever
+```
+
+### 2. DAG Data Mapping Drives Runtime Inputs
+
+The executor now resolves DAG mapping references such as:
+
+```text
+${step_id.customer_data}
+```
+
+before executing a dependent step. This makes schema-derived composition executable rather than only descriptive. A support skill can produce an output, and a later start/check skill can receive it as real `input_data`.
+
+Commit:
+
+```text
+0294259 feat(runtime): resolve DAG output mappings during execution
+```
+
+### 3. Verification and Reflection Are Attached to Executions
+
+The execution API now runs verifier/reflection after plan execution and exposes compatible optional fields:
+
+- `verification`
+- `reflection`
+- `failure_type`
+- `recovery_route`
+
+This connects the Skill-RAG failure-state idea to live Agent Execution. Member C still does not mutate skills; it produces structured feedback for maintenance and repair agents.
+
+Commit:
+
+```text
+4fffe0c feat(runtime): attach verification feedback to executions
+```
+
+### 4. Runtime Memory Diagnostics Are Exposed
+
+`RuntimeMemory.to_summary()` now includes verification and reflection summaries when available. `ExecutionResult.runtime_memory` exposes the task-local evidence summary without placing it inside `final_state`.
+
+This keeps the public state output stable while making M*-style task evidence available for debugging, benchmark scoring, and future repair routing.
+
+Commit:
+
+```text
+8c83710 feat(runtime): expose runtime memory diagnostics
+```
+
+### 5. Benchmark v2 Measures Paper-Guided Runtime Dimensions
+
+The runtime benchmark now evaluates Member C as a full runtime architecture instead of only retrieval/planning/execution success.
+
+New benchmark dimensions:
+
+- `skill_group`
+- `planning`
+- `composition`
+- `execution`
+- `verification`
+- `recovery`
+- `memory`
+
+New benchmark cases include `support_start_check_flow` and `missing_skill_recovery_route`.
+
+Commit:
+
+```text
+f20b789 test(runtime): benchmark paper guided runtime dimensions
+```
+
+### 6. Agent Execution Graph for Frontend Visualization
+
+`ExecutionResult.execution_graph` now returns a frontend-friendly graph:
+
+```text
+goal -> retrieved skills -> execution steps
+```
+
+The graph includes:
+
+- nodes for the user goal, retrieved skills, and execution steps
+- edges for retrieval, planning, and step dependencies
+- composition source and parallel group metadata
+- step status, latency, and error information
+
+The frontend Agent Execution page renders this as an `Execution RAG Tree` after execution, giving users a clear visual explanation of which skills were retrieved, how they were composed, and what actually ran.
+
+Changed files:
+
+```text
+skillos/skillos/api/routes/execution.py
+skillos/skillos/api/schemas.py
+skillos/tests/test_skill_runtime_phase1.py
+skillos-frontend/src/api/types.ts
+skillos-frontend/src/pages/AgentExecution.tsx
+```
+
+### Verification
+
+Commands run during this update:
+
+```powershell
+python -m compileall -q skillos\skillos\api\routes\execution.py skillos\skillos\api\schemas.py skillos\tests\test_skill_runtime_phase1.py
+python -m pytest skillos\tests\test_skill_runtime_phase1.py skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py skillos\tests\test_runtime_benchmark.py -q
+npm run build
+```

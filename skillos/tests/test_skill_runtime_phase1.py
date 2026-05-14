@@ -84,6 +84,10 @@ async def test_execute_plan_uses_runtime_retriever_skill_group():
     ]
     assert result.steps[1].status == "success"
     assert result.retrieved_skills[0].match_reason == "structured runtime group"
+    assert result.execution_graph is not None
+    assert result.execution_graph["composition_source"] == "skill_group"
+    assert any(node["kind"] == "execution_step" for node in result.execution_graph["nodes"])
+    assert any(edge["kind"] == "depends_on" for edge in result.execution_graph["edges"])
     assert app.search.calls == 0
 
 

@@ -10,7 +10,14 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { executionApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, RetrievedSkill } from '@/api/types'
+import type {
+  ExecutionGraph,
+  ExecutionGraphNode,
+  ExecutionHistoryItem,
+  ExecutionResult,
+  ExecutionStepResult,
+  RetrievedSkill,
+} from '@/api/types'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -87,6 +94,132 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
         )}
       </Card>
     </motion.div>
+  )
+}
+
+function GraphNodeCard({ node }: { node: ExecutionGraphNode }) {
+  const status = node.status || node.kind
+  const statusColor = STATUS_COLOR[status] || (node.kind === 'goal' ? '#1677ff' : '#8c8c8c')
+  return (
+    <div style={{
+      minWidth: 180,
+      maxWidth: 240,
+      padding: '10px 12px',
+      border: '1px solid #e5e7eb',
+      borderLeft: `4px solid ${statusColor}`,
+      borderRadius: 8,
+      background: '#fff',
+      boxShadow: '0 2px 6px rgba(15,23,42,0.06)',
+    }}>
+      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        <Space size={6} wrap>
+          <Text strong style={{ fontSize: 13 }}>{node.label}</Text>
+          {node.kind === 'retrieved_skill' && node.skill_type && (
+            <Tag color={SKILL_TYPE_COLOR[node.skill_type] || 'default'} style={{ margin: 0 }}>{node.skill_type}</Tag>
+          )}
+          {node.kind === 'execution_step' && node.status && (
+            <Tag color={STATUS_COLOR[node.status] || 'default'} style={{ margin: 0 }}>{node.status}</Tag>
+          )}
+        </Space>
+        {typeof node.score === 'number' && (
+          <Text type="secondary" style={{ fontSize: 12 }}>score {(node.score * 100).toFixed(0)}%</Text>
+        )}
+        {typeof node.latency_ms === 'number' && (
+          <Text type="secondary" style={{ fontSize: 12 }}>{node.latency_ms.toFixed(0)}ms</Text>
+        )}
+        {node.error && (
+          <Text type="danger" style={{ fontSize: 12 }}>{node.error}</Text>
+        )}
+      </Space>
+    </div>
+  )
+}
+
+function ExecutionGraphTree({ graph }: { graph?: ExecutionGraph | null }) {
+  if (!graph || graph.nodes.length === 0) return null
+
+  const root = graph.nodes.find(node => node.id === graph.root_id) || graph.nodes[0]
+  const skillNodes = graph.nodes
+    .filter(node => node.kind === 'retrieved_skill')
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const stepNodes = graph.nodes
+    .filter(node => node.kind === 'execution_step')
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const stepsBySkill = stepNodes.reduce<Record<string, ExecutionGraphNode[]>>((acc, node) => {
+    const key = node.skill_id || 'unknown'
+    acc[key] = [...(acc[key] || []), node]
+    return acc
+  }, {})
+  const dependencyEdges = graph.edges.filter(edge => edge.kind === 'depends_on')
+
+  return (
+    <Card
+      title={<span><ThunderboltOutlined style={{ color: '#1677ff', marginRight: 6 }} />Execution RAG Tree</span>}
+      variant="borderless"
+      style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+    >
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Tag color="blue">Source: {graph.composition_source || 'planner'}</Tag>
+        <Tag color="green">Nodes: {graph.nodes.length}</Tag>
+        <Tag color="purple">Edges: {graph.edges.length}</Tag>
+      </Space>
+      <div style={{ overflowX: 'auto', padding: '4px 4px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minWidth: 680 }}>
+          <div style={{ paddingTop: 28 }}>
+            <GraphNodeCard node={root} />
+          </div>
+          <div style={{
+            width: 36,
+            height: 1,
+            background: '#cbd5e1',
+            marginTop: 72,
+            flex: '0 0 auto',
+          }} />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            {(skillNodes.length ? skillNodes : stepNodes).map(node => {
+              const nestedSteps = node.kind === 'retrieved_skill'
+                ? stepsBySkill[node.skill_id || ''] || []
+                : []
+              return (
+                <div key={node.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <GraphNodeCard node={node} />
+                  {nestedSteps.length > 0 && (
+                    <div style={{
+                      borderLeft: '1px solid #cbd5e1',
+                      paddingLeft: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}>
+                      {nestedSteps.map(step => <GraphNodeCard key={step.id} node={step} />)}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      {dependencyEdges.length > 0 && (
+        <>
+          <Divider style={{ margin: '12px 0' }} />
+          <Space direction="vertical" size={4}>
+            <Text strong style={{ fontSize: 12 }}>Dependency path</Text>
+            <Space wrap>
+              {dependencyEdges.map(edge => {
+                const source = graph.nodes.find(node => node.id === edge.source)
+                const target = graph.nodes.find(node => node.id === edge.target)
+                return (
+                  <Tag key={edge.id} color="geekblue">
+                    {`${source?.label || edge.source} -> ${target?.label || edge.target}`}
+                  </Tag>
+                )
+              })}
+            </Space>
+          </Space>
+        </>
+      )}
+    </Card>
   )
 }
 
@@ -327,6 +460,8 @@ export default function AgentExecution() {
                 <Tag color="green">Parallel groups: {result.parallel_groups?.length || 0}</Tag>
               </Space>
             </Card>
+
+            <ExecutionGraphTree graph={result.execution_graph} />
 
             <Card
               variant="borderless"

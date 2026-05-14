@@ -158,6 +158,37 @@ export interface ExecutionStepResult {
   latency_ms?: number | null
 }
 
+export interface ExecutionGraphNode {
+  id: string
+  label: string
+  kind: 'goal' | 'retrieved_skill' | 'execution_step' | string
+  status?: string
+  level?: number
+  order?: number
+  skill_id?: string
+  skill_type?: string
+  score?: number
+  match_reason?: string
+  step_id?: string
+  latency_ms?: number | null
+  error?: string | null
+}
+
+export interface ExecutionGraphEdge {
+  id: string
+  source: string
+  target: string
+  kind: 'retrieved' | 'planned_as' | 'depends_on' | string
+}
+
+export interface ExecutionGraph {
+  nodes: ExecutionGraphNode[]
+  edges: ExecutionGraphEdge[]
+  parallel_groups: string[][]
+  composition_source: string
+  root_id: string
+}
+
 export interface RetrievedSkill {
   skill_id: string
   name: string
@@ -180,6 +211,12 @@ export interface ExecutionResult {
   orchestration_strategy: 'quality_first' | 'efficiency_first' | 'simplicity_first'
   parallel_groups: string[][]
   composition_source: string
+  verification?: Record<string, unknown> | null
+  reflection?: Record<string, unknown> | null
+  failure_type?: string
+  recovery_route?: string
+  runtime_memory?: Record<string, unknown> | null
+  execution_graph?: ExecutionGraph | null
 }
 
 export interface ExecutionHistoryItem {

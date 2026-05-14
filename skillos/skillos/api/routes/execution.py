@@ -207,6 +207,7 @@ async def execute_plan(
         failure_type=feedback["failure_type"],
         recovery_route=feedback["recovery_route"],
         runtime_memory=_runtime_memory_summary(app),
+        execution_graph=_execution_graph(req.goal, retrieved, plan, steps),
     )
 
     history_item = {
@@ -371,6 +372,99 @@ def _runtime_memory_summary(app: AppState) -> Optional[Dict[str, Any]]:
     except Exception as exc:
         logger.warning("Failed to summarize runtime memory: %s", exc)
         return None
+
+
+def _execution_graph(
+    goal: str,
+    retrieved: List[RetrievedSkill],
+    plan: Any,
+    steps: List[ExecutionStepResult],
+) -> Dict[str, Any]:
+    """Build a frontend-friendly retrieval/composition/execution graph."""
+
+    nodes: List[Dict[str, Any]] = [
+        {
+            "id": "goal",
+            "label": goal,
+            "kind": "goal",
+            "status": "root",
+            "level": 0,
+        }
+    ]
+    edges: List[Dict[str, Any]] = []
+
+    skill_node_ids = set()
+    for index, skill in enumerate(retrieved):
+        node_id = f"skill:{skill.skill_id}"
+        skill_node_ids.add(node_id)
+        nodes.append({
+            "id": node_id,
+            "label": skill.name,
+            "kind": "retrieved_skill",
+            "skill_id": skill.skill_id,
+            "skill_type": skill.skill_type,
+            "score": skill.score,
+            "match_reason": skill.match_reason,
+            "level": 1,
+            "order": index,
+        })
+        edges.append({
+            "id": f"goal->{node_id}",
+            "source": "goal",
+            "target": node_id,
+            "kind": "retrieved",
+        })
+
+    step_result_by_id = {step.step_id: step for step in steps}
+    step_node_ids: Dict[str, str] = {}
+    for index, step in enumerate(getattr(plan, "steps", [])):
+        result = step_result_by_id.get(step.step_id)
+        node_id = f"step:{step.step_id}"
+        step_node_ids[step.step_id] = node_id
+        nodes.append({
+            "id": node_id,
+            "label": getattr(step, "skill_name", "") or getattr(step, "skill_id", ""),
+            "kind": "execution_step",
+            "step_id": step.step_id,
+            "skill_id": step.skill_id,
+            "status": result.status if result else str(getattr(step, "status", "")),
+            "latency_ms": result.latency_ms if result else None,
+            "error": result.error if result else getattr(step, "error", None),
+            "level": 2 + len(getattr(step, "depends_on", []) or []),
+            "order": index,
+        })
+
+    for step in getattr(plan, "steps", []):
+        target = step_node_ids.get(step.step_id)
+        if not target:
+            continue
+        dependencies = list(getattr(step, "depends_on", []) or [])
+        if dependencies:
+            for dep_id in dependencies:
+                source = step_node_ids.get(dep_id)
+                if source:
+                    edges.append({
+                        "id": f"{source}->{target}",
+                        "source": source,
+                        "target": target,
+                        "kind": "depends_on",
+                    })
+        else:
+            skill_source = f"skill:{step.skill_id}"
+            edges.append({
+                "id": f"{skill_source if skill_source in skill_node_ids else 'goal'}->{target}",
+                "source": skill_source if skill_source in skill_node_ids else "goal",
+                "target": target,
+                "kind": "planned_as",
+            })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "parallel_groups": getattr(plan, "metadata", {}).get("parallel_groups", []),
+        "composition_source": getattr(plan, "metadata", {}).get("composition_source", ""),
+        "root_id": "goal",
+    }
 
 
 async def _retrieve_runtime_skills(
