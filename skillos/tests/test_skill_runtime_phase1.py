@@ -99,6 +99,28 @@ async def test_execute_plan_no_skills_returns_failed_without_crashing():
 
 
 @pytest.mark.asyncio
+async def test_execute_plan_returns_verification_and_reflection_feedback():
+    missing_step = PlanStep(step_index=0, skill_id="missing", skill_name="missing")
+    app = FakeAppState(
+        skills=[],
+        search_results=[],
+        plan_steps=[missing_step],
+        verifier=FakeVerifier(),
+        reflector=FakeReflector(),
+    )
+
+    result = await execution.execute_plan(ExecutePlanRequest(goal="missing capability"), app=app)
+
+    assert result.status == "failed"
+    assert result.failure_type == "missing_skill"
+    assert result.recovery_route == "retrieve_alternative_skill"
+    assert result.verification is not None
+    assert result.verification["passed"] is False
+    assert result.reflection is not None
+    assert result.reflection["failed_skill_ids"] == ["missing"]
+
+
+@pytest.mark.asyncio
 async def test_execution_history_returns_items_in_reverse_order():
     original = list(execution._execution_history)
     execution._execution_history.clear()
@@ -159,6 +181,8 @@ class FakeAppState:
         search_results: list[SearchResult],
         plan_steps: list[PlanStep],
         retrieval: Optional[RetrievalResult] = None,
+        verifier: object = None,
+        reflector: object = None,
     ) -> None:
         self.state_tracker = FakeStateTracker()
         self.wiki = FakeWiki(skills)
@@ -167,6 +191,8 @@ class FakeAppState:
         self.composer = FakeComposer()
         self.planner = FakePlanner(plan_steps)
         self.executor = FakeExecutor()
+        self.verifier = verifier
+        self.reflector = reflector
         self.recorded = self.wiki.recorded
 
 
@@ -256,6 +282,36 @@ class FakePlanner:
 
     async def plan(self, task_description: str, available_skills: list[Skill], current_state: dict) -> ExecutionPlan:
         return ExecutionPlan(plan_id="plan-1", task_id="plan-1", task_description=task_description, steps=self.steps)
+
+
+class FakeVerifier:
+    def verify(self, goal: str, final_output: dict, trace_summary: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            passed=False,
+            score=0.2,
+            issues=["missing skill"],
+            suggestions=["retrieve alternative skill"],
+            failure_type="missing_skill",
+            recovery_route="retrieve_alternative_skill",
+        )
+
+
+class FakeReflector:
+    def reflect(
+        self,
+        task_id: str,
+        goal: str,
+        trace: dict,
+        verification_result: object = None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            root_cause="missing runtime skill",
+            failure_type="missing_skill",
+            recovery_route="retrieve_alternative_skill",
+            failed_skill_ids=["missing"],
+            improvement_suggestions=["add or retrieve a compatible skill"],
+            skill_update_proposals=[],
+        )
 
 
 class FakeExecutor:

@@ -252,6 +252,10 @@ class ExecutionResult(BaseModel):
     orchestration_strategy: str = "quality_first"
     parallel_groups: List[List[str]] = Field(default_factory=list)
     composition_source: str = ""
+    verification: Optional[Dict[str, Any]] = None
+    reflection: Optional[Dict[str, Any]] = None
+    failure_type: str = "none"
+    recovery_route: str = "none"
 
 
 class ExecutionHistoryItem(BaseModel):

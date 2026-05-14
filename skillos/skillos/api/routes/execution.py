@@ -188,6 +188,7 @@ async def execute_plan(
         overall_status = "failed"
     else:
         overall_status = "partial"
+    feedback = _verify_and_reflect(app, plan, req.goal, app.state_tracker.current, steps, overall_status)
 
     result = ExecutionResult(
         plan_id=plan.plan_id,
@@ -201,6 +202,10 @@ async def execute_plan(
         orchestration_strategy=strategy.value,
         parallel_groups=plan.metadata.get("parallel_groups", []),
         composition_source=plan.metadata.get("composition_source", ""),
+        verification=feedback["verification"],
+        reflection=feedback["reflection"],
+        failure_type=feedback["failure_type"],
+        recovery_route=feedback["recovery_route"],
     )
 
     history_item = {
@@ -212,6 +217,8 @@ async def execute_plan(
         "total_latency_ms": total_latency,
         "retrieved_skill_count": len(retrieved),
         "orchestration_strategy": strategy.value,
+        "failure_type": result.failure_type,
+        "recovery_route": result.recovery_route,
         "created_at": datetime.utcnow().isoformat(),
     }
     _execution_history.append(history_item)
@@ -264,6 +271,94 @@ def _format_match_reason(search_result: Any) -> str:
         return "; ".join(str(reason) for reason in reasons)
     reason = getattr(search_result, "match_reason", "")
     return str(reason or "")
+
+
+def _verify_and_reflect(
+    app: AppState,
+    plan: Any,
+    goal: str,
+    final_state: Dict[str, Any],
+    steps: List[ExecutionStepResult],
+    status: str,
+) -> Dict[str, Any]:
+    verification_summary: Optional[Dict[str, Any]] = None
+    reflection_summary: Optional[Dict[str, Any]] = None
+    failure_type = "none"
+    recovery_route = "none"
+    trace = {
+        "plan_id": plan.plan_id,
+        "status": status,
+        "steps": [
+            {
+                "step_id": step.step_id,
+                "skill_id": step.skill_id,
+                "skill_name": step.skill_name,
+                "status": step.status,
+                "error": step.error,
+            }
+            for step in steps
+        ],
+    }
+
+    verifier = getattr(app, "verifier", None)
+    verification = None
+    if verifier:
+        try:
+            verification = verifier.verify(goal, final_state, _trace_summary(trace))
+            failure_type = str(getattr(verification, "failure_type", "none") or "none")
+            recovery_route = str(getattr(verification, "recovery_route", "none") or "none")
+            verification_summary = {
+                "passed": bool(getattr(verification, "passed", False)),
+                "score": float(getattr(verification, "score", 0.0) or 0.0),
+                "issues": list(getattr(verification, "issues", []) or []),
+                "suggestions": list(getattr(verification, "suggestions", []) or []),
+                "failure_type": failure_type,
+                "recovery_route": recovery_route,
+            }
+        except Exception as exc:
+            logger.warning("Runtime verifier failed: %s", exc)
+
+    should_reflect = status != "success" or (
+        verification is not None and not bool(getattr(verification, "passed", False))
+    )
+    reflector = getattr(app, "reflector", None)
+    if should_reflect and reflector:
+        try:
+            feedback = reflector.reflect(plan.plan_id, goal, trace, verification)
+            failure_type = str(getattr(feedback, "failure_type", failure_type) or failure_type)
+            recovery_route = str(getattr(feedback, "recovery_route", recovery_route) or recovery_route)
+            reflection_summary = {
+                "root_cause": str(getattr(feedback, "root_cause", "")),
+                "failure_type": failure_type,
+                "recovery_route": recovery_route,
+                "failed_skill_ids": list(getattr(feedback, "failed_skill_ids", []) or []),
+                "improvement_suggestions": list(getattr(feedback, "improvement_suggestions", []) or []),
+                "skill_update_proposals": list(getattr(feedback, "skill_update_proposals", []) or []),
+            }
+        except Exception as exc:
+            logger.warning("Runtime reflection failed: %s", exc)
+
+    memory = getattr(getattr(app, "executor", None), "last_runtime_memory", None)
+    if memory:
+        if verification_summary is not None:
+            memory.verification_summary = verification_summary
+        if reflection_summary is not None:
+            memory.reflection_summary = reflection_summary
+
+    return {
+        "verification": verification_summary,
+        "reflection": reflection_summary,
+        "failure_type": failure_type,
+        "recovery_route": recovery_route,
+    }
+
+
+def _trace_summary(trace: Dict[str, Any]) -> str:
+    return "; ".join(
+        f"{step['skill_name']}={step['status']}"
+        + (f" error={step['error']}" if step.get("error") else "")
+        for step in trace.get("steps", [])
+    )
 
 
 async def _retrieve_runtime_skills(
