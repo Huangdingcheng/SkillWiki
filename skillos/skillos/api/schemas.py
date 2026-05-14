@@ -256,6 +256,7 @@ class ExecutionResult(BaseModel):
     reflection: Optional[Dict[str, Any]] = None
     failure_type: str = "none"
     recovery_route: str = "none"
+    runtime_memory: Optional[Dict[str, Any]] = None
 
 
 class ExecutionHistoryItem(BaseModel):

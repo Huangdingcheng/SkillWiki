@@ -88,7 +88,7 @@ class RuntimeMemory:
         self.remember_event("step_failed", event)
 
     def to_summary(self) -> Dict[str, Any]:
-        return {
+        summary = {
             "task_id": self.task_id,
             "goal": self.goal,
             "selected_skills": list(self.selected_skills),
@@ -101,6 +101,11 @@ class RuntimeMemory:
             }),
             "events": len(self.events),
         }
+        if self.verification_summary:
+            summary["verification"] = copy.deepcopy(self.verification_summary)
+        if self.reflection_summary:
+            summary["reflection"] = copy.deepcopy(self.reflection_summary)
+        return summary
 
 
 class StateTracker:

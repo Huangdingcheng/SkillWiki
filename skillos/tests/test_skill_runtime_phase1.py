@@ -118,6 +118,8 @@ async def test_execute_plan_returns_verification_and_reflection_feedback():
     assert result.verification["passed"] is False
     assert result.reflection is not None
     assert result.reflection["failed_skill_ids"] == ["missing"]
+    assert result.runtime_memory is not None
+    assert result.runtime_memory["task_id"] == "plan-1"
 
 
 @pytest.mark.asyncio
@@ -315,6 +317,9 @@ class FakeReflector:
 
 
 class FakeExecutor:
+    def __init__(self) -> None:
+        self.last_runtime_memory: object = None
+
     async def execute_plan(self, plan: ExecutionPlan, skill_map: dict[str, Skill], initial_state: dict) -> dict:
         for step in plan.steps:
             if step.skill_id in skill_map:
@@ -323,4 +328,19 @@ class FakeExecutor:
             else:
                 step.status = StepStatus.FAILED
                 step.error = "missing skill"
+        self.last_runtime_memory = FakeMemory(plan.task_id)
         return {"done": True}
+
+
+class FakeMemory:
+    def __init__(self, task_id: str) -> None:
+        self.task_id = task_id
+        self.verification_summary: dict = {}
+        self.reflection_summary: dict = {}
+
+    def to_summary(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "verification": self.verification_summary,
+            "reflection": self.reflection_summary,
+        }

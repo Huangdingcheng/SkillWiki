@@ -34,3 +34,21 @@ def test_runtime_memory_records_step_evidence():
     assert summary["failure_count"] == 1
     assert summary["failed_skill_ids"] == ["skill-b"]
     assert tracker.memory.step_outputs["step-1"]["output"] == {"ok": True}
+
+
+def test_runtime_memory_summary_includes_verification_and_reflection():
+    tracker = StateTracker("task-1")
+    tracker.memory.verification_summary = {
+        "passed": False,
+        "failure_type": "missing_skill",
+        "recovery_route": "retrieve_alternative_skill",
+    }
+    tracker.memory.reflection_summary = {
+        "root_cause": "missing runtime skill",
+        "failed_skill_ids": ["skill-a"],
+    }
+
+    summary = tracker.memory.to_summary()
+
+    assert summary["verification"]["failure_type"] == "missing_skill"
+    assert summary["reflection"]["failed_skill_ids"] == ["skill-a"]

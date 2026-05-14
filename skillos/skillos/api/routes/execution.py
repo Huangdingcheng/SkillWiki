@@ -206,6 +206,7 @@ async def execute_plan(
         reflection=feedback["reflection"],
         failure_type=feedback["failure_type"],
         recovery_route=feedback["recovery_route"],
+        runtime_memory=_runtime_memory_summary(app),
     )
 
     history_item = {
@@ -359,6 +360,17 @@ def _trace_summary(trace: Dict[str, Any]) -> str:
         + (f" error={step['error']}" if step.get("error") else "")
         for step in trace.get("steps", [])
     )
+
+
+def _runtime_memory_summary(app: AppState) -> Optional[Dict[str, Any]]:
+    memory = getattr(getattr(app, "executor", None), "last_runtime_memory", None)
+    if not memory:
+        return None
+    try:
+        return memory.to_summary()
+    except Exception as exc:
+        logger.warning("Failed to summarize runtime memory: %s", exc)
+        return None
 
 
 async def _retrieve_runtime_skills(
