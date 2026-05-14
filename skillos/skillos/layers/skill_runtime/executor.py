@@ -279,6 +279,7 @@ class SkillExecutor:
             )
             return None
 
+        step.input_mapping = _resolve_input_mapping(step.input_mapping, tracker.memory.step_outputs)
         step.status = StepStatus.RUNNING
         step.started_at = datetime.utcnow()
         tracker.memory.remember_step_start(
@@ -544,6 +545,50 @@ class SkillExecutor:
         except Exception as e:
             record.fail(str(e), type(e).__name__)
         return record
+
+
+def _resolve_input_mapping(
+    input_mapping: Dict[str, Any],
+    step_outputs: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        key: _resolve_mapping_value(value, step_outputs)
+        for key, value in input_mapping.items()
+    }
+
+
+def _resolve_mapping_value(value: Any, step_outputs: Dict[str, Dict[str, Any]]) -> Any:
+    if isinstance(value, str):
+        resolved = _resolve_step_reference(value, step_outputs)
+        return value if resolved is _UNRESOLVED_REFERENCE else resolved
+    if isinstance(value, dict):
+        return {
+            key: _resolve_mapping_value(item, step_outputs)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_mapping_value(item, step_outputs) for item in value]
+    return value
+
+
+_UNRESOLVED_REFERENCE = object()
+
+
+def _resolve_step_reference(value: str, step_outputs: Dict[str, Dict[str, Any]]) -> Any:
+    if not (value.startswith("${") and value.endswith("}") and "." in value[2:-1]):
+        return _UNRESOLVED_REFERENCE
+    reference = value[2:-1]
+    step_id, path = reference.split(".", 1)
+    output_record = step_outputs.get(step_id)
+    if not output_record:
+        return _UNRESOLVED_REFERENCE
+    current: Any = output_record.get("output", {})
+    for part in path.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return _UNRESOLVED_REFERENCE
+    return current
 
 
 def _plan_status(plan: ExecutionPlan) -> str:

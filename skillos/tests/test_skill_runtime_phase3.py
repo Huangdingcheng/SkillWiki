@@ -268,6 +268,49 @@ def test_dependent_step_is_skipped_when_dependency_fails():
     assert _event(events, "plan_completed")["status"] == "failed"
 
 
+def test_executor_resolves_step_output_references_into_inputs():
+    prepare = make_skill(
+        "prepare",
+        "output['customer_data'] = {'id': 'customer-1'}",
+        outputs=["customer_data"],
+    )
+    process = make_skill(
+        "process",
+        "output['processed_id'] = input_data['customer_data']['id']",
+        inputs=["customer_data"],
+        outputs=["processed_id"],
+    )
+    prepare_step = PlanStep(
+        step_index=0,
+        skill_id=prepare.skill_id,
+        skill_name=prepare.name,
+    )
+    process_step = PlanStep(
+        step_index=1,
+        skill_id=process.skill_id,
+        skill_name=process.name,
+        depends_on=[prepare_step.step_id],
+        input_mapping={"customer_data": f"${{{prepare_step.step_id}.customer_data}}"},
+    )
+    plan = make_plan([prepare_step, process_step])
+    executor = SkillExecutor(max_retries=0)
+
+    final_state = asyncio.run(
+        executor.execute_plan(
+            plan,
+            {prepare.skill_id: prepare, process.skill_id: process},
+            {},
+        )
+    )
+
+    assert process_step.status == StepStatus.SUCCESS
+    assert process_step.input_mapping == {"customer_data": {"id": "customer-1"}}
+    assert final_state["processed_id"] == "customer-1"
+    assert executor.last_runtime_memory is not None
+    process_input = executor.last_runtime_memory.step_inputs[process_step.step_id]["input"]
+    assert process_input["customer_data"]["id"] == "customer-1"
+
+
 def test_skip_cascades_through_dependency_chain():
     fail_skill = make_skill("fail_skill", "raise RuntimeError('boom')")
     middle_skill = make_skill("middle_skill", "output['ok'] = True")
