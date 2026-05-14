@@ -8,6 +8,7 @@ import pytest
 
 from skillos.api.routes import execution
 from skillos.api.schemas import ExecutePlanRequest
+from skillos.api.history_store import FileExecutionHistoryRepository
 from skillos.layers.skill_repository.indexing import SearchResult
 from skillos.layers.skill_runtime.composition import SkillGraph
 from skillos.layers.skill_runtime.executor import SkillExecutor
@@ -159,6 +160,29 @@ async def test_execution_history_returns_items_in_reverse_order():
         assert [item["execution_id"] for item in history] == ["new", "old"]
     finally:
         execution._execution_history[:] = original
+
+
+@pytest.mark.asyncio
+async def test_file_execution_history_survives_repository_restart(tmp_path):
+    path = tmp_path / "execution_history.jsonl"
+    first_repo = FileExecutionHistoryRepository(path)
+    await first_repo.save_plan_history({
+        "execution_id": "persisted",
+        "goal": "persist this task",
+        "status": "success",
+        "step_count": 1,
+        "success_count": 1,
+        "total_latency_ms": 12.0,
+        "retrieved_skill_count": 2,
+        "created_at": "2026-05-14T00:00:00",
+    })
+
+    restarted_repo = FileExecutionHistoryRepository(path)
+    history = await restarted_repo.list_history()
+
+    assert len(history) == 1
+    assert history[0]["execution_id"] == "persisted"
+    assert history[0]["goal"] == "persist this task"
 
 
 @pytest.mark.asyncio

@@ -56,3 +56,4 @@ idea.txt
 
 # Runtime SkillStorage repository
 skillos/skillos/storage/skill_repo/SkillStorage/
+skillos/skillos/storage/execution_history.jsonl

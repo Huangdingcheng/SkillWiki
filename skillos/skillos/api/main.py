@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from ..utils.llm_client import LLMClient
 from .deps import app_state
+from .history_store import FileExecutionHistoryRepository
 from .memory_store import MemoryGraphManager, MemoryWikiManager
 from .routes import evolution, execution, graph, ingest, lifecycle, repository, skills, ws
 
@@ -23,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 def _default_skill_storage_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "storage" / "skill_repo" / "SkillStorage"
+
+
+def _default_execution_history_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "storage" / "execution_history.jsonl"
 
 
 @asynccontextmanager
@@ -43,7 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
 
     # Optional PostgreSQL history persistence. Demo startup must survive when
-    # PostgreSQL is not running, so failures fall back to in-memory history.
+    # PostgreSQL is not running, so failures fall back to a local JSONL store.
     try:
         pg_conn = PostgresConnection(
             dsn="postgresql+asyncpg://postgres:postgres@localhost:5432/skillos"
@@ -53,9 +58,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app_state.execution_history_repo = ExecutionHistoryRepository(pg_conn)
         logger.info("PostgreSQL persistence layer is ready")
     except Exception as exc:
-        logger.warning("PostgreSQL unavailable; execution history stays in memory: %s", exc)
+        logger.warning("PostgreSQL unavailable; using local execution history: %s", exc)
         app_state.pg_conn = None
-        app_state.execution_history_repo = None
+        app_state.execution_history_repo = FileExecutionHistoryRepository(
+            app.state.execution_history_path
+        )
 
     # Seed demo data, then mirror the Wiki state into the in-memory graph.
     if app.state.seed_demo:
@@ -611,6 +618,7 @@ def create_app(
     app.state.llm_cfg = llm_cfg
     app.state.repository_backend = repository_backend
     app.state.skill_storage_dir = (skill_storage_dir or _default_skill_storage_dir()).resolve()
+    app.state.execution_history_path = _default_execution_history_path().resolve()
     app.state.seed_demo = seed_demo
 
     app.add_middleware(
