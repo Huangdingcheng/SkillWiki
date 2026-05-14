@@ -20,8 +20,8 @@ python -m skillos.cli init --api-key "your_api_key_here"
 # 自定义 API URL 和模型
 python -m skillos.cli init \
   --api-key "your_api_key_here" \
-  --api-url "https://yunwu.ai" \
-  --model "gpt-5.4-nano"
+  --api-url "https://api.deepseek.com" \
+  --model "deepseek-v4-pro"
 
 # 使用自定义配置文件
 python -m skillos.cli init \
@@ -29,6 +29,25 @@ python -m skillos.cli init \
   --config "custom_config.yaml"
 ```
 
+### Runtime benchmark
+
+Run the formal runtime evaluation suite and print scores in the terminal. Scoring details are documented in `../docs/runtime-benchmark.md`:
+
+```bash
+python -m skillos.cli benchmark-runtime --api-key "YOUR_DEEPSEEK_API_KEY"
+```
+
+API key fill location:
+- Command line: replace `YOUR_DEEPSEEK_API_KEY` in the command above.
+- CI or local shell: provide the same value through your secret manager or environment, then pass it as `--api-key`.
+
+Default DeepSeek settings:
+
+```yaml
+llm:
+  api_url: "https://api.deepseek.com"
+  model: "deepseek-v4-pro"
+```
 ### 3. 测试配置
 
 ```bash
@@ -51,23 +70,23 @@ python -m skillos.cli get-agent-config \
 
 1. **命令行参数** - 最高优先级
    ```bash
-   --api-key "key" --model "gpt-5.4-turbo"
+   --api-key "key" --model "deepseek-v4-pro"
    ```
 
 2. **环境变量** - 中等优先级
    ```bash
-   export LLM_MODEL=gpt-5.4-turbo
+   export LLM_MODEL=deepseek-v4-pro
    ```
 
 3. **配置文件** - 低优先级
    ```yaml
    llm:
-     model: "gpt-5.4-nano"
+     model: "deepseek-v4-pro"
    ```
 
 4. **默认值** - 最低优先级
    ```python
-   model: str = Field(default="gpt-5.4-nano")
+   model: str = Field(default="deepseek-v4-pro")
    ```
 
 ---
@@ -86,8 +105,8 @@ python -m skillos.cli init [OPTIONS]
 - `--api-key TEXT` - LLM API key（必须提供）
 
 **可选参数：**
-- `--api-url TEXT` - LLM API URL（默认：https://yunwu.ai）
-- `--model TEXT` - LLM 模型名称（默认：gpt-5.4-nano）
+- `--api-url TEXT` - LLM API URL（默认：https://api.deepseek.com）
+- `--model TEXT` - LLM 模型名称（默认：deepseek-v4-pro）
 - `--config TEXT` - 配置文件路径（默认：config.yaml）
 
 **示例：**
@@ -171,8 +190,8 @@ from skillos.config import LLMConfig
 
 # 为特定 Agent 设置配置
 new_config = LLMConfig(
-    api_url="https://yunwu.ai",
-    model="gpt-5.4-turbo",
+    api_url="https://api.deepseek.com",
+    model="deepseek-v4-pro",
     api_key="your_api_key_here",
     temperature=0.9,
     max_tokens=5000
@@ -205,8 +224,8 @@ print(f"Environment: {global_config.environment}")
 ```yaml
 # 全局 LLM 配置
 llm:
-  api_url: "https://yunwu.ai"
-  model: "gpt-5.4-nano"
+  api_url: "https://api.deepseek.com"
+  model: "deepseek-v4-pro"
   # api_key: 通过命令行参数 --api-key 提供
   temperature: 0.7
   max_tokens: 2000
@@ -286,11 +305,11 @@ python -m skillos.cli init --api-key "${{ secrets.LLM_API_KEY }}"
 ```yaml
 agents:
   trajectory_parser:
-    model: "gpt-5.4-nano"
+    model: "deepseek-v4-pro"
     temperature: 0.5
 
   skill_generator:
-    model: "gpt-5.4-turbo"
+    model: "deepseek-v4-pro"
     temperature: 0.8
 ```
 

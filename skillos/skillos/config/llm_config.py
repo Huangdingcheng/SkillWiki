@@ -28,11 +28,11 @@ class LLMConfig(BaseModel):
     """单个 LLM 端点配置"""
 
     api_url: str = Field(
-        default="https://yunwu.ai",
+        default="https://api.deepseek.com",
         description="LLM API 基础地址",
     )
     model: str = Field(
-        default="gpt-5.4-nano",
+        default="deepseek-v4-pro",
         description="模型名称",
     )
     api_key: str = Field(
@@ -51,7 +51,7 @@ class LLMConfig(BaseModel):
         description="单次请求最大 token 数",
     )
     timeout: int = Field(
-        default=30,
+        default=120,
         ge=1,
         le=600,
         description="请求超时时间（秒）",

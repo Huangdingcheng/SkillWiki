@@ -21,6 +21,93 @@ class StateSnapshot:
     label: str = ""   # "before_skill_x" / "after_skill_x"
 
 
+@dataclass
+class RuntimeMemory:
+    """Task-local execution memory for planning and repair evidence."""
+
+    task_id: str
+    goal: str = ""
+    selected_skills: List[str] = field(default_factory=list)
+    step_inputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    step_outputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    failure_events: List[Dict[str, Any]] = field(default_factory=list)
+    events: List[Dict[str, Any]] = field(default_factory=list)
+    verification_summary: Dict[str, Any] = field(default_factory=dict)
+    reflection_summary: Dict[str, Any] = field(default_factory=dict)
+
+    def remember_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        self.events.append({
+            "event_type": event_type,
+            "payload": copy.deepcopy(payload),
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    def remember_step_start(
+        self,
+        step_id: str,
+        skill_id: str,
+        skill_name: str,
+        input_data: Dict[str, Any],
+    ) -> None:
+        if skill_id and skill_id not in self.selected_skills:
+            self.selected_skills.append(skill_id)
+        self.step_inputs[step_id] = {
+            "skill_id": skill_id,
+            "skill_name": skill_name,
+            "input": copy.deepcopy(input_data),
+        }
+        self.remember_event("step_started", {"step_id": step_id, "skill_id": skill_id})
+
+    def remember_step_success(
+        self,
+        step_id: str,
+        skill_id: str,
+        output_data: Dict[str, Any],
+    ) -> None:
+        self.step_outputs[step_id] = {
+            "skill_id": skill_id,
+            "output": copy.deepcopy(output_data),
+        }
+        self.remember_event("step_completed", {"step_id": step_id, "skill_id": skill_id})
+
+    def remember_failure(
+        self,
+        step_id: str,
+        skill_id: str,
+        error: str,
+        failure_type: str = "",
+    ) -> None:
+        event = {
+            "step_id": step_id,
+            "skill_id": skill_id,
+            "error": error,
+            "failure_type": failure_type,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        self.failure_events.append(event)
+        self.remember_event("step_failed", event)
+
+    def to_summary(self) -> Dict[str, Any]:
+        summary = {
+            "task_id": self.task_id,
+            "goal": self.goal,
+            "selected_skills": list(self.selected_skills),
+            "step_count": len(self.step_inputs),
+            "failure_count": len(self.failure_events),
+            "failed_skill_ids": list({
+                event["skill_id"]
+                for event in self.failure_events
+                if event.get("skill_id")
+            }),
+            "events": len(self.events),
+        }
+        if self.verification_summary:
+            summary["verification"] = copy.deepcopy(self.verification_summary)
+        if self.reflection_summary:
+            summary["reflection"] = copy.deepcopy(self.reflection_summary)
+        return summary
+
+
 class StateTracker:
     """追踪 Agent 执行过程中的状态变化。
 
@@ -36,6 +123,7 @@ class StateTracker:
         self._current: Dict[str, Any] = copy.deepcopy(initial_state or {})
         self._snapshots: List[StateSnapshot] = []
         self._checkpoint_stack: List[Dict[str, Any]] = []
+        self._memory = RuntimeMemory(task_id=task_id)
 
         # 记录初始快照
         self._take_snapshot(label="initial")
@@ -47,6 +135,10 @@ class StateTracker:
     @property
     def snapshots(self) -> List[StateSnapshot]:
         return list(self._snapshots)
+
+    @property
+    def memory(self) -> RuntimeMemory:
+        return self._memory
 
     def update(self, changes: Dict[str, Any]) -> None:
         """更新当前状态（深度合并）。"""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from urllib.parse import urlparse
 from typing import Any, Dict, Generator, Iterator, List, Optional
 
 import httpx
@@ -106,7 +107,6 @@ class LLMClient:
     def __init__(self, config: LLMConfig) -> None:
         self._cfg = config
         self._base_url = config.api_url.rstrip("/")
-        self._chat_url = _resolve_chat_completions_url(self._base_url)
         self._headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
@@ -246,9 +246,10 @@ class LLMClient:
         raise last_exc or LLMError("所有重试均失败")
 
     def _do_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        url = self._chat_completions_url()
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
-                resp = client.post(self._chat_url, json=payload, headers=self._headers)
+                resp = client.post(url, json=payload, headers=self._headers)
         except httpx.TimeoutException as e:
             raise LLMTimeoutError(f"请求超时（{self._cfg.timeout}s）: {e}") from e
         except httpx.RequestError as e:
@@ -258,9 +259,10 @@ class LLMClient:
         return resp.json()
 
     def _stream_request(self, payload: Dict[str, Any]) -> Iterator[str]:
+        url = self._chat_completions_url()
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
-                with client.stream("POST", self._chat_url, json=payload, headers=self._headers) as resp:
+                with client.stream("POST", url, json=payload, headers=self._headers) as resp:
                     self._raise_for_status(resp)
                     for line in resp.iter_lines():
                         line = line.strip()
@@ -280,6 +282,15 @@ class LLMClient:
             raise LLMTimeoutError(f"流式请求超时: {e}") from e
         except httpx.RequestError as e:
             raise LLMError(f"流式请求网络失败: {e}") from e
+
+    def _chat_completions_url(self) -> str:
+        parsed = urlparse(self._base_url)
+        path = parsed.path.rstrip("/")
+        if path.endswith("/v1") or path.endswith("/beta"):
+            return f"{self._base_url}/chat/completions"
+        if parsed.netloc == "api.deepseek.com":
+            return f"{self._base_url}/chat/completions"
+        return f"{self._base_url}/v1/chat/completions"
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:
@@ -316,16 +327,3 @@ class LLMClient:
 def create_client(config: LLMConfig) -> LLMClient:
     """工厂函数：根据 LLMConfig 创建 LLMClient。"""
     return LLMClient(config)
-
-
-def _resolve_chat_completions_url(api_url: str) -> str:
-    """Return the concrete Chat Completions endpoint for common OpenAI-compatible bases."""
-    base = api_url.rstrip("/")
-    lowered = base.lower()
-    if lowered.endswith("/chat/completions"):
-        return base
-    if lowered.endswith("/v1") or lowered.endswith("/beta"):
-        return f"{base}/chat/completions"
-    if "api.deepseek.com" in lowered:
-        return f"{base}/chat/completions"
-    return f"{base}/v1/chat/completions"

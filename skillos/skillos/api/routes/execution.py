@@ -1,23 +1,26 @@
-"""Skill 执行路由。"""
+"""Skill execution routes."""
 
 from __future__ import annotations
 
-import json
-import re
+import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...layers.skill_runtime.verifier import evaluate_verifier_specs
-from ...models.skill_model import SkillType
 from ..deps import AppState, get_app_state
 from ..schemas import (
-    ExecutePlanRequest, ExecuteSkillRequest, ExecutionExperienceUnit,
-    ExecutionResult, ExecutionStepResult, ExecutionHistoryItem, RetrievedSkill,
+    ExecutePlanRequest,
+    ExecuteSkillRequest,
+    ExecutionHistoryItem,
+    ExecutionResult,
+    ExecutionStepResult,
+    RetrievedSkill,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -31,7 +34,7 @@ async def execute_skill(
 ) -> ExecutionResult:
     skill = await app.wiki.get(req.skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} does not exist")
 
     app.state_tracker.update(req.context)
     t0 = time.monotonic()
@@ -54,62 +57,51 @@ async def execute_skill(
         skill_id=skill.skill_id,
         skill_name=skill.name,
         status=record.status.value,
-        input_mapping=req.inputs,
         outputs=record.output_data or {},
         result=record.output_data or {},
         latency_ms=record.latency_ms or latency,
         error=record.error_message,
     )
-    verifier_summary = _verify_step_specs(
-        goal=f"execute {skill.name}",
-        skill=skill,
-        step=step,
-        final_state=app.state_tracker.current,
-        app=app,
-    )
-    status = "success" if step.status == "success" else "failed"
-    verifier_passed = None if verifier_summary is None else bool(verifier_summary["passed"])
-    execution_id = f"single:{uuid.uuid4()}"
-    experience_unit = _build_execution_experience_unit(
-        execution_id=execution_id,
-        goal=f"execute {skill.name}",
-        status=status,
-        steps=[step],
-        final_state=app.state_tracker.current,
-        retrieved_skills=[skill.skill_id],
-        verifier_passed=verifier_passed,
-        verifier_summary=verifier_summary,
-        total_latency_ms=latency,
-    )
-    _store_execution_history(
-        execution_id=experience_unit.source_execution_id,
-        goal=f"execute {skill.name}",
-        status=status,
-        steps=[step],
-        success_count=1 if status == "success" else 0,
-        total_latency_ms=latency,
-        retrieved_skill_count=1,
-        experience_unit=experience_unit,
-    )
+
+    history_item = {
+        "execution_id": str(uuid.uuid4()),
+        "goal": f"Execute {skill.name}",
+        "status": step.status,
+        "step_count": 1,
+        "success_count": 1 if step.status == "success" else 0,
+        "total_latency_ms": latency,
+        "retrieved_skill_count": 1,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    _execution_history.append(history_item)
+    if len(_execution_history) > 50:
+        _execution_history.pop(0)
+
+    history_repo = getattr(app, "execution_history_repo", None)
+    if history_repo:
+        try:
+            await history_repo.save_plan_history(history_item)
+        except Exception as exc:
+            logger.warning("Failed to persist single-skill execution history: %s", exc)
+
     return ExecutionResult(
-        plan_id=execution_id,
-        goal=f"执行 {skill.name}",
-        status=status,
+        plan_id="single",
+        goal=f"Execute {skill.name}",
+        status="success" if step.status == "success" else "failed",
         steps=[step],
         total_latency_ms=latency,
         final_state=app.state_tracker.current,
-        retrieved_skills=[RetrievedSkill(
-            skill_id=skill.skill_id,
-            name=skill.name,
-            description=skill.description,
-            skill_type=skill.skill_type.value,
-            score=1.0,
-            match_reason="direct skill execution",
-        )],
+        retrieved_skills=[
+            RetrievedSkill(
+                skill_id=skill.skill_id,
+                name=skill.name,
+                description=skill.description,
+                skill_type=skill.skill_type.value,
+                score=1.0,
+                match_reason="direct skill execution",
+            )
+        ],
         experience_recorded=True,
-        experience_unit=experience_unit,
-        verifier_passed=verifier_passed,
-        verifier_summary=verifier_summary,
     )
 
 
@@ -121,45 +113,40 @@ async def execute_plan(
     app.state_tracker.update(req.context)
     t0 = time.monotonic()
 
-    # 检索可用 Skill
-    from ...layers.skill_repository.indexing import SearchQuery
-    search_results = await app.search.search(SearchQuery(
-        text=req.goal,
-        max_results=req.max_skills,
-    ))
-    runtime_results = [
-        r for r in search_results
-        if _is_runtime_planning_skill(r.skill)
-    ]
-    if runtime_results:
-        search_results = runtime_results
-    available_skills = [r.skill for r in search_results]
-
-    retrieved = [
-        RetrievedSkill(
-            skill_id=r.skill.skill_id,
-            name=r.skill.name,
-            description=r.skill.description,
-            skill_type=r.skill.skill_type.value,
-            score=round(r.score, 3),
-            match_reason=_format_match_reason(r),
-        )
-        for r in search_results
-    ]
-
-    # 生成执行计划
-    plan = await app.planner.plan(
-        task_description=req.goal,
-        available_skills=available_skills,
-        current_state=app.state_tracker.current,
+    from ...layers.skill_runtime import (
+        OrchestrationStrategy,
+        execution_plan_from_skill_graph,
     )
 
-    # 构建 skill_map
+    retrieval = await _retrieve_runtime_skills(app, req.goal, req.context, req.max_skills)
+    available_skills = retrieval["skills"]
+    retrieved = retrieval["retrieved"]
+    skill_group = retrieval["skill_group"]
+
+    strategy = OrchestrationStrategy(req.orchestration_strategy)
+    graph = app.composer.compose(
+        available_skills,
+        task_description=req.goal,
+        skill_group=skill_group,
+        strategy=strategy,
+    )
+    plan = execution_plan_from_skill_graph(
+        graph,
+        task_description=req.goal,
+    )
+    if not plan.steps:
+        plan = await app.planner.plan(
+            task_description=req.goal,
+            available_skills=available_skills,
+            current_state=app.state_tracker.current,
+        )
+        plan.metadata.setdefault("orchestration_strategy", strategy.value)
+
     skill_ids = list({step.skill_id for step in plan.steps})
     skill_map_result = await app.wiki.get_many(skill_ids)
     skill_map: Dict[str, Any] = {k: v for k, v in skill_map_result.items() if v}
+    _populate_goal_input_mapping(plan, skill_map, req.goal, req.context)
 
-    # 执行计划
     final_state = await app.executor.execute_plan(
         plan=plan,
         skill_map=skill_map,
@@ -168,24 +155,25 @@ async def execute_plan(
     app.state_tracker.update(final_state)
 
     total_latency = (time.monotonic() - t0) * 1000
-    steps = []
+    steps: List[ExecutionStepResult] = []
     for step in plan.steps:
         skill = skill_map.get(step.skill_id)
         step_output = step.result or {}
         step_status = step.status.value if hasattr(step.status, "value") else str(step.status)
         step_latency = step.latency_ms or 0.0
-        steps.append(ExecutionStepResult(
-            step_id=step.step_id,
-            step_index=step.step_index,
-            skill_id=step.skill_id,
-            skill_name=skill.name if skill else step.skill_id,
-            status=step_status,
-            input_mapping=step.input_mapping,
-            outputs=step_output,
-            result=step_output,
-            latency_ms=step_latency,
-            error=step.error,
-        ))
+        steps.append(
+            ExecutionStepResult(
+                step_id=step.step_id,
+                step_index=step.step_index,
+                skill_id=step.skill_id,
+                skill_name=skill.name if skill else step.skill_id,
+                status=step_status,
+                outputs=step_output,
+                result=step_output,
+                latency_ms=step_latency,
+                error=step.error,
+            )
+        )
         if skill:
             await app.wiki.record_execution(
                 step.skill_id,
@@ -200,26 +188,7 @@ async def execute_plan(
         overall_status = "failed"
     else:
         overall_status = "partial"
-
-    verifier_summary = _verify_plan_steps(
-        goal=req.goal,
-        steps=steps,
-        skill_map=skill_map,
-        final_state=app.state_tracker.current,
-        app=app,
-    )
-    verifier_passed = None if verifier_summary is None else bool(verifier_summary["passed"])
-    experience_unit = _build_execution_experience_unit(
-        execution_id=plan.plan_id,
-        goal=req.goal,
-        status=overall_status,
-        steps=steps,
-        final_state=app.state_tracker.current,
-        retrieved_skills=[item.skill_id for item in retrieved],
-        verifier_passed=verifier_passed,
-        verifier_summary=verifier_summary,
-        total_latency_ms=total_latency,
-    )
+    feedback = _verify_and_reflect(app, plan, req.goal, app.state_tracker.current, steps, overall_status)
 
     result = ExecutionResult(
         plan_id=plan.plan_id,
@@ -230,68 +199,55 @@ async def execute_plan(
         final_state=app.state_tracker.current,
         retrieved_skills=retrieved,
         experience_recorded=True,
-        experience_unit=experience_unit,
-        verifier_passed=verifier_passed,
-        verifier_summary=verifier_summary,
+        orchestration_strategy=strategy.value,
+        parallel_groups=plan.metadata.get("parallel_groups", []),
+        composition_source=plan.metadata.get("composition_source", ""),
+        verification=feedback["verification"],
+        reflection=feedback["reflection"],
+        failure_type=feedback["failure_type"],
+        recovery_route=feedback["recovery_route"],
+        runtime_memory=_runtime_memory_summary(app),
+        execution_graph=_execution_graph(req.goal, retrieved, plan, steps),
     )
 
-    _store_execution_history(
-        execution_id=plan.plan_id,
-        goal=req.goal,
-        status=result.status,
-        steps=steps,
-        success_count=success_count,
-        total_latency_ms=total_latency,
-        retrieved_skill_count=len(retrieved),
-        experience_unit=experience_unit,
-    )
+    history_item = {
+        "execution_id": plan.plan_id,
+        "goal": req.goal,
+        "status": result.status,
+        "step_count": len(steps),
+        "success_count": success_count,
+        "total_latency_ms": total_latency,
+        "retrieved_skill_count": len(retrieved),
+        "orchestration_strategy": strategy.value,
+        "failure_type": result.failure_type,
+        "recovery_route": result.recovery_route,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    _execution_history.append(history_item)
+    if len(_execution_history) > 50:
+        _execution_history.pop(0)
+
+    history_repo = getattr(app, "execution_history_repo", None)
+    if history_repo:
+        try:
+            await history_repo.save_plan_history(history_item)
+        except Exception as exc:
+            logger.warning("Failed to persist execution history: %s", exc)
 
     return result
 
 
-def _is_runtime_planning_skill(skill: Any) -> bool:
-    """Keep live execution planning focused on executable user-task skills."""
-    skill_id = str(getattr(skill, "skill_id", "") or "")
-    tags = {str(tag).lower() for tag in (getattr(skill, "tags", []) or [])}
-    skill_type = getattr(skill, "skill_type", None)
-    if isinstance(skill_type, SkillType):
-        skill_type_value = skill_type.value
-    else:
-        skill_type_value = str(skill_type or "")
-
-    if skill_id.startswith("test_graph_"):
-        return False
-    if "test" in tags or "meta" in tags:
-        return False
-    if skill_type_value == SkillType.STRATEGIC.value:
-        return False
-
-    implementation = getattr(skill, "implementation", None)
-    if not implementation:
-        return False
-    return bool(
-        getattr(implementation, "code", None)
-        or getattr(implementation, "sub_skill_ids", None)
-        or getattr(implementation, "tool_calls", None)
-    )
-
-
 @router.get("/history", response_model=List[ExecutionHistoryItem])
-async def get_execution_history() -> List[ExecutionHistoryItem]:
+async def get_execution_history(
+    app: AppState = Depends(get_app_state),
+) -> List[ExecutionHistoryItem]:
+    history_repo = getattr(app, "execution_history_repo", None)
+    if history_repo:
+        try:
+            return await history_repo.list_history(limit=20)
+        except Exception as exc:
+            logger.warning("Failed to read PostgreSQL execution history: %s", exc)
     return list(reversed(_execution_history[-20:]))
-
-
-@router.get("/history/{execution_id}/experience", response_model=ExecutionExperienceUnit)
-async def get_execution_experience(execution_id: str) -> ExecutionExperienceUnit:
-    for item in reversed(_execution_history):
-        if item.get("execution_id") != execution_id:
-            continue
-        experience_unit = item.get("experience_unit")
-        if isinstance(experience_unit, ExecutionExperienceUnit):
-            return experience_unit
-        if isinstance(experience_unit, dict):
-            return ExecutionExperienceUnit.model_validate(experience_unit)
-    raise HTTPException(status_code=404, detail=f"Execution experience not found: {execution_id}")
 
 
 @router.get("/state", response_model=dict)
@@ -306,8 +262,9 @@ async def reset_state(
     app: AppState = Depends(get_app_state),
 ) -> dict:
     from ...layers.skill_runtime.state_tracker import StateTracker
+
     app.state_tracker = StateTracker(task_id="session")
-    return {"ok": True, "message": "状态已重置"}
+    return {"ok": True, "message": "state reset"}
 
 
 def _format_match_reason(search_result: Any) -> str:
@@ -318,246 +275,311 @@ def _format_match_reason(search_result: Any) -> str:
     return str(reason or "")
 
 
-def _verify_plan_steps(
+def _verify_and_reflect(
+    app: AppState,
+    plan: Any,
     goal: str,
+    final_state: Dict[str, Any],
     steps: List[ExecutionStepResult],
-    skill_map: Dict[str, Any],
-    final_state: Dict[str, Any],
-    app: AppState,
-) -> Optional[Dict[str, Any]]:
-    step_summaries = []
-    for step in steps:
-        skill = skill_map.get(step.skill_id)
-        if not skill:
-            continue
-        summary = _verify_step_specs(goal, skill, step, final_state, app)
-        if summary:
-            step_summaries.append(summary)
-
-    if not step_summaries:
-        return None
-
-    passed = all(bool(item["passed"]) for item in step_summaries)
-    return {
-        "mode": "deterministic",
-        "passed": passed,
-        "checked_skills": len(step_summaries),
-        "results": step_summaries,
-    }
-
-
-def _verify_step_specs(
-    goal: str,
-    skill: Any,
-    step: ExecutionStepResult,
-    final_state: Dict[str, Any],
-    app: AppState,
-) -> Optional[Dict[str, Any]]:
-    evaluation = getattr(skill, "evaluation", None)
-    verifier_specs = getattr(evaluation, "verifier_specs", None) or []
-    if not verifier_specs:
-        return None
-
-    payload = _step_verifier_document(step, final_state)
-    verifier = getattr(app, "verifier", None)
-    if verifier:
-        verification = verifier.verify(goal, payload, verifier_specs=verifier_specs)
-    else:
-        verification = evaluate_verifier_specs(verifier_specs, payload, goal=goal)
-
-    return {
-        "skill_id": skill.skill_id,
-        "skill_name": skill.name,
-        "step_id": step.step_id,
-        "passed": verification.passed,
-        "score": verification.score,
-        "issues": verification.issues,
-        "suggestions": verification.suggestions,
-        "details": verification.details,
-    }
-
-
-def _step_verifier_document(
-    step: ExecutionStepResult,
-    final_state: Dict[str, Any],
+    status: str,
 ) -> Dict[str, Any]:
-    output = dict(step.result or step.outputs or {})
-    output.setdefault("success", step.status == "success")
-    return {
-        "success": step.status == "success",
-        "output": output,
-        "final_state": final_state,
-        "step": {
-            "step_id": step.step_id,
-            "step_index": step.step_index,
-            "skill_id": step.skill_id,
-            "status": step.status,
-            "error": step.error,
-        },
-    }
-
-
-def _store_execution_history(
-    *,
-    execution_id: str,
-    goal: str,
-    status: str,
-    steps: List[ExecutionStepResult],
-    success_count: int,
-    total_latency_ms: float,
-    retrieved_skill_count: int,
-    experience_unit: ExecutionExperienceUnit,
-) -> None:
-    _execution_history.append({
-        "execution_id": execution_id,
-        "goal": goal,
-        "status": status,
-        "step_count": len(steps),
-        "success_count": success_count,
-        "total_latency_ms": total_latency_ms,
-        "retrieved_skill_count": retrieved_skill_count,
-        "created_at": datetime.utcnow(),
-        "experience_unit_id": experience_unit.unit_id,
-        "experience_source_type": experience_unit.source_type,
-        "experience_unit": experience_unit.model_dump(),
-    })
-    if len(_execution_history) > 50:
-        _execution_history.pop(0)
-
-
-def _build_execution_experience_unit(
-    *,
-    execution_id: str,
-    goal: str,
-    status: str,
-    steps: List[ExecutionStepResult],
-    final_state: Dict[str, Any],
-    retrieved_skills: List[str],
-    verifier_passed: Optional[bool],
-    verifier_summary: Optional[Dict[str, Any]],
-    total_latency_ms: float,
-) -> ExecutionExperienceUnit:
-    extracted_actions = [_step_action_text(step) for step in steps]
-    normalized_actions = [
-        {
-            "verb": "execute",
-            "object": step.skill_name or step.skill_id,
-            "skill_id": step.skill_id,
-            "status": step.status,
-            "input_mapping": step.input_mapping,
-            "outputs": step.result or step.outputs,
-            "error": step.error,
-        }
-        for step in steps
-    ]
-    proposed_name = _safe_skill_name_from_goal(goal)
-    summary = _execution_experience_summary(goal, status, steps, verifier_passed)
-    raw_payload = {
-        "execution_id": execution_id,
-        "goal": goal,
+    verification_summary: Optional[Dict[str, Any]] = None
+    reflection_summary: Optional[Dict[str, Any]] = None
+    failure_type = "none"
+    recovery_route = "none"
+    trace = {
+        "plan_id": plan.plan_id,
         "status": status,
         "steps": [
             {
                 "step_id": step.step_id,
-                "step_index": step.step_index,
                 "skill_id": step.skill_id,
                 "skill_name": step.skill_name,
                 "status": step.status,
-                "input_mapping": step.input_mapping,
-                "outputs": step.result or step.outputs,
                 "error": step.error,
             }
             for step in steps
         ],
-        "final_state": final_state,
-        "verifier_passed": verifier_passed,
-        "verifier_summary": verifier_summary,
     }
-    return ExecutionExperienceUnit(
-        unit_id=f"execution:{execution_id}",
-        source_type="agent_execution",
-        source_execution_id=execution_id,
-        raw_content=json.dumps(raw_payload, ensure_ascii=False),
-        extracted_actions=extracted_actions,
-        normalized_actions=normalized_actions,
-        summary=summary,
-        proposed_skill_name=proposed_name,
-        proposed_description=summary,
-        proposed_type="functional" if len(steps) > 1 else "atomic",
-        confidence=_execution_experience_confidence(status, verifier_passed, steps),
-        index_keywords=_execution_keywords(goal, retrieved_skills, steps),
-        index_embedding_hint=f"{goal} {' '.join(extracted_actions)}".strip(),
-        metadata={
-            "paper_method": "XSkill action-level experience stream",
-            "paper_backlog_task": "C-P1-2",
-            "source_execution_id": execution_id,
-            "retrieved_skill_ids": retrieved_skills,
-            "total_latency_ms": total_latency_ms,
-            "verifier_passed": verifier_passed,
-            "step_count": len(steps),
-        },
+
+    verifier = getattr(app, "verifier", None)
+    verification = None
+    if verifier:
+        try:
+            verification = verifier.verify(goal, final_state, _trace_summary(trace))
+            failure_type = str(getattr(verification, "failure_type", "none") or "none")
+            recovery_route = str(getattr(verification, "recovery_route", "none") or "none")
+            verification_summary = {
+                "passed": bool(getattr(verification, "passed", False)),
+                "score": float(getattr(verification, "score", 0.0) or 0.0),
+                "issues": list(getattr(verification, "issues", []) or []),
+                "suggestions": list(getattr(verification, "suggestions", []) or []),
+                "failure_type": failure_type,
+                "recovery_route": recovery_route,
+            }
+        except Exception as exc:
+            logger.warning("Runtime verifier failed: %s", exc)
+
+    should_reflect = status != "success" or (
+        verification is not None and not bool(getattr(verification, "passed", False))
+    )
+    reflector = getattr(app, "reflector", None)
+    if should_reflect and reflector:
+        try:
+            feedback = reflector.reflect(plan.plan_id, goal, trace, verification)
+            failure_type = str(getattr(feedback, "failure_type", failure_type) or failure_type)
+            recovery_route = str(getattr(feedback, "recovery_route", recovery_route) or recovery_route)
+            reflection_summary = {
+                "root_cause": str(getattr(feedback, "root_cause", "")),
+                "failure_type": failure_type,
+                "recovery_route": recovery_route,
+                "failed_skill_ids": list(getattr(feedback, "failed_skill_ids", []) or []),
+                "improvement_suggestions": list(getattr(feedback, "improvement_suggestions", []) or []),
+                "skill_update_proposals": list(getattr(feedback, "skill_update_proposals", []) or []),
+            }
+        except Exception as exc:
+            logger.warning("Runtime reflection failed: %s", exc)
+
+    memory = getattr(getattr(app, "executor", None), "last_runtime_memory", None)
+    if memory:
+        if verification_summary is not None:
+            memory.verification_summary = verification_summary
+        if reflection_summary is not None:
+            memory.reflection_summary = reflection_summary
+
+    return {
+        "verification": verification_summary,
+        "reflection": reflection_summary,
+        "failure_type": failure_type,
+        "recovery_route": recovery_route,
+    }
+
+
+def _trace_summary(trace: Dict[str, Any]) -> str:
+    return "; ".join(
+        f"{step['skill_name']}={step['status']}"
+        + (f" error={step['error']}" if step.get("error") else "")
+        for step in trace.get("steps", [])
     )
 
 
-def _step_action_text(step: ExecutionStepResult) -> str:
-    return f"{step.status or 'unknown'}: {step.skill_name or step.skill_id} with {step.input_mapping or {}}"
+def _runtime_memory_summary(app: AppState) -> Optional[Dict[str, Any]]:
+    memory = getattr(getattr(app, "executor", None), "last_runtime_memory", None)
+    if not memory:
+        return None
+    try:
+        return memory.to_summary()
+    except Exception as exc:
+        logger.warning("Failed to summarize runtime memory: %s", exc)
+        return None
 
 
-def _execution_experience_summary(
+def _execution_graph(
     goal: str,
-    status: str,
+    retrieved: List[RetrievedSkill],
+    plan: Any,
     steps: List[ExecutionStepResult],
-    verifier_passed: Optional[bool],
-) -> str:
-    skill_names = [step.skill_name or step.skill_id for step in steps]
-    skill_phrase = ", ".join(skill_names) if skill_names else "no selected skills"
-    verifier_phrase = (
-        "no verifier evidence"
-        if verifier_passed is None
-        else f"verifier {'passed' if verifier_passed else 'failed'}"
+) -> Dict[str, Any]:
+    """Build a frontend-friendly retrieval/composition/execution graph."""
+
+    nodes: List[Dict[str, Any]] = [
+        {
+            "id": "goal",
+            "label": goal,
+            "kind": "goal",
+            "status": "root",
+            "level": 0,
+        }
+    ]
+    edges: List[Dict[str, Any]] = []
+
+    skill_node_ids = set()
+    for index, skill in enumerate(retrieved):
+        node_id = f"skill:{skill.skill_id}"
+        skill_node_ids.add(node_id)
+        nodes.append({
+            "id": node_id,
+            "label": skill.name,
+            "kind": "retrieved_skill",
+            "skill_id": skill.skill_id,
+            "skill_type": skill.skill_type,
+            "score": skill.score,
+            "match_reason": skill.match_reason,
+            "level": 1,
+            "order": index,
+        })
+        edges.append({
+            "id": f"goal->{node_id}",
+            "source": "goal",
+            "target": node_id,
+            "kind": "retrieved",
+        })
+
+    step_result_by_id = {step.step_id: step for step in steps}
+    step_node_ids: Dict[str, str] = {}
+    for index, step in enumerate(getattr(plan, "steps", [])):
+        result = step_result_by_id.get(step.step_id)
+        node_id = f"step:{step.step_id}"
+        step_node_ids[step.step_id] = node_id
+        nodes.append({
+            "id": node_id,
+            "label": getattr(step, "skill_name", "") or getattr(step, "skill_id", ""),
+            "kind": "execution_step",
+            "step_id": step.step_id,
+            "skill_id": step.skill_id,
+            "status": result.status if result else str(getattr(step, "status", "")),
+            "latency_ms": result.latency_ms if result else None,
+            "error": result.error if result else getattr(step, "error", None),
+            "level": 2 + len(getattr(step, "depends_on", []) or []),
+            "order": index,
+        })
+
+    for step in getattr(plan, "steps", []):
+        target = step_node_ids.get(step.step_id)
+        if not target:
+            continue
+        dependencies = list(getattr(step, "depends_on", []) or [])
+        if dependencies:
+            for dep_id in dependencies:
+                source = step_node_ids.get(dep_id)
+                if source:
+                    edges.append({
+                        "id": f"{source}->{target}",
+                        "source": source,
+                        "target": target,
+                        "kind": "depends_on",
+                    })
+        else:
+            skill_source = f"skill:{step.skill_id}"
+            edges.append({
+                "id": f"{skill_source if skill_source in skill_node_ids else 'goal'}->{target}",
+                "source": skill_source if skill_source in skill_node_ids else "goal",
+                "target": target,
+                "kind": "planned_as",
+            })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "parallel_groups": getattr(plan, "metadata", {}).get("parallel_groups", []),
+        "composition_source": getattr(plan, "metadata", {}).get("composition_source", ""),
+        "root_id": "goal",
+    }
+
+
+async def _retrieve_runtime_skills(
+    app: AppState,
+    goal: str,
+    context: Dict[str, Any],
+    max_skills: int,
+) -> Dict[str, Any]:
+    """Retrieve executable skills through SkillRetriever, with search fallback."""
+
+    retriever = getattr(app, "retriever", None)
+    if retriever:
+        try:
+            retrieval = await retriever.retrieve(goal, current_state=context)
+            skills = list(retrieval.skills[:max_skills])
+            return {
+                "skills": skills,
+                "skill_group": retrieval.skill_group,
+                "retrieved": [
+                    RetrievedSkill(
+                        skill_id=skill.skill_id,
+                        name=skill.name,
+                        description=skill.description,
+                        skill_type=skill.skill_type.value,
+                        score=round(float(retrieval.confidence or 0.0), 3),
+                        match_reason=retrieval.rationale or "selected by runtime retriever",
+                    )
+                    for skill in skills
+                ],
+            }
+        except Exception as exc:
+            logger.warning("Runtime retriever failed; falling back to search: %s", exc)
+
+    from ...layers.skill_repository.indexing import SearchQuery
+
+    search_results = await app.search.search(
+        SearchQuery(
+            text=goal,
+            max_results=max(max_skills, 50),
+        )
     )
-    return f"Execution '{goal}' finished with status {status} using {skill_phrase}; {verifier_phrase}."
+    runtime_results = _runtime_execution_results(search_results)[:max_skills]
+    return {
+        "skills": [r.skill for r in runtime_results],
+        "skill_group": None,
+        "retrieved": [
+            RetrievedSkill(
+                skill_id=r.skill.skill_id,
+                name=r.skill.name,
+                description=r.skill.description,
+                skill_type=r.skill.skill_type.value,
+                score=round(r.score, 3),
+                match_reason=_format_match_reason(r),
+            )
+            for r in runtime_results
+        ],
+    }
 
 
-def _execution_experience_confidence(
-    status: str,
-    verifier_passed: Optional[bool],
-    steps: List[ExecutionStepResult],
-) -> float:
-    if verifier_passed is True:
-        return 0.85
-    if verifier_passed is False:
-        return 0.35
-    if status == "success" and steps:
-        return 0.7
-    if status == "partial":
-        return 0.45
-    return 0.25
+def _runtime_execution_results(search_results: List[Any]) -> List[Any]:
+    """Keep user-task execution candidates out of maintenance/meta skills."""
+
+    filtered: List[Any] = []
+    for result in search_results:
+        skill = result.skill
+        skill_type = getattr(getattr(skill, "skill_type", None), "value", "")
+        tags = {str(tag).lower() for tag in getattr(skill, "tags", [])}
+        name = str(getattr(skill, "name", "")).lower()
+        if skill_type == "strategic":
+            continue
+        if tags & {"meta", "maintenance", "graph", "test"}:
+            continue
+        if name.startswith("test_graph_"):
+            continue
+        filtered.append(result)
+
+    return filtered
 
 
-def _execution_keywords(
+def _populate_goal_input_mapping(
+    plan: Any,
+    skill_map: Dict[str, Any],
     goal: str,
-    retrieved_skills: List[str],
-    steps: List[ExecutionStepResult],
-) -> List[str]:
-    values = list(retrieved_skills)
-    values.extend(step.skill_name or step.skill_id for step in steps)
-    values.extend(re.findall(r"[a-zA-Z][a-zA-Z0-9_]{2,}", goal.lower()))
-    keywords: List[str] = []
-    seen = set()
-    for value in values:
-        token = str(value).strip().lower()
-        if token and token not in seen:
-            seen.add(token)
-            keywords.append(token)
-    return keywords[:12]
+    context: Dict[str, Any],
+) -> None:
+    """Fill simple missing step inputs from request context or task goal."""
 
-
-def _safe_skill_name_from_goal(goal: str) -> str:
-    words = re.findall(r"[a-zA-Z0-9]+", goal.lower())
-    if not words:
-        return "skill_from_execution"
-    return "skill_from_" + "_".join(words[:6])
+    goal_like_fields = {
+        "description",
+        "goal",
+        "task",
+        "task_description",
+        "query",
+        "text",
+        "prompt",
+        "instruction",
+    }
+    for step in plan.steps:
+        skill = skill_map.get(step.skill_id)
+        if not skill or not getattr(skill, "interface", None):
+            continue
+        schema = getattr(skill.interface, "input_schema", {}) or {}
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if not isinstance(properties, dict):
+            continue
+        required = schema.get("required", []) if isinstance(schema, dict) else []
+        field_names = list(dict.fromkeys(list(required or []) + list(properties)))
+        for field_name in field_names:
+            field = str(field_name)
+            if field in step.input_mapping:
+                continue
+            if field in context:
+                step.input_mapping[field] = context[field]
+            elif field.lower() in goal_like_fields:
+                step.input_mapping[field] = goal
 
 
 def _execution_status(steps: List[ExecutionStepResult]) -> str:

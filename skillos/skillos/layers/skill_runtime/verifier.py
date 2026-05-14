@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ...utils.llm_client import LLMClient, Message
@@ -21,16 +21,8 @@ class VerificationResult:
     issues: List[str] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)
     details: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class VerifierSpecResult:
-    spec: Dict[str, Any]
-    passed: bool
-    path: str = ""
-    actual: Any = None
-    expected: Any = None
-    issue: str = ""
+    failure_type: str = ""
+    recovery_route: str = ""
 
 
 _VERIFY_PROMPT = """
@@ -51,6 +43,11 @@ Rules:
 - score must be a number from 0 to 1.
 - issues and suggestions must be arrays of short strings.
 - Mention failed, skipped, timeout, missing skill, and error evidence when present.
+- failure_type should be one of: none, missing_skill, timeout, runtime_error,
+  dependency_failed, postcondition_failed, bad_output, unknown.
+- recovery_route should be one of: none, retrieve_alternative_skill,
+  retry_with_timeout_adjustment, repair_skill, replan_dependencies,
+  add_postcondition_check, inspect_output, review.
 
 Return this JSON shape:
 {{
@@ -58,6 +55,8 @@ Return this JSON shape:
   "score": 0.85,
   "issues": ["missing expected field"],
   "suggestions": ["retry with a more specific skill"],
+  "failure_type": "none",
+  "recovery_route": "none",
   "reasoning": "brief verification reasoning"
 }}
 """
@@ -74,12 +73,8 @@ class VerifierAgent:
         goal: str,
         final_output: Dict[str, Any],
         trace_summary: Optional[str] = None,
-        verifier_specs: Optional[List[Dict[str, Any]]] = None,
     ) -> VerificationResult:
         """Verify an execution result."""
-
-        if verifier_specs:
-            return evaluate_verifier_specs(verifier_specs, final_output, goal=goal)
 
         prompt = _VERIFY_PROMPT.format(
             goal=goal,
@@ -123,209 +118,11 @@ class VerifierAgent:
         return None
 
 
-def evaluate_verifier_specs(
-    verifier_specs: Any,
-    final_output: Dict[str, Any],
-    goal: str = "",
-) -> VerificationResult:
-    """Evaluate deterministic verifier specs against a runtime output document."""
-
-    specs = _normalize_specs(verifier_specs)
-    if not specs:
-        return VerificationResult(
-            passed=False,
-            score=0.0,
-            goal=goal,
-            issues=["No verifier specs provided."],
-            suggestions=["Attach at least one deterministic verifier spec."],
-            details={"verifier": "deterministic", "results": []},
-        )
-
-    document = _verifier_document(final_output)
-    results = [_evaluate_spec(spec, document) for spec in specs]
-    passed_count = sum(1 for result in results if result.passed)
-    passed = passed_count == len(results)
-    issues = [result.issue for result in results if result.issue]
-    suggestions = [] if passed else ["Inspect deterministic verifier failures before marking the Skill valid."]
-
-    return VerificationResult(
-        passed=passed,
-        score=passed_count / len(results),
-        goal=goal,
-        issues=issues,
-        suggestions=suggestions,
-        details={
-            "verifier": "deterministic",
-            "results": [asdict(result) for result in results],
-        },
-    )
-
-
-def _normalize_specs(value: Any) -> List[Dict[str, Any]]:
-    if isinstance(value, dict):
-        return [dict(value)]
-    if not isinstance(value, list):
-        return []
-    return [dict(item) for item in value if isinstance(item, dict)]
-
-
-def _verifier_document(final_output: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(final_output, dict):
-        return {"output": final_output, "final_state": final_output}
-    if "output" in final_output:
-        return final_output
-    document = dict(final_output)
-    document["output"] = final_output
-    document.setdefault("final_state", final_output)
-    return document
-
-
-def _evaluate_spec(spec: Dict[str, Any], document: Dict[str, Any]) -> VerifierSpecResult:
-    spec_type = str(spec.get("type", "")).strip()
-    path = str(spec.get("path", "")).strip()
-    expected = spec.get("value", spec.get("expected"))
-
-    if not spec_type:
-        return VerifierSpecResult(spec=spec, passed=False, issue="Verifier spec type is required.")
-
-    if spec_type == "boolean_success":
-        if path:
-            actual = _resolve_path(document, path)
-            if actual is _MISSING:
-                return VerifierSpecResult(
-                    spec=spec,
-                    passed=False,
-                    path=path,
-                    issue=f"Path not found: {path}",
-                )
-            return VerifierSpecResult(
-                spec=spec,
-                passed=actual is True,
-                path=path,
-                actual=actual,
-                expected=True,
-                issue="" if actual is True else f"Expected {path} to be true.",
-            )
-        passed = bool(document) and not _has_false_success(document)
-        return VerifierSpecResult(
-            spec=spec,
-            passed=passed,
-            expected=True,
-            issue="" if passed else "Output contains failure evidence.",
-        )
-
-    if not path:
-        return VerifierSpecResult(
-            spec=spec,
-            passed=False,
-            issue=f"{spec_type} verifier requires a path.",
-        )
-
-    actual = _resolve_path(document, path)
-    if actual is _MISSING:
-        return VerifierSpecResult(
-            spec=spec,
-            passed=False,
-            path=path,
-            expected=expected,
-            issue=f"Path not found: {path}",
-        )
-
-    if spec_type == "json_exists":
-        return VerifierSpecResult(spec=spec, passed=True, path=path, actual=actual)
-
-    if spec_type == "json_equals":
-        passed = actual == expected
-        return VerifierSpecResult(
-            spec=spec,
-            passed=passed,
-            path=path,
-            actual=actual,
-            expected=expected,
-            issue="" if passed else f"Expected {path} == {expected!r}, got {actual!r}.",
-        )
-
-    if spec_type == "contains":
-        passed = _contains_value(actual, expected)
-        return VerifierSpecResult(
-            spec=spec,
-            passed=passed,
-            path=path,
-            actual=actual,
-            expected=expected,
-            issue="" if passed else f"Expected {path} to contain {expected!r}.",
-        )
-
-    return VerifierSpecResult(
-        spec=spec,
-        passed=False,
-        path=path,
-        expected=expected,
-        issue=f"Unsupported verifier type: {spec_type}",
-    )
-
-
-_MISSING = object()
-
-
-def _resolve_path(document: Any, path: str) -> Any:
-    current = document
-    normalized = path.strip()
-    if normalized in {"", "$"}:
-        return current
-    if normalized.startswith("$."):
-        normalized = normalized[2:]
-    elif normalized.startswith("."):
-        normalized = normalized[1:]
-
-    for raw_token in normalized.split("."):
-        token = raw_token.strip()
-        if not token:
-            return _MISSING
-        current = _resolve_token(current, token)
-        if current is _MISSING:
-            return _MISSING
-    return current
-
-
-def _resolve_token(current: Any, token: str) -> Any:
-    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*)(?:\[(\d+)\])?", token)
-    if match:
-        key = match.group(1)
-        index = match.group(2)
-        if isinstance(current, dict) and key in current:
-            current = current[key]
-        else:
-            return _MISSING
-        if index is not None:
-            if isinstance(current, list) and int(index) < len(current):
-                return current[int(index)]
-            return _MISSING
-        return current
-
-    if isinstance(current, list) and token.isdigit():
-        index = int(token)
-        return current[index] if index < len(current) else _MISSING
-    if isinstance(current, dict) and token in current:
-        return current[token]
-    return _MISSING
-
-
-def _contains_value(actual: Any, expected: Any) -> bool:
-    if isinstance(actual, str):
-        return str(expected) in actual
-    if isinstance(actual, list):
-        return expected in actual
-    if isinstance(actual, dict):
-        return any(key == expected for key in actual) or any(
-            value == expected for value in actual.values()
-        )
-    return str(expected) in str(actual)
-
-
 def _normalize_verification(data: Dict[str, Any], goal: str) -> VerificationResult:
     score = _clamp_float(data.get("score", 0.0))
     passed = bool(data.get("passed", score >= 0.6))
+    failure_type = _normalize_failure_type(data.get("failure_type", "none" if passed else "unknown"))
+    recovery_route = _normalize_recovery_route(data.get("recovery_route", "none" if passed else "review"))
     issues = _string_list(data.get("issues", []))
     suggestions = _string_list(data.get("suggestions", []))
     return VerificationResult(
@@ -334,6 +131,8 @@ def _normalize_verification(data: Dict[str, Any], goal: str) -> VerificationResu
         goal=goal,
         issues=issues,
         suggestions=suggestions,
+        failure_type="none" if passed else failure_type,
+        recovery_route="none" if passed else recovery_route,
         details={"reasoning": str(data.get("reasoning", ""))},
     )
 
@@ -362,6 +161,8 @@ def _fallback_verification(
 
     passed = bool(final_output) and not issues
     score = 0.65 if passed else 0.2
+    failure_type = "none" if passed else _classify_failure(final_output, trace_summary)
+    recovery_route = "none" if passed else _route_for_failure(failure_type)
     if not passed:
         suggestions.append("Inspect failed runtime steps and repair the related skill if needed.")
 
@@ -371,6 +172,8 @@ def _fallback_verification(
         goal=goal,
         issues=issues,
         suggestions=suggestions,
+        failure_type=failure_type,
+        recovery_route=recovery_route,
         details={"reasoning": "Rule-based fallback verification."},
     )
 
@@ -380,15 +183,6 @@ def _has_false_success(value: Any) -> bool:
         for key, item in value.items():
             key_lower = str(key).lower()
             if key_lower in {"success", "ok"} and item is False:
-                return True
-            if key_lower == "status" and str(item).lower() in {
-                "cancelled",
-                "error",
-                "failed",
-                "failure",
-                "skipped",
-                "timeout",
-            }:
                 return True
             if key_lower in {"error", "errors", "exception"} and item:
                 return True
@@ -405,6 +199,66 @@ def _clamp_float(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return max(0.0, min(1.0, number))
+
+
+def _classify_failure(final_output: Dict[str, Any], trace_summary: str) -> str:
+    combined = f"{json.dumps(final_output, ensure_ascii=False)}\n{trace_summary}".lower()
+    if "skill not found" in combined or "missing skill" in combined:
+        return "missing_skill"
+    if "timeout" in combined or "timed out" in combined:
+        return "timeout"
+    if "skipped" in combined or "dependency failed" in combined:
+        return "dependency_failed"
+    if "exception" in combined or "runtimeerror" in combined or "error" in combined:
+        return "runtime_error"
+    if final_output and _has_false_success(final_output):
+        return "bad_output"
+    if final_output:
+        return "postcondition_failed"
+    return "bad_output"
+
+
+def _route_for_failure(failure_type: str) -> str:
+    routes = {
+        "missing_skill": "retrieve_alternative_skill",
+        "timeout": "retry_with_timeout_adjustment",
+        "runtime_error": "repair_skill",
+        "dependency_failed": "replan_dependencies",
+        "postcondition_failed": "add_postcondition_check",
+        "bad_output": "inspect_output",
+        "unknown": "review",
+    }
+    return routes.get(failure_type, "review")
+
+
+def _normalize_failure_type(value: Any) -> str:
+    allowed = {
+        "none",
+        "missing_skill",
+        "timeout",
+        "runtime_error",
+        "dependency_failed",
+        "postcondition_failed",
+        "bad_output",
+        "unknown",
+    }
+    failure_type = str(value or "unknown")
+    return failure_type if failure_type in allowed else "unknown"
+
+
+def _normalize_recovery_route(value: Any) -> str:
+    allowed = {
+        "none",
+        "retrieve_alternative_skill",
+        "retry_with_timeout_adjustment",
+        "repair_skill",
+        "replan_dependencies",
+        "add_postcondition_check",
+        "inspect_output",
+        "review",
+    }
+    route = str(value or "review")
+    return route if route in allowed else "review"
 
 
 def _string_list(value: Any) -> List[str]:

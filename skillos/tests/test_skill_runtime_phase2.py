@@ -9,6 +9,7 @@ from skillos.layers.skill_repository.indexing import SearchResult
 from skillos.layers.skill_runtime.planner import SkillPlanner, _PLAN_PROMPT
 from skillos.layers.skill_runtime.retriever import (
     RetrievalStrategy,
+    SkillGroup,
     SkillRetriever,
     _RETRIEVAL_PROMPT,
 )
@@ -22,24 +23,6 @@ def make_skill(name: str, description: str | None = None) -> Skill:
         state=SkillState.RELEASED,
         interface=SkillInterface(
             input_schema={"type": "object", "properties": {}},
-            output_schema={"type": "object", "properties": {}},
-        ),
-        implementation=SkillImplementation(code="output['ok'] = True"),
-    )
-
-
-def make_skill_with_required_inputs(name: str, required: list[str]) -> Skill:
-    return Skill(
-        skill_id=name,
-        name=name,
-        description=f"{name} test skill",
-        state=SkillState.RELEASED,
-        interface=SkillInterface(
-            input_schema={
-                "type": "object",
-                "properties": {item: {"type": "string"} for item in required},
-                "required": required,
-            },
             output_schema={"type": "object", "properties": {}},
         ),
         implementation=SkillImplementation(code="output['ok'] = True"),
@@ -111,50 +94,6 @@ async def test_planner_normalizes_llm_steps_and_drops_invalid_skill_ids():
 
 
 @pytest.mark.asyncio
-async def test_planner_repairs_missing_required_inputs_from_task_state_and_previous_steps():
-    click = make_skill_with_required_inputs("click_element", ["selector"])
-    type_text = make_skill_with_required_inputs("type_text", ["selector", "text"])
-    payload = {
-        "steps": [
-            {
-                "step_index": 0,
-                "skill_id": click.skill_id,
-                "skill_name": click.name,
-                "description": "Click search.",
-                "input_mapping": {"selector": "#search"},
-                "depends_on": [],
-            },
-            {
-                "step_index": 1,
-                "skill_id": type_text.skill_id,
-                "skill_name": type_text.name,
-                "description": "Type query.",
-                "input_mapping": {"text": "SkillOS"},
-                "depends_on": ["0"],
-            },
-        ],
-        "plan_rationale": "Click then type.",
-    }
-    planner = SkillPlanner(FakeLLM(json.dumps(payload)))
-
-    plan = await planner.plan(
-        "click search and type",
-        [click, type_text],
-        current_state={"input": {"selector": "#search", "text": "SkillOS"}},
-    )
-
-    assert plan.steps[1].input_mapping == {"text": "SkillOS", "selector": "#search"}
-    assert plan.metadata["input_mapping_repairs"] == [
-        {
-            "step_index": 1,
-            "skill_id": "type_text",
-            "input": "selector",
-            "source": "planner_input_repair",
-        }
-    ]
-
-
-@pytest.mark.asyncio
 async def test_planner_no_available_skills_returns_empty_plan():
     planner = SkillPlanner(FakeLLM("{}"))
 
@@ -198,6 +137,8 @@ async def test_retriever_normalizes_strategy_confidence_and_execution_order():
     assert retrieval.execution_order == [second.skill_id]
     assert retrieval.confidence == 1.0
     assert retrieval.parameter_mapping == {}
+    assert retrieval.skill_group is not None
+    assert retrieval.skill_group.start_skill_ids == [second.skill_id]
 
 
 @pytest.mark.asyncio
@@ -220,6 +161,8 @@ async def test_retriever_falls_back_when_selected_ids_are_missing():
     assert retrieval.execution_order == [best.skill_id]
     assert retrieval.confidence == 0.76
     assert "highest-scoring" in retrieval.rationale
+    assert retrieval.skill_group is not None
+    assert retrieval.skill_group.anchor_skill_id == best.skill_id
 
 
 @pytest.mark.asyncio
@@ -243,6 +186,48 @@ async def test_retriever_no_search_results_requests_generation():
     assert retrieval.strategy == RetrievalStrategy.GENERATE
     assert retrieval.needs_generation is True
     assert retrieval.generation_hint == "new capability"
+    assert retrieval.skill_group is None
+
+
+@pytest.mark.asyncio
+async def test_retriever_normalizes_skill_group_and_filters_avoid_ids():
+    prepare = make_skill("prepare")
+    run = make_skill("run")
+    check = make_skill("check")
+    avoid = make_skill("avoid")
+    llm_payload = {
+        "strategy": "compose",
+        "selected_skill_ids": [prepare.skill_id, run.skill_id, check.skill_id, avoid.skill_id],
+        "execution_order": [prepare.skill_id, run.skill_id, check.skill_id, avoid.skill_id],
+        "confidence": 0.8,
+        "skill_group": {
+            "anchor_skill_id": run.skill_id,
+            "start_skill_ids": [run.skill_id, "missing"],
+            "support_skill_ids": [prepare.skill_id],
+            "check_skill_ids": [check.skill_id],
+            "avoid_skill_ids": [avoid.skill_id, "missing"],
+            "rationale": "structured group",
+        },
+    }
+    retriever = SkillRetriever(
+        FakeLLM(json.dumps(llm_payload)),
+        FakeSearch([result(prepare), result(run), result(check), result(avoid)]),
+    )
+
+    retrieval = await retriever.retrieve("prepare run check")
+
+    assert isinstance(retrieval.skill_group, SkillGroup)
+    assert retrieval.skill_group.anchor_skill_id == run.skill_id
+    assert retrieval.skill_group.support_skill_ids == [prepare.skill_id]
+    assert retrieval.skill_group.start_skill_ids == [run.skill_id]
+    assert retrieval.skill_group.check_skill_ids == [check.skill_id]
+    assert retrieval.skill_group.avoid_skill_ids == [avoid.skill_id]
+    assert retrieval.execution_order == [prepare.skill_id, run.skill_id, check.skill_id]
+    assert [skill.skill_id for skill in retrieval.skills] == [
+        prepare.skill_id,
+        run.skill_id,
+        check.skill_id,
+    ]
 
 
 @pytest.mark.asyncio

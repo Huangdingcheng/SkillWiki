@@ -273,7 +273,7 @@ skillos/skillos/layers/skill_runtime/
 1. **Planner 质量提升**：当前 LLM prompt 较简单，可增加 few-shot 示例，提升计划质量
 2. **并行执行优化**：当前并行执行无超时协调，可增加全局超时和部分失败处理策略
 3. **Reflection → 自动修复**：当前 Reflection 只生成建议，可接入 Maintainer Agent 自动触发修复
-4. **执行历史持久化**：当前 `_execution_history` 是内存列表，重启丢失，可接入存储层
+4. **执行历史持久化**：接入 PostgreSQL 存储层 , 基本实现日志永久化
 5. **WebSocket 实时推送**：executor 已有 `_emit()` 机制，可完善前端 WebSocket 消费逻辑
 6. **Verifier 增强**：当前 fallback 过于宽松，可增加基于 postconditions 的规则验证
 
@@ -376,145 +376,245 @@ git diff --check
 ---
 
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
-## Phase 5: Paper-Driven Benchmark And Deterministic Verifier
-
-This phase lands the C-side P0 evidence requested by
-`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
-It keeps the runtime execution contract stable and adds repeatable evaluation artifacts.
-
-- `VerifierAgent.verify()` can now consume `verifier_specs` directly. When specs are present, it uses deterministic rules before any LLM call.
-- `evaluate_verifier_specs()` supports `json_equals`, `json_exists`, `contains`, and `boolean_success` with a small dotted-path resolver such as `output.success` and `output.steps[0]`.
-- Deterministic verifier output is represented as a normal `VerificationResult` with `details.verifier = "deterministic"` and per-spec result details.
-- `benchmarks/skillos_demo_tasks.json` defines the SkillsBench-style 12-task fixture across web, API, document, script, runtime, governance, and graph tasks.
-- `benchmarks/run_demo_benchmark.py` runs `no_skill`, `raw_prompt`, and `with_skill` modes offline, then writes a JSON result payload with `status`, `success`, `latency_ms`, `steps`, `skills_used`, `verifier_passed`, and `failure_reason`.
-- `benchmarks/summarize_results.py` produces `latest_summary.json` and `latest_summary.md` for the E evaluation page to consume later.
-- C remains producer-only for repair evidence: benchmark failures and verifier issues are reported, but no D maintainer action or B Git change is triggered automatically.
-
-Verification commands:
-
-```powershell
-python -m compileall -q skillos\layers\skill_runtime benchmarks
-python -m pytest tests\test_skill_runtime_phase4.py -q --no-cov
-python benchmarks\run_demo_benchmark.py
-git diff --check
-```
 
 ---
 
-## Phase 6: Real LLM Planner Evaluation
+## Version 2026-05-12: Paper-Guided Member C Runtime Update
 
-This phase implements the C-P1-1 planner evaluation slice without changing the
-existing execution API contract.
+This version applies four paper-guided optimizations while keeping the existing Member C REST contract compatible with A/B/D/E.
 
-- `SkillPlanner.plan()` still defaults to the previous behavior, but now accepts
-  strict evaluation controls: `force_fallback`, `force_llm`, `llm_extra`,
-  `fallback_on_llm_error`, and `fallback_on_invalid_response`.
-- Strict LLM evaluation can propagate `LLMAuthError`, `LLMRateLimitError`,
-  `LLMTimeoutError`, and `LLMServerError` instead of silently folding them into
-  fallback. This keeps API failures out of functional planner failure rates.
-- Successful LLM plans now record `metadata.source = "llm"` plus model, usage,
-  and finish reason metadata when the LLM client provides it.
-- `benchmarks/run_llm_planner_eval.py` reuses `skillos_demo_tasks.json` and
-  compares `fallback` vs `llm` planner selection over the same task fixture.
-- The runner supports fixed `--api-url`, `--api-key`, `--model`,
-  `--temperature`, `--seed`, `--timeout`, `--retry-count`, `--max-tokens`,
-  `--context`, and `--distractor-count` options. It also reads team keys from
-  `SKILLOS_TEAM_API_KEY`, `LLM_API_KEY`, or `SKILLOS_API_KEY`.
-- Results are written to `benchmarks/results/llm_eval_results_<timestamp>.json`
-  and `llm_eval_latest.json`. The result JSON records `api_failure`,
-  `api_error_type`, `functional_failure`, selected skill IDs, expected skill
-  IDs, planner source, model metadata, and success rates excluding API failures.
-- API keys are never written into result JSON; results only record whether a
-  key was provided.
+### 1. Group-Structured Runtime Retrieval
 
-Verification commands:
+Inspired by Group of Skills, SkillRetriever now supports a structured SkillGroup in addition to the existing flat RetrievalResult.skills and execution_order fields.
 
-```powershell
-python -m compileall -q skillos\layers\skill_runtime benchmarks tests\test_llm_planner_eval.py
-python -m pytest tests\test_llm_planner_eval.py tests\test_skill_runtime_phase2.py -q --no-cov
-python benchmarks\run_llm_planner_eval.py --task-limit 2
-python -m benchmarks.run_llm_planner_eval --task-limit 2 --mode fallback
+- SkillGroup.start_skill_ids: entry skills that should execute the main task.
+- SkillGroup.support_skill_ids: preparation, conversion, or helper skills.
+- SkillGroup.check_skill_ids: validation or postcondition skills.
+- SkillGroup.avoid_skill_ids: candidates that should not enter the runtime plan.
+- Fallback retrieval still returns the highest-scoring skill as before.
+- Existing callers can continue to consume skills, execution_order, strategy, confidence, and parameter_mapping.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/retriever.py
+skillos/skillos/layers/skill_runtime/__init__.py
+skillos/tests/test_skill_runtime_phase2.py
 ```
 
-Current limitation: a latest result with `api_key_provided=false` and
-`missing_api_key` rows is only evidence that the harness separates API failures
-from functional planner failures. It is not a real LLM quality result.
+### 2. DAG Composition From Skill Groups and Schemas
+
+Inspired by AgentSkillOS, CompositionAgent now builds a safer executable Skill DAG.
+
+- It can consume SkillGroup directly: Support -> Start -> Check.
+- It filters Avoid skills before graph construction.
+- It validates LLM-produced edges by removing unknown nodes, self-loops, duplicate edges, invalid edge types, and cycles.
+- If LLM composition fails, it tries schema-based dependency inference using overlapping output and input schema keys.
+- If schema inference cannot build a graph, it keeps the previous sequential fallback behavior.
+- SkillGraph.parallel_groups exposes dependency layers for executor-side scheduling diagnostics.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/composition.py
+skillos/tests/test_skill_runtime_phase3.py
+```
+
+### 3. Failure-State-Aware Verification and Reflection
+
+Inspired by Skill-RAG, runtime failures are now typed and routed instead of being treated as a generic retry signal.
+
+VerifierAgent adds compatible fields:
+
+- failure_type: none, missing_skill, timeout, runtime_error, dependency_failed, postcondition_failed, bad_output, or unknown.
+- recovery_route: none, retrieve_alternative_skill, retry_with_timeout_adjustment, repair_skill, replan_dependencies, add_postcondition_check, inspect_output, or review.
+
+ReflectionAgent propagates the same fields into maintenance feedback while preserving D-compatible skill_update_proposals.
+
+Member C still does not mutate Skills and does not call D Maintainer directly. It only produces structured evidence and recommended routes.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/verifier.py
+skillos/skillos/layers/skill_runtime/reflection.py
+skillos/tests/test_skill_runtime_phase4.py
+```
+
+### 4. Task-Local Runtime Memory
+
+Inspired by M*, StateTracker now owns a lightweight RuntimeMemory for a single execution task.
+
+Runtime memory records:
+
+- goal and selected skills
+- step inputs and step outputs
+- failure events with failure type
+- lightweight lifecycle events
+- optional verification and reflection summaries
+
+SkillExecutor.last_runtime_memory exposes the memory after execution. The memory is intentionally not injected into ExecutionResult.final_state, so existing API consumers keep the previous response shape.
+
+Changed files:
+
+```text
+skillos/skillos/layers/skill_runtime/state_tracker.py
+skillos/skillos/layers/skill_runtime/executor.py
+skillos/skillos/layers/skill_runtime/__init__.py
+skillos/tests/test_skill_runtime_memory.py
+```
+
+### Compatibility Notes
+
+- No new REST endpoint was added.
+- ExecutionResult, ExecutionStepResult, RetrievedSkill, and ExecutionHistoryItem schemas remain compatible.
+- Member C does not take over Member A repository indexing, Member B governance, Member D repair/build operations, or Member E UI rendering.
+- The backend directory is now tracked as normal files in the top-level repo instead of being stored as an unresolved gitlink.
+
+### Verification
+
+Commands run during this update:
+
+```powershell
+python -m compileall -q skillos\skillos\layers\skill_runtime\retriever.py skillos\skillos\layers\skill_runtime\__init__.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\composition.py skillos\tests\test_skill_runtime_phase3.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\verifier.py skillos\skillos\layers\skill_runtime\reflection.py skillos\tests\test_skill_runtime_phase4.py
+python -m compileall -q skillos\skillos\layers\skill_runtime\state_tracker.py skillos\skillos\layers\skill_runtime\executor.py skillos\skillos\layers\skill_runtime\__init__.py skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py
+python -m pytest skillos\tests\test_skill_runtime_phase3.py -q
+python -m pytest skillos\tests\test_skill_runtime_phase4.py -q
+python -m pytest skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py -q
+```
+
+Known environment issue:
+
+```text
+python -m pytest skillos\tests\test_skill_runtime_phase2.py -q
+```
+
+The command currently fails before assertions because the active Python environment does not load pytest-asyncio; pytest reports `async def functions are not natively supported` and warns that `pytest.mark.asyncio` is unknown. The dependency is declared in skillos/requirements.txt and skillos/pyproject.toml, but it is not active in the current interpreter.
 
 ---
 
-## Phase 7: Execution History As Experience
+## Version 2026-05-14: Paper-Guided Runtime Path and Execution Graph Update
 
-This phase implements the C-P1-2 slice from
-`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
-The paper method used here is XSkill's split between action-level experiences
-and task-level skills. Trace2Skill is used only as the boundary: a local
-execution trace can become material for a candidate Skill, but it is not treated
-as a trusted Skill until human review.
+This version turns the paper-guided Member C runtime mechanisms from isolated layer capabilities into the live Agent Execution path, and adds a frontend execution graph view for demos and debugging.
 
-- `/api/v1/execution/skill` and `/api/v1/execution/plan` now return
-  `ExecutionResult.experience_unit` when an execution is recorded.
-- `ExecutionExperienceUnit.source_type` is `agent_execution`; it includes
-  `source_execution_id`, `raw_content`, `extracted_actions`,
-  `normalized_actions`, a proposed Skill name/description/type, confidence,
-  keywords, and method metadata.
-- `normalized_actions` preserve each executed skill, status, input mapping,
-  output, and error so the record is an action-level experience instead of a
-  task-level Skill.
-- `/api/v1/execution/history` includes `experience_unit_id` and
-  `experience_source_type` for each recent item.
-- `/api/v1/execution/history/{execution_id}/experience` returns the full
-  `ExecutionExperienceUnit` for a recent in-memory execution.
-- `/api/v1/ingest/audit-candidate` and `/api/v1/ingest/create-candidate`
-  accept `source_type=agent_execution`, allowing a reviewer to turn a runtime
-  experience into an S1 Candidate Skill with provenance pointing back to the
-  execution unit.
-- The current store remains an in-memory demo history. It is valid for the
-  paper-demo loop, but it should not be described as a durable long-term
-  experience memory until a storage-backed design is added.
+### 1. Runtime Execution Uses SkillRetriever and SkillGroup
 
-Verification commands:
+The `/api/v1/execution/plan` route now uses `SkillRetriever.retrieve()` before composition. This connects the Group-of-Skills style runtime contract to the real API path:
 
-```powershell
-python -m compileall -q skillos\api\routes\execution.py skillos\api\routes\ingest.py skillos\api\schemas.py
-python -m pytest tests\test_skill_runtime_phase1.py tests\test_ingest_candidate_review.py -q --no-cov
-git diff --check
+- `SkillGroup.support_skill_ids` feed preparation/helper skills.
+- `SkillGroup.start_skill_ids` feed the main entry skill.
+- `SkillGroup.check_skill_ids` feed validation/postcondition skills.
+- `SkillGroup.avoid_skill_ids` stay out of the execution graph.
+- If retriever selection fails, the route falls back to direct search filtering so the API remains available.
+
+Commit:
+
+```text
+ee8089d feat(runtime): route execution through skill retriever
 ```
 
----
+### 2. DAG Data Mapping Drives Runtime Inputs
 
-## Phase 8: Parameterized Web Skills
+The executor now resolves DAG mapping references such as:
 
-This phase completes C-P1-3 from
-`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
-The selected paper method is WebXSkill's executable, parameterized action
-program: a reusable web skill binds arguments such as selector, text, URL, and
-form data, then executes a fixed action sequence. SkillWeaver was reviewed as a
-related API-style skill framework, but this implementation intentionally uses
-only the smaller WebXSkill method.
-
-- Web benchmark `with_skill` mode no longer passes the web tasks by copying
-  `expected_output` directly.
-- For web tasks, `benchmarks/run_demo_benchmark.py` now creates benchmark-local
-  fake action programs for `fill_form`, `click_element`, `type_text`,
-  `extract_selector`, and `submit_form`.
-- The fake programs read `input_data` parameters and emit `input_mapping`,
-  `action_program`, `parameters_used`, step guidance, fake `final_state`, and
-  `paper_method = "WebXSkill parameterized action program"`.
-- The implementation remains benchmark-local. It does not add a real browser,
-  DOM driver, or new Skill model field.
-- Non-web benchmark tasks keep the previous controlled fixture behavior so the
-  C-P0 benchmark remains stable.
-- Regression tests prove that changed web parameters change outputs and that
-  missing required form parameters fail deterministic verification.
-
-Verification commands:
-
-```powershell
-python -m pytest tests\test_demo_benchmark_parameterized_web.py -q --no-cov
-python -m benchmarks.run_demo_benchmark
-python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase4.py tests\test_skill_runtime_verifier_specs.py tests\test_llm_planner_eval.py tests\test_demo_benchmark_parameterized_web.py -q --no-cov
-python -m compileall -q skillos benchmarks
-git diff --check
+```text
+${step_id.customer_data}
 ```
 
----
+before executing a dependent step. This makes schema-derived composition executable rather than only descriptive. A support skill can produce an output, and a later start/check skill can receive it as real `input_data`.
+
+Commit:
+
+```text
+0294259 feat(runtime): resolve DAG output mappings during execution
+```
+
+### 3. Verification and Reflection Are Attached to Executions
+
+The execution API now runs verifier/reflection after plan execution and exposes compatible optional fields:
+
+- `verification`
+- `reflection`
+- `failure_type`
+- `recovery_route`
+
+This connects the Skill-RAG failure-state idea to live Agent Execution. Member C still does not mutate skills; it produces structured feedback for maintenance and repair agents.
+
+Commit:
+
+```text
+4fffe0c feat(runtime): attach verification feedback to executions
+```
+
+### 4. Runtime Memory Diagnostics Are Exposed
+
+`RuntimeMemory.to_summary()` now includes verification and reflection summaries when available. `ExecutionResult.runtime_memory` exposes the task-local evidence summary without placing it inside `final_state`.
+
+This keeps the public state output stable while making M*-style task evidence available for debugging, benchmark scoring, and future repair routing.
+
+Commit:
+
+```text
+8c83710 feat(runtime): expose runtime memory diagnostics
+```
+
+### 5. Benchmark v2 Measures Paper-Guided Runtime Dimensions
+
+The runtime benchmark now evaluates Member C as a full runtime architecture instead of only retrieval/planning/execution success.
+
+New benchmark dimensions:
+
+- `skill_group`
+- `planning`
+- `composition`
+- `execution`
+- `verification`
+- `recovery`
+- `memory`
+
+New benchmark cases include `support_start_check_flow` and `missing_skill_recovery_route`.
+
+Commit:
+
+```text
+f20b789 test(runtime): benchmark paper guided runtime dimensions
+```
+
+### 6. Agent Execution Graph for Frontend Visualization
+
+`ExecutionResult.execution_graph` now returns a frontend-friendly graph:
+
+```text
+goal -> retrieved skills -> execution steps
+```
+
+The graph includes:
+
+- nodes for the user goal, retrieved skills, and execution steps
+- edges for retrieval, planning, and step dependencies
+- composition source and parallel group metadata
+- step status, latency, and error information
+
+The frontend Agent Execution page renders this as an `Execution RAG Tree` after execution, giving users a clear visual explanation of which skills were retrieved, how they were composed, and what actually ran.
+
+Changed files:
+
+```text
+skillos/skillos/api/routes/execution.py
+skillos/skillos/api/schemas.py
+skillos/tests/test_skill_runtime_phase1.py
+skillos-frontend/src/api/types.ts
+skillos-frontend/src/pages/AgentExecution.tsx
+```
+
+### Verification
+
+Commands run during this update:
+
+```powershell
+python -m compileall -q skillos\skillos\api\routes\execution.py skillos\skillos\api\schemas.py skillos\tests\test_skill_runtime_phase1.py
+python -m pytest skillos\tests\test_skill_runtime_phase1.py skillos\tests\test_skill_runtime_phase3.py skillos\tests\test_skill_runtime_memory.py skillos\tests\test_runtime_benchmark.py -q
+npm run build
+```

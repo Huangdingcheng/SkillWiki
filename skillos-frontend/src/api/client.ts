@@ -1,38 +1,15 @@
 import axios from 'axios'
 import type {
-  CandidateAuditResult,
-  CandidateCreateResponse,
-  CandidateSkillReviewRequest,
-  EvaluationDashboardResponse,
-  ExecutionExperienceUnit,
   ExecutionResult,
   ExecutionHistoryItem,
   GraphData,
-  GraphViewData,
-  GraphViewMode,
-  HeterogeneousGraphData,
   HealthReport,
-  IngestResponse,
-  MaintenanceReviewRequest,
-  MaintenanceReviewResponse,
-  MaintenanceProposal,
-  MaintenanceProposalListResponse,
   OverviewStats,
-  SkillReleaseRecord,
-  SkillRollbackRecord,
-  SkillCreateRequest,
   SkillFull,
-  SkillGraphProjectionData,
   SkillSearchResult,
   SkillState,
   SkillSummary,
   SkillType,
-  SkillUpdateRequest,
-  SnapshotCommitRequest,
-  SnapshotCommitResponse,
-  SnapshotDiffRequest,
-  SnapshotDiffResponse,
-  SnapshotHistoryResponse,
   SystemHealth,
 } from './types'
 
@@ -49,12 +26,6 @@ export const skillsApi = {
 
   getFull: (id: string) =>
     http.get<SkillFull>(`/skills/${id}/full`).then(r => r.data),
-
-  create: (request: SkillCreateRequest) =>
-    http.post<SkillSummary>('/skills', request).then(r => r.data),
-
-  update: (id: string, request: SkillUpdateRequest) =>
-    http.patch<SkillSummary>(`/skills/${id}`, request).then(r => r.data),
 
   search: (query: string, limit = 20) =>
     http.post<SkillSearchResult[]>('/skills/search', { query, limit }).then(r => r.data),
@@ -89,24 +60,6 @@ export const lifecycleApi = {
 
   getDiff: (id: string, compare_to?: string) =>
     http.get<Record<string, unknown>>(`/lifecycle/${id}/diff`, { params: compare_to ? { compare_to } : {} }).then(r => r.data),
-
-  createSnapshot: (id: string, request: SnapshotCommitRequest = {}) =>
-    http.post<SnapshotCommitResponse>(`/lifecycle/${id}/snapshot`, request).then(r => r.data),
-
-  snapshotHistory: (id: string, max_count = 20) =>
-    http.get<SnapshotHistoryResponse>(`/lifecycle/${id}/snapshot/history`, { params: { max_count } }).then(r => r.data),
-
-  snapshotDiff: (id: string, request: SnapshotDiffRequest) =>
-    http.get<SnapshotDiffResponse>(`/lifecycle/${id}/snapshot/diff`, { params: request }).then(r => r.data),
-
-  releaseTag: (id: string, ref = 'HEAD') =>
-    http.post<SkillReleaseRecord>(`/lifecycle/${id}/release-tag`, { ref }).then(r => r.data),
-
-  restoreSnapshot: (id: string, source_ref: string) =>
-    http.post<SkillRollbackRecord>(`/lifecycle/${id}/rollback`, { source_ref }).then(r => r.data),
-
-  proposeMaintenanceChange: (id: string, request: MaintenanceReviewRequest) =>
-    http.post<MaintenanceReviewResponse>(`/lifecycle/${id}/propose-maintenance-change`, request).then(r => r.data),
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────────
@@ -118,17 +71,8 @@ export const graphApi = {
   subgraph: (skill_id: string, depth = 2) =>
     http.post<GraphData>('/graph/subgraph', { skill_id, depth }).then(r => r.data),
 
-  heterogeneous: () =>
-    http.get<HeterogeneousGraphData>('/graph/heterogeneous').then(r => r.data),
-
-  skillOnlyProjection: () =>
-    http.get<SkillGraphProjectionData>('/graph/projection/skill-only').then(r => r.data),
-
   stats: () =>
     http.get<Record<string, unknown>>('/graph/stats/overview').then(r => r.data),
-
-  view: (view: GraphViewMode, limit = 300) =>
-    http.get<GraphViewData>('/graph/view', { params: { view, limit } }).then(r => r.data),
 }
 
 // ── Execution ─────────────────────────────────────────────────────────────────
@@ -137,8 +81,12 @@ export const executionApi = {
   executeSkill: (skill_id: string, inputs: Record<string, unknown> = {}) =>
     http.post<ExecutionResult>('/execution/skill', { skill_id, inputs }).then(r => r.data),
 
-  executePlan: (goal: string, context: Record<string, unknown> = {}) =>
-    http.post<ExecutionResult>('/execution/plan', { goal, context }).then(r => r.data),
+  executePlan: (
+    goal: string,
+    context: Record<string, unknown> = {},
+    orchestration_strategy: 'quality_first' | 'efficiency_first' | 'simplicity_first' = 'quality_first',
+  ) =>
+    http.post<ExecutionResult>('/execution/plan', { goal, context, orchestration_strategy }).then(r => r.data),
 
   getState: () =>
     http.get<Record<string, unknown>>('/execution/state').then(r => r.data),
@@ -148,9 +96,6 @@ export const executionApi = {
 
   history: () =>
     http.get<ExecutionHistoryItem[]>('/execution/history').then(r => r.data),
-
-  experience: (execution_id: string) =>
-    http.get<ExecutionExperienceUnit>(`/execution/history/${execution_id}/experience`).then(r => r.data),
 }
 
 // ── Evolution ─────────────────────────────────────────────────────────────────
@@ -167,18 +112,38 @@ export const evolutionApi = {
 
   runCycle: () =>
     http.post('/evolution/cycle').then(r => r.data),
-
-  proposals: (status?: MaintenanceProposal['status']) =>
-    http.get<MaintenanceProposalListResponse>('/evolution/proposals', { params: status ? { status } : {} }).then(r => r.data),
-
-  acceptProposal: (id: string) =>
-    http.post<MaintenanceProposal>(`/evolution/proposals/${id}/accept`).then(r => r.data),
-
-  rejectProposal: (id: string) =>
-    http.post<MaintenanceProposal>(`/evolution/proposals/${id}/reject`).then(r => r.data),
 }
 
 // ── Ingest ────────────────────────────────────────────────────────────────────
+
+export interface IngestResponse {
+  success: boolean
+  source_type: string
+  unit_count: number
+  token_usage: number
+  errors: string[]
+  units: {
+    unit_id: string
+    source_type: string
+    raw_content: string
+    extracted_actions: string[]
+    normalized_actions: Record<string, unknown>[]
+    summary: string
+    proposed_skill_name?: string
+    proposed_description?: string
+    proposed_type?: string
+    confidence: number
+    index_keywords: string[]
+    index_embedding_hint: string
+  }[]
+  created_skills?: {
+    skill_id: string
+    name: string
+    skill_type: string
+    state: string
+    version: string
+  }[]
+}
 
 export const ingestApi = {
   parse: (source_type: string, content: string) =>
@@ -186,20 +151,9 @@ export const ingestApi = {
 
   parseAndCreate: (source_type: string, content: string) =>
     http.post<IngestResponse>('/ingest/parse-and-create', { source_type, content }).then(r => r.data),
-
-  auditCandidate: (request: CandidateSkillReviewRequest) =>
-    http.post<CandidateAuditResult>('/ingest/audit-candidate', request).then(r => r.data),
-
-  createCandidate: (request: CandidateSkillReviewRequest) =>
-    http.post<CandidateCreateResponse>('/ingest/create-candidate', request).then(r => r.data),
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
-
-export const evaluationApi = {
-  dashboard: () =>
-    http.get<EvaluationDashboardResponse>('/evaluation/dashboard').then(r => r.data),
-}
 
 export interface EvolutionStats {
   total_skills: number
@@ -220,7 +174,7 @@ export interface EvolutionStats {
 
 export const statsApi = {
   overview: async (): Promise<OverviewStats> => {
-    await Promise.all([
+    const [skills, health] = await Promise.all([
       skillsApi.list({ limit: 1 }),
       evolutionApi.systemHealth().catch(() => null),
     ])

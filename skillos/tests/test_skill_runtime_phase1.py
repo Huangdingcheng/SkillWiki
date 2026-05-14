@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Optional
 
 import pytest
 
 from skillos.api.routes import execution
 from skillos.api.schemas import ExecutePlanRequest
+from skillos.api.history_store import FileExecutionHistoryRepository
 from skillos.layers.skill_repository.indexing import SearchResult
+from skillos.layers.skill_runtime.composition import SkillGraph
 from skillos.layers.skill_runtime.executor import SkillExecutor
 from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
-from skillos.models.skill_model import (
-    Skill,
-    SkillEvaluation,
-    SkillImplementation,
-    SkillInterface,
-    SkillState,
-)
+from skillos.layers.skill_runtime.retriever import RetrievalResult, RetrievalStrategy, SkillGroup
+from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
 
 def make_skill(name: str = "fill_form") -> Skill:
@@ -50,13 +48,48 @@ async def test_execute_plan_formats_match_reasons_and_records_metrics():
     assert skill.metrics.usage_count == 1
     assert skill.metrics.success_count == 1
     assert app.recorded == [(skill.skill_id, True)]
-    assert result.experience_recorded is True
-    assert result.experience_unit is not None
-    assert result.experience_unit.source_type == "agent_execution"
-    assert result.experience_unit.source_execution_id == result.plan_id
-    assert result.experience_unit.metadata["paper_backlog_task"] == "C-P1-2"
-    assert result.experience_unit.metadata["paper_method"] == "XSkill action-level experience stream"
-    assert result.experience_unit.normalized_actions[0]["skill_id"] == skill.skill_id
+
+
+@pytest.mark.asyncio
+async def test_execute_plan_uses_runtime_retriever_skill_group():
+    support = make_skill("prepare_customer_data")
+    start = make_skill("process_order")
+    check = make_skill("validate_order")
+    skill_group = SkillGroup(
+        anchor_skill_id=start.skill_id,
+        support_skill_ids=[support.skill_id],
+        start_skill_ids=[start.skill_id],
+        check_skill_ids=[check.skill_id],
+    )
+    app = FakeAppState(
+        skills=[support, start, check],
+        search_results=[],
+        plan_steps=[],
+        retrieval=RetrievalResult(
+            strategy=RetrievalStrategy.COMPOSE,
+            skills=[support, start, check],
+            confidence=0.92,
+            rationale="structured runtime group",
+            skill_group=skill_group,
+        ),
+    )
+
+    result = await execution.execute_plan(ExecutePlanRequest(goal="process order"), app=app)
+
+    assert result.status == "success"
+    assert result.composition_source == "skill_group"
+    assert [step.skill_id for step in result.steps] == [
+        support.skill_id,
+        start.skill_id,
+        check.skill_id,
+    ]
+    assert result.steps[1].status == "success"
+    assert result.retrieved_skills[0].match_reason == "structured runtime group"
+    assert result.execution_graph is not None
+    assert result.execution_graph["composition_source"] == "skill_group"
+    assert any(node["kind"] == "execution_step" for node in result.execution_graph["nodes"])
+    assert any(edge["kind"] == "depends_on" for edge in result.execution_graph["edges"])
+    assert app.search.calls == 0
 
 
 @pytest.mark.asyncio
@@ -68,28 +101,30 @@ async def test_execute_plan_no_skills_returns_failed_without_crashing():
     assert result.status == "failed"
     assert result.steps == []
     assert result.retrieved_skills == []
-    assert result.verifier_summary is None
 
 
 @pytest.mark.asyncio
-async def test_execute_plan_attaches_deterministic_verifier_summary():
-    skill = make_skill()
-    skill.evaluation = SkillEvaluation(
-        verifier_specs=[{"type": "json_equals", "path": "output.ok", "value": True}]
-    )
+async def test_execute_plan_returns_verification_and_reflection_feedback():
+    missing_step = PlanStep(step_index=0, skill_id="missing", skill_name="missing")
     app = FakeAppState(
-        skills=[skill],
-        search_results=[SearchResult(skill=skill, score=0.9, match_reasons=["name match"])],
-        plan_steps=[PlanStep(step_index=0, skill_id=skill.skill_id, skill_name=skill.name)],
+        skills=[],
+        search_results=[],
+        plan_steps=[missing_step],
+        verifier=FakeVerifier(),
+        reflector=FakeReflector(),
     )
 
-    result = await execution.execute_plan(ExecutePlanRequest(goal="fill form"), app=app)
+    result = await execution.execute_plan(ExecutePlanRequest(goal="missing capability"), app=app)
 
-    assert result.verifier_passed is True
-    assert result.verifier_summary is not None
-    assert result.verifier_summary["mode"] == "deterministic"
-    assert result.verifier_summary["checked_skills"] == 1
-    assert result.verifier_summary["results"][0]["skill_id"] == skill.skill_id
+    assert result.status == "failed"
+    assert result.failure_type == "missing_skill"
+    assert result.recovery_route == "retrieve_alternative_skill"
+    assert result.verification is not None
+    assert result.verification["passed"] is False
+    assert result.reflection is not None
+    assert result.reflection["failed_skill_ids"] == ["missing"]
+    assert result.runtime_memory is not None
+    assert result.runtime_memory["task_id"] == "plan-1"
 
 
 @pytest.mark.asyncio
@@ -128,36 +163,26 @@ async def test_execution_history_returns_items_in_reverse_order():
 
 
 @pytest.mark.asyncio
-async def test_execution_history_returns_full_experience_unit_for_plan():
-    original = list(execution._execution_history)
-    execution._execution_history.clear()
-    try:
-        skill = make_skill()
-        app = FakeAppState(
-            skills=[skill],
-            search_results=[SearchResult(skill=skill, score=0.9, match_reasons=["name match"])],
-            plan_steps=[PlanStep(
-                step_index=0,
-                skill_id=skill.skill_id,
-                skill_name=skill.name,
-                input_mapping={"field": "email"},
-            )],
-        )
+async def test_file_execution_history_survives_repository_restart(tmp_path):
+    path = tmp_path / "execution_history.jsonl"
+    first_repo = FileExecutionHistoryRepository(path)
+    await first_repo.save_plan_history({
+        "execution_id": "persisted",
+        "goal": "persist this task",
+        "status": "success",
+        "step_count": 1,
+        "success_count": 1,
+        "total_latency_ms": 12.0,
+        "retrieved_skill_count": 2,
+        "created_at": "2026-05-14T00:00:00",
+    })
 
-        result = await execution.execute_plan(ExecutePlanRequest(goal="fill login form"), app=app)
-        history = await execution.get_execution_history()
-        unit = await execution.get_execution_experience(result.plan_id)
+    restarted_repo = FileExecutionHistoryRepository(path)
+    history = await restarted_repo.list_history()
 
-        assert history[0]["execution_id"] == result.plan_id
-        assert history[0]["experience_unit_id"] == unit.unit_id
-        assert history[0]["experience_source_type"] == "agent_execution"
-        assert unit.source_execution_id == result.plan_id
-        assert unit.source_type == "agent_execution"
-        assert unit.normalized_actions[0]["input_mapping"] == {"field": "email"}
-        assert unit.proposed_skill_name == "skill_from_fill_login_form"
-        assert unit.metadata["paper_backlog_task"] == "C-P1-2"
-    finally:
-        execution._execution_history[:] = original
+    assert len(history) == 1
+    assert history[0]["execution_id"] == "persisted"
+    assert history[0]["goal"] == "persist this task"
 
 
 @pytest.mark.asyncio
@@ -180,12 +205,24 @@ async def test_executor_schedules_async_callbacks_and_ignores_callback_errors():
 
 
 class FakeAppState:
-    def __init__(self, skills: list[Skill], search_results: list[SearchResult], plan_steps: list[PlanStep]) -> None:
+    def __init__(
+        self,
+        skills: list[Skill],
+        search_results: list[SearchResult],
+        plan_steps: list[PlanStep],
+        retrieval: Optional[RetrievalResult] = None,
+        verifier: object = None,
+        reflector: object = None,
+    ) -> None:
         self.state_tracker = FakeStateTracker()
         self.wiki = FakeWiki(skills)
         self.search = FakeSearch(search_results)
+        self.retriever = FakeRetriever(retrieval) if retrieval else None
+        self.composer = FakeComposer()
         self.planner = FakePlanner(plan_steps)
         self.executor = FakeExecutor()
+        self.verifier = verifier
+        self.reflector = reflector
         self.recorded = self.wiki.recorded
 
 
@@ -215,9 +252,58 @@ class FakeWiki:
 class FakeSearch:
     def __init__(self, results: list[SearchResult]) -> None:
         self.results = results
+        self.calls = 0
 
     async def search(self, query: object) -> list[SearchResult]:
+        self.calls += 1
         return self.results
+
+
+class FakeRetriever:
+    def __init__(self, retrieval: RetrievalResult) -> None:
+        self.retrieval = retrieval
+
+    async def retrieve(
+        self,
+        task_description: str,
+        current_state: Optional[dict] = None,
+        domain: Optional[str] = None,
+    ) -> RetrievalResult:
+        return self.retrieval
+
+
+class FakeComposer:
+    def compose(
+        self,
+        skills: list[Skill],
+        task_description: str = "",
+        skill_group: Optional[SkillGroup] = None,
+        strategy: object = None,
+    ) -> SkillGraph:
+        if not skill_group:
+            return SkillGraph(graph_id="graph-1", task_description=task_description)
+        graph = SkillGraph(
+            graph_id="graph-1",
+            task_description=task_description,
+            nodes=list(skills),
+            entry_skill_id=skills[0].skill_id if skills else "",
+        )
+        if skill_group.support_skill_ids and skill_group.start_skill_ids:
+            graph.metadata["composition_source"] = "skill_group"
+            graph.edges.append(SimpleNamespace(
+                source_id=skill_group.support_skill_ids[0],
+                target_id=skill_group.start_skill_ids[0],
+                edge_type="sequence",
+                data_mapping={},
+            ))
+            if skill_group.check_skill_ids:
+                graph.edges.append(SimpleNamespace(
+                    source_id=skill_group.start_skill_ids[0],
+                    target_id=skill_group.check_skill_ids[0],
+                    edge_type="sequence",
+                    data_mapping={},
+                ))
+        return graph
 
 
 class FakePlanner:
@@ -228,7 +314,40 @@ class FakePlanner:
         return ExecutionPlan(plan_id="plan-1", task_id="plan-1", task_description=task_description, steps=self.steps)
 
 
+class FakeVerifier:
+    def verify(self, goal: str, final_output: dict, trace_summary: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            passed=False,
+            score=0.2,
+            issues=["missing skill"],
+            suggestions=["retrieve alternative skill"],
+            failure_type="missing_skill",
+            recovery_route="retrieve_alternative_skill",
+        )
+
+
+class FakeReflector:
+    def reflect(
+        self,
+        task_id: str,
+        goal: str,
+        trace: dict,
+        verification_result: object = None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            root_cause="missing runtime skill",
+            failure_type="missing_skill",
+            recovery_route="retrieve_alternative_skill",
+            failed_skill_ids=["missing"],
+            improvement_suggestions=["add or retrieve a compatible skill"],
+            skill_update_proposals=[],
+        )
+
+
 class FakeExecutor:
+    def __init__(self) -> None:
+        self.last_runtime_memory: object = None
+
     async def execute_plan(self, plan: ExecutionPlan, skill_map: dict[str, Skill], initial_state: dict) -> dict:
         for step in plan.steps:
             if step.skill_id in skill_map:
@@ -237,4 +356,19 @@ class FakeExecutor:
             else:
                 step.status = StepStatus.FAILED
                 step.error = "missing skill"
+        self.last_runtime_memory = FakeMemory(plan.task_id)
         return {"done": True}
+
+
+class FakeMemory:
+    def __init__(self, task_id: str) -> None:
+        self.task_id = task_id
+        self.verification_summary: dict = {}
+        self.reflection_summary: dict = {}
+
+    def to_summary(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "verification": self.verification_summary,
+            "reflection": self.reflection_summary,
+        }

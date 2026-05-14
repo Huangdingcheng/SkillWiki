@@ -35,8 +35,8 @@ def cli(ctx: click.Context, config: str, debug: bool) -> None:
 
 @cli.command()
 @click.option("--api-key", required=True, help="LLM API key（必须）")
-@click.option("--api-url", default="https://yunwu.ai", show_default=True, help="LLM API 地址")
-@click.option("--model", default="gpt-5.4-nano", show_default=True, help="LLM 模型名称")
+@click.option("--api-url", default="https://api.deepseek.com", show_default=True, help="LLM API 地址")
+@click.option("--model", default="deepseek-v4-pro", show_default=True, help="LLM 模型名称")
 @click.option("--temperature", type=float, default=None, help="全局温度参数（0-2）")
 @click.option("--max-tokens", type=int, default=None, help="全局最大 token 数")
 @click.pass_context
@@ -184,28 +184,15 @@ def list_agents(ctx: click.Context, api_key: str) -> None:
 
 @cli.command()
 @click.option("--api-key", required=True, help="LLM API key")
-@click.option("--api-url", default=None, help="LLM API 地址（可选）")
-@click.option("--model", default=None, help="LLM 模型名称（可选）")
 @click.option("--agent-type", default=None, help="测试指定 Agent 的 LLM 配置")
 @click.pass_context
-def ping(
-    ctx: click.Context,
-    api_key: str,
-    api_url: Optional[str],
-    model: Optional[str],
-    agent_type: Optional[str],
-) -> None:
+def ping(ctx: click.Context, api_key: str, agent_type: Optional[str]) -> None:
     """测试 LLM API 连通性。"""
     from .utils.validators import test_llm_connectivity
 
     try:
         reset_config_manager()
-        cli_args = {"api_key": api_key}
-        if api_url:
-            cli_args["api_url"] = api_url
-        if model:
-            cli_args["model"] = model
-        mgr = ConfigManager(ctx.obj["config_file"], cli_args)
+        mgr = ConfigManager(ctx.obj["config_file"], {"api_key": api_key})
 
         if agent_type:
             cfg = mgr.get_agent_llm_config(agent_type)
@@ -225,6 +212,47 @@ def ping(
 
     except ValueError as e:
         click.echo(click.style(f"✗ 配置错误: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# benchmark-runtime
+# ---------------------------------------------------------------------------
+
+@cli.command("benchmark-runtime")
+@click.option("--api-key", required=True, help="DeepSeek API key")
+@click.option("--api-url", default=None, help="LLM API address; defaults to config file")
+@click.option("--model", default=None, help="LLM model; defaults to config file")
+@click.pass_context
+def benchmark_runtime(
+    ctx: click.Context,
+    api_key: str,
+    api_url: Optional[str],
+    model: Optional[str],
+) -> None:
+    """Run the formal Runtime benchmark and print scores in the terminal."""
+    from .evals.runtime_benchmark import run_runtime_benchmark
+    from .utils.llm_client import LLMClient
+
+    cli_args = {"api_key": api_key}
+    if api_url:
+        cli_args["api_url"] = api_url
+    if model:
+        cli_args["model"] = model
+
+    try:
+        reset_config_manager()
+        mgr = ConfigManager(ctx.obj["config_file"], cli_args)
+        llm = LLMClient(mgr.get_global_llm_config())
+        result = run_runtime_benchmark(llm)
+        click.echo(result.format_report())
+    except ValueError as e:
+        click.echo(click.style(f"Config error: {e}", fg="red"), err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(click.style(f"Benchmark failed: {e}", fg="red"), err=True)
+        if ctx.obj.get("debug"):
+            raise
         sys.exit(1)
 
 

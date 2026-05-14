@@ -27,6 +27,27 @@ class RetrievalStrategy(str, Enum):
 
 
 @dataclass
+class SkillGroup:
+    """Structured runtime grouping for retrieved Skills."""
+
+    anchor_skill_id: str = ""
+    start_skill_ids: List[str] = field(default_factory=list)
+    support_skill_ids: List[str] = field(default_factory=list)
+    check_skill_ids: List[str] = field(default_factory=list)
+    avoid_skill_ids: List[str] = field(default_factory=list)
+    rationale: str = ""
+
+    def ordered_ids(self) -> List[str]:
+        ordered: List[str] = []
+        for skill_id in (
+            self.support_skill_ids + self.start_skill_ids + self.check_skill_ids
+        ):
+            if skill_id not in ordered and skill_id not in self.avoid_skill_ids:
+                ordered.append(skill_id)
+        return ordered
+
+
+@dataclass
 class RetrievalResult:
     """Result of runtime skill retrieval."""
 
@@ -38,6 +59,7 @@ class RetrievalResult:
     parameter_mapping: Dict[str, Any] = field(default_factory=dict)
     needs_generation: bool = False
     generation_hint: str = ""
+    skill_group: Optional[SkillGroup] = None
 
     @property
     def primary_skill(self) -> Optional[Skill]:
@@ -60,10 +82,15 @@ Rules:
 - Return JSON only. Do not include Markdown or commentary.
 - strategy must be one of: reuse, compose, adapt, generate.
 - selected_skill_ids must only contain ids from the available skills list.
+- skill_group ids must only contain ids from the available skills list.
 - Use reuse when one skill directly solves the task.
 - Use compose when multiple listed skills are needed in sequence.
 - Use adapt when one listed skill is close but needs parameter adaptation.
 - Use generate only when the listed skills cannot reasonably solve the task.
+- Put the main entry skill in start_skill_ids.
+- Put helpers, converters, or preparation skills in support_skill_ids.
+- Put validation or postcondition skills in check_skill_ids.
+- Put risky or mismatched candidates in avoid_skill_ids.
 - confidence must be a number between 0 and 1.
 
 Return this JSON shape:
@@ -75,6 +102,14 @@ Return this JSON shape:
   "rationale": "why this strategy was selected",
   "parameter_mapping": {{
     "skill_id_1": {{"param1": "value extracted from the task"}}
+  }},
+  "skill_group": {{
+    "anchor_skill_id": "skill_id_1",
+    "start_skill_ids": ["skill_id_1"],
+    "support_skill_ids": [],
+    "check_skill_ids": [],
+    "avoid_skill_ids": [],
+    "rationale": "why these skills form a runnable group"
   }},
   "needs_generation": false,
   "generation_hint": ""
@@ -147,13 +182,22 @@ class SkillRetriever:
         if not selected_skills and strategy != RetrievalStrategy.GENERATE:
             return _fallback_reuse(search_results)
 
+        skill_group = _normalize_skill_group(llm_result.get("skill_group"), skill_map)
+        if skill_group is None:
+            skill_group = _default_skill_group(selected_skills, llm_result.get("rationale", ""))
+
+        selected_skills = [
+            skill for skill in selected_skills
+            if skill.skill_id not in skill_group.avoid_skill_ids
+        ]
+
         execution_order = [
             skill_id
             for skill_id in _string_list(
                 llm_result.get("execution_order", selected_ids)
             )
-            if skill_id in skill_map
-        ] or [skill.skill_id for skill in selected_skills]
+            if skill_id in skill_map and skill_id not in skill_group.avoid_skill_ids
+        ] or skill_group.ordered_ids() or [skill.skill_id for skill in selected_skills]
         confidence = _clamp_float(llm_result.get("confidence", 0.7))
         parameter_mapping = llm_result.get("parameter_mapping", {})
         if not isinstance(parameter_mapping, dict):
@@ -170,6 +214,7 @@ class SkillRetriever:
                 llm_result.get("needs_generation", strategy == RetrievalStrategy.GENERATE)
             ),
             generation_hint=str(llm_result.get("generation_hint", "")),
+            skill_group=skill_group,
         )
 
         logger.info(
@@ -257,6 +302,53 @@ def _fallback_reuse(search_results: List[Any]) -> RetrievalResult:
         execution_order=[best_skill.skill_id],
         confidence=_clamp_float(getattr(best_result, "score", 0.0)),
         rationale="LLM selection failed; using the highest-scoring retrieved skill.",
+        skill_group=_default_skill_group(
+            [best_skill],
+            "Fallback group built from the highest-scoring retrieved skill.",
+        ),
+    )
+
+
+def _default_skill_group(skills: List[Skill], rationale: Any = "") -> Optional[SkillGroup]:
+    if not skills:
+        return None
+    first_id = skills[0].skill_id
+    return SkillGroup(
+        anchor_skill_id=first_id,
+        start_skill_ids=[first_id],
+        rationale=str(rationale or "Default runtime skill group."),
+    )
+
+
+def _normalize_skill_group(value: Any, skill_map: Dict[str, Skill]) -> Optional[SkillGroup]:
+    if not isinstance(value, dict):
+        return None
+
+    def valid_ids(raw: Any) -> List[str]:
+        ids: List[str] = []
+        for skill_id in _string_list(raw):
+            if skill_id in skill_map and skill_id not in ids:
+                ids.append(skill_id)
+        return ids
+
+    avoid_ids = valid_ids(value.get("avoid_skill_ids", []))
+    start_ids = [sid for sid in valid_ids(value.get("start_skill_ids", [])) if sid not in avoid_ids]
+    support_ids = [sid for sid in valid_ids(value.get("support_skill_ids", [])) if sid not in avoid_ids]
+    check_ids = [sid for sid in valid_ids(value.get("check_skill_ids", [])) if sid not in avoid_ids]
+    anchor = str(value.get("anchor_skill_id") or "").strip()
+    if anchor not in skill_map or anchor in avoid_ids:
+        anchor = start_ids[0] if start_ids else ""
+
+    if not (start_ids or support_ids or check_ids or avoid_ids):
+        return None
+
+    return SkillGroup(
+        anchor_skill_id=anchor,
+        start_skill_ids=start_ids,
+        support_skill_ids=support_ids,
+        check_skill_ids=check_ids,
+        avoid_skill_ids=avoid_ids,
+        rationale=str(value.get("rationale", "")),
     )
 
 

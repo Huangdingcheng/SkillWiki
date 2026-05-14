@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Union
@@ -13,7 +14,7 @@ from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 from .planner import ExecutionPlan, PlanStep, StepStatus
-from .state_tracker import StateTracker
+from .state_tracker import RuntimeMemory, StateTracker
 
 logger = get_logger(__name__)
 
@@ -38,12 +39,15 @@ class SkillExecutor:
         llm_client: Optional[LLMClient] = None,
         max_retries: int = 2,
         step_timeout_s: float = 30.0,
+        global_timeout_s: Optional[float] = None,
     ) -> None:
         self._registry = skill_registry
         self._llm = llm_client
         self._max_retries = max_retries
         self._step_timeout = step_timeout_s
+        self._global_timeout = global_timeout_s
         self._event_callbacks: List[ExecutionEventCallback] = []
+        self.last_runtime_memory: Optional[RuntimeMemory] = None
 
     def add_event_callback(self, callback: ExecutionEventCallback) -> None:
         """注册事件回调（用于 WebSocket 推送）。"""
@@ -78,7 +82,14 @@ class SkillExecutor:
             最终状态字典
         """
         tracker = StateTracker(plan.task_id, initial_state)
+        tracker.memory.goal = plan.task_description
         execution_records: List[SkillExecutionRecord] = []
+        deadline = (
+            time.monotonic() + self._global_timeout
+            if self._global_timeout is not None
+            else None
+        )
+        timed_out = False
 
         self._emit("plan_started", {
             "plan_id": plan.plan_id,
@@ -87,9 +98,20 @@ class SkillExecutor:
             "task": plan.task_description,
             "total_steps": plan.total_steps,
         })
+        tracker.memory.remember_event("plan_started", {
+            "plan_id": plan.plan_id,
+            "goal": plan.task_description,
+            "step_count": plan.total_steps,
+        })
 
         while _has_pending_steps(plan):
-            skipped = self._skip_blocked_steps(plan)
+            remaining = _remaining_seconds(deadline)
+            if remaining is not None and remaining <= 0:
+                timed_out = True
+                self._mark_global_timeout(plan, tracker, plan.plan_id)
+                break
+
+            skipped = self._skip_blocked_steps(plan, tracker)
             ready_steps = _ready_steps(plan)
             if not ready_steps:
                 if not skipped:
@@ -98,31 +120,71 @@ class SkillExecutor:
 
             # 并行执行无依赖的步骤
             if len(ready_steps) > 1:
-                tasks = [
-                    self._execute_step(step, skill_map, tracker)
+                batch_timeout = self._step_timeout if remaining is None else min(self._step_timeout, remaining)
+                tasks = {
+                    asyncio.create_task(
+                        self._execute_step(
+                            step,
+                            skill_map,
+                            tracker,
+                            timeout_s=batch_timeout,
+                        )
+                    ): step
                     for step in ready_steps
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for step, result in zip(ready_steps, results):
-                    if isinstance(result, Exception):
+                }
+                done, pending = await asyncio.wait(
+                    tasks.keys(),
+                    timeout=remaining,
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+                for task in done:
+                    step = tasks[task]
+                    try:
+                        record = task.result()
+                    except Exception as exc:
                         step.status = StepStatus.FAILED
-                        step.error = str(result)
+                        step.error = str(exc)
                         if not step.started_at:
                             step.started_at = datetime.utcnow()
                         step.completed_at = datetime.utcnow()
                         self._emit_step_failed(plan.plan_id, step, step.error)
-                    else:
-                        record = result
-                        if record:
-                            execution_records.append(record)
+                        continue
+                    if record:
+                        execution_records.append(record)
+                if pending:
+                    timed_out = True
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    self._mark_global_timeout(plan, tracker, plan.plan_id)
+                    break
             else:
-                record = await self._execute_step(ready_steps[0], skill_map, tracker)
+                record = await self._execute_step(
+                    ready_steps[0],
+                    skill_map,
+                    tracker,
+                    timeout_s=self._step_timeout if remaining is None else min(self._step_timeout, remaining),
+                )
                 if record:
                     execution_records.append(record)
 
         final_state = tracker.current
         total_latency_ms = sum((step.latency_ms or 0.0) for step in plan.steps)
         status = _plan_status(plan)
+        if timed_out:
+            self._emit("plan_timed_out", {
+                "plan_id": plan.plan_id,
+                "status": status,
+                "total_latency_ms": total_latency_ms,
+                "remaining_steps": [step.step_id for step in plan.steps if step.status == StepStatus.PENDING],
+            })
+            tracker.memory.remember_event("plan_timed_out", {
+                "plan_id": plan.plan_id,
+                "remaining_steps": [
+                    step.step_id for step in plan.steps
+                    if step.status == StepStatus.PENDING
+                ],
+            })
         self._emit("plan_completed", {
             "plan_id": plan.plan_id,
             "status": status,
@@ -131,10 +193,16 @@ class SkillExecutor:
             "summary": plan.to_summary(),
             "final_state": final_state,
         })
+        tracker.memory.remember_event("plan_completed", {
+            "plan_id": plan.plan_id,
+            "status": status,
+            "total_latency_ms": total_latency_ms,
+        })
+        self.last_runtime_memory = tracker.memory
 
         return final_state
 
-    def _skip_blocked_steps(self, plan: ExecutionPlan) -> bool:
+    def _skip_blocked_steps(self, plan: ExecutionPlan, tracker: StateTracker) -> bool:
         skipped_any = False
         blocked_step_ids = {
             step.step_id
@@ -168,6 +236,12 @@ class SkillExecutor:
                 "reason": step.error,
                 "failed_dependency": failed_dependency,
             })
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "dependency_failed",
+            )
             skipped_any = True
         return skipped_any
 
@@ -187,6 +261,7 @@ class SkillExecutor:
         step: PlanStep,
         skill_map: Dict[str, Skill],
         tracker: StateTracker,
+        timeout_s: Optional[float] = None,
     ) -> Optional[SkillExecutionRecord]:
         """执行单个步骤（含重试）。"""
         skill = skill_map.get(step.skill_id)
@@ -196,10 +271,23 @@ class SkillExecutor:
             step.error = f"Skill not found: {step.skill_id}"
             step.completed_at = datetime.utcnow()
             self._emit_step_failed(tracker._task_id, step, step.error)
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "missing_skill",
+            )
             return None
 
+        step.input_mapping = _resolve_input_mapping(step.input_mapping, tracker.memory.step_outputs)
         step.status = StepStatus.RUNNING
         step.started_at = datetime.utcnow()
+        tracker.memory.remember_step_start(
+            step.step_id,
+            skill.skill_id,
+            skill.name,
+            step.input_mapping,
+        )
         self._emit("step_started", {
             "plan_id": tracker._task_id,
             "step_id": step.step_id,
@@ -225,7 +313,7 @@ class SkillExecutor:
             try:
                 output = await asyncio.wait_for(
                     self._run_skill(skill, step.input_mapping, tracker.current),
-                    timeout=self._step_timeout,
+                    timeout=timeout_s if timeout_s is not None else self._step_timeout,
                 )
                 # 执行成功
                 state_changes = output.get("_state_changes", {})
@@ -237,6 +325,7 @@ class SkillExecutor:
                 step.completed_at = datetime.utcnow()
 
                 record.complete(output, tracker.current)
+                tracker.memory.remember_step_success(step.step_id, skill.skill_id, output)
                 self._emit("step_completed", {
                     "plan_id": tracker._task_id,
                     "step_id": step.step_id,
@@ -249,7 +338,8 @@ class SkillExecutor:
                 return record
 
             except asyncio.TimeoutError:
-                error = f"Step timed out ({self._step_timeout}s)"
+                effective_timeout = timeout_s if timeout_s is not None else self._step_timeout
+                error = f"Step timed out ({effective_timeout}s)"
                 if attempt < self._max_retries:
                     logger.warning(f"步骤超时，重试 {attempt + 1}/{self._max_retries}: {skill.name}")
                     continue
@@ -258,6 +348,27 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "timeout",
+                )
+                self._emit_step_failed(tracker._task_id, step, error)
+                return record
+            except asyncio.CancelledError:
+                error = "Step cancelled due to global timeout"
+                tracker.rollback()
+                step.status = StepStatus.FAILED
+                step.error = error
+                step.completed_at = datetime.utcnow()
+                record.fail(error, "CancelledError")
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "timeout",
+                )
                 self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
@@ -272,10 +383,33 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, type(e).__name__)
+                tracker.memory.remember_failure(
+                    step.step_id,
+                    skill.skill_id,
+                    error,
+                    "runtime_error",
+                )
                 self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
         return record
+
+    def _mark_global_timeout(self, plan: ExecutionPlan, tracker: StateTracker, plan_id: str) -> None:
+        now = datetime.utcnow()
+        for step in plan.steps:
+            if step.status != StepStatus.PENDING:
+                continue
+            step.status = StepStatus.FAILED
+            step.started_at = step.started_at or now
+            step.completed_at = now
+            step.error = "Skipped because plan exceeded the global timeout"
+            tracker.memory.remember_failure(
+                step.step_id,
+                step.skill_id,
+                step.error,
+                "timeout",
+            )
+            self._emit_step_failed(plan_id, step, step.error)
 
     async def _run_skill(
         self,
@@ -317,7 +451,9 @@ class SkillExecutor:
         except KeyError as e:
             raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
 
-        response = await asyncio.to_thread(
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
             self._llm.chat,
             [Message.system(f"你是 SkillOS 中的 {skill.name} Skill，请严格按照任务要求执行。"),
              Message.user(prompt)],
@@ -372,8 +508,6 @@ class SkillExecutor:
 
         for sub_id in impl.sub_skill_ids:
             sub_skill = await self._registry.get(sub_id)
-            if not sub_skill and hasattr(self._registry, "get_by_name"):
-                sub_skill = await self._registry.get_by_name(sub_id)
             if not sub_skill:
                 logger.warning(f"子 Skill 不存在，跳过: {sub_id}")
                 continue
@@ -413,6 +547,50 @@ class SkillExecutor:
         return record
 
 
+def _resolve_input_mapping(
+    input_mapping: Dict[str, Any],
+    step_outputs: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        key: _resolve_mapping_value(value, step_outputs)
+        for key, value in input_mapping.items()
+    }
+
+
+def _resolve_mapping_value(value: Any, step_outputs: Dict[str, Dict[str, Any]]) -> Any:
+    if isinstance(value, str):
+        resolved = _resolve_step_reference(value, step_outputs)
+        return value if resolved is _UNRESOLVED_REFERENCE else resolved
+    if isinstance(value, dict):
+        return {
+            key: _resolve_mapping_value(item, step_outputs)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_mapping_value(item, step_outputs) for item in value]
+    return value
+
+
+_UNRESOLVED_REFERENCE = object()
+
+
+def _resolve_step_reference(value: str, step_outputs: Dict[str, Dict[str, Any]]) -> Any:
+    if not (value.startswith("${") and value.endswith("}") and "." in value[2:-1]):
+        return _UNRESOLVED_REFERENCE
+    reference = value[2:-1]
+    step_id, path = reference.split(".", 1)
+    output_record = step_outputs.get(step_id)
+    if not output_record:
+        return _UNRESOLVED_REFERENCE
+    current: Any = output_record.get("output", {})
+    for part in path.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return _UNRESOLVED_REFERENCE
+    return current
+
+
 def _plan_status(plan: ExecutionPlan) -> str:
     if not plan.steps:
         return "failed"
@@ -420,6 +598,12 @@ def _plan_status(plan: ExecutionPlan) -> str:
         return "success"
     success_count = sum(1 for step in plan.steps if step.status == StepStatus.SUCCESS)
     return "partial" if success_count else "failed"
+
+
+def _remaining_seconds(deadline: Optional[float]) -> Optional[float]:
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.monotonic())
 
 
 def _has_pending_steps(plan: ExecutionPlan) -> bool:

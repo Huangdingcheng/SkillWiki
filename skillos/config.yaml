@@ -3,12 +3,12 @@
 
 # ========== 全局 LLM 配置 ==========
 llm:
-  api_url: "https://yunwu.ai"
-  model: "gpt-5.4-nano"
+  api_url: "https://api.deepseek.com"
+  model: "deepseek-v4-pro"
   # api_key: 通过命令行参数 --api-key 提供
   temperature: 0.7
   max_tokens: 2000
-  timeout: 30
+  timeout: 120
   retry_count: 3
 
 # ========== 数据库配置 ==========
@@ -51,117 +51,117 @@ environment: "development"
 agents:
   # Trajectory Parser - 低温度，确定性输出
   trajectory_parser:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.5
     max_tokens: 3000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Skill Generator - 高温度，创意输出
   skill_generator:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.8
     max_tokens: 4000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Validator - 很低温度，严格验证
   validator:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.3
     max_tokens: 2000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Doc Parser - 中等温度
   doc_parser:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.6
     max_tokens: 3000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Script Analyzer - 低温度
   script_analyzer:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.4
     max_tokens: 2500
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Candidate Miner - 中等温度
   candidate_miner:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.6
     max_tokens: 3000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Formalizer - 低温度
   formalizer:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.4
     max_tokens: 2500
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Draft Generator - 中等温度
   draft_generator:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.6
     max_tokens: 3500
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Reviewer - 很低温度
   reviewer:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.2
     max_tokens: 2000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Executor - 低温度
   executor:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.3
     max_tokens: 2000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Planner - 中等温度
   planner:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.6
     max_tokens: 3000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Monitor - 低温度
   monitor:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.3
     max_tokens: 2000
-    timeout: 30
+    timeout: 120
     retry_count: 3
 
   # Evolution Engine - 中等温度
   evolution_engine:
-    api_url: "https://yunwu.ai"
-    model: "gpt-5.4-nano"
+    api_url: "https://api.deepseek.com"
+    model: "deepseek-v4-pro"
     temperature: 0.6
     max_tokens: 3000
-    timeout: 30
+    timeout: 120
     retry_count: 3

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Card, Input, Button, Tag, Alert, Spin,
-  Typography, Space, Statistic, Row, Col, Progress, Tooltip, Table, Empty,
+  Card, Input, Button, Tag, Alert, Spin, Divider,
+  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip, Table, Empty, Segmented,
 } from 'antd'
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
@@ -10,10 +10,25 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { executionApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, RetrievedSkill } from '@/api/types'
+import type {
+  ExecutionGraph,
+  ExecutionGraphNode,
+  ExecutionHistoryItem,
+  ExecutionResult,
+  ExecutionStepResult,
+  RetrievedSkill,
+} from '@/api/types'
 
 const { TextArea } = Input
 const { Text } = Typography
+
+type OrchestrationStrategy = 'quality_first' | 'efficiency_first' | 'simplicity_first'
+
+const STRATEGY_LABEL: Record<OrchestrationStrategy, string> = {
+  quality_first: 'Quality',
+  efficiency_first: 'Efficiency',
+  simplicity_first: 'Simplicity',
+}
 
 const STATUS_COLOR: Record<string, string> = {
   success: '#52c41a',
@@ -82,11 +97,138 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
   )
 }
 
+function GraphNodeCard({ node }: { node: ExecutionGraphNode }) {
+  const status = node.status || node.kind
+  const statusColor = STATUS_COLOR[status] || (node.kind === 'goal' ? '#1677ff' : '#8c8c8c')
+  return (
+    <div style={{
+      minWidth: 180,
+      maxWidth: 240,
+      padding: '10px 12px',
+      border: '1px solid #e5e7eb',
+      borderLeft: `4px solid ${statusColor}`,
+      borderRadius: 8,
+      background: '#fff',
+      boxShadow: '0 2px 6px rgba(15,23,42,0.06)',
+    }}>
+      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        <Space size={6} wrap>
+          <Text strong style={{ fontSize: 13 }}>{node.label}</Text>
+          {node.kind === 'retrieved_skill' && node.skill_type && (
+            <Tag color={SKILL_TYPE_COLOR[node.skill_type] || 'default'} style={{ margin: 0 }}>{node.skill_type}</Tag>
+          )}
+          {node.kind === 'execution_step' && node.status && (
+            <Tag color={STATUS_COLOR[node.status] || 'default'} style={{ margin: 0 }}>{node.status}</Tag>
+          )}
+        </Space>
+        {typeof node.score === 'number' && (
+          <Text type="secondary" style={{ fontSize: 12 }}>score {(node.score * 100).toFixed(0)}%</Text>
+        )}
+        {typeof node.latency_ms === 'number' && (
+          <Text type="secondary" style={{ fontSize: 12 }}>{node.latency_ms.toFixed(0)}ms</Text>
+        )}
+        {node.error && (
+          <Text type="danger" style={{ fontSize: 12 }}>{node.error}</Text>
+        )}
+      </Space>
+    </div>
+  )
+}
+
+function ExecutionGraphTree({ graph }: { graph?: ExecutionGraph | null }) {
+  if (!graph || graph.nodes.length === 0) return null
+
+  const root = graph.nodes.find(node => node.id === graph.root_id) || graph.nodes[0]
+  const skillNodes = graph.nodes
+    .filter(node => node.kind === 'retrieved_skill')
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const stepNodes = graph.nodes
+    .filter(node => node.kind === 'execution_step')
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const stepsBySkill = stepNodes.reduce<Record<string, ExecutionGraphNode[]>>((acc, node) => {
+    const key = node.skill_id || 'unknown'
+    acc[key] = [...(acc[key] || []), node]
+    return acc
+  }, {})
+  const dependencyEdges = graph.edges.filter(edge => edge.kind === 'depends_on')
+
+  return (
+    <Card
+      title={<span><ThunderboltOutlined style={{ color: '#1677ff', marginRight: 6 }} />Execution RAG Tree</span>}
+      variant="borderless"
+      style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+    >
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Tag color="blue">Source: {graph.composition_source || 'planner'}</Tag>
+        <Tag color="green">Nodes: {graph.nodes.length}</Tag>
+        <Tag color="purple">Edges: {graph.edges.length}</Tag>
+      </Space>
+      <div style={{ overflowX: 'auto', padding: '4px 4px 8px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minWidth: 680 }}>
+          <div style={{ paddingTop: 28 }}>
+            <GraphNodeCard node={root} />
+          </div>
+          <div style={{
+            width: 36,
+            height: 1,
+            background: '#cbd5e1',
+            marginTop: 72,
+            flex: '0 0 auto',
+          }} />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            {(skillNodes.length ? skillNodes : stepNodes).map(node => {
+              const nestedSteps = node.kind === 'retrieved_skill'
+                ? stepsBySkill[node.skill_id || ''] || []
+                : []
+              return (
+                <div key={node.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <GraphNodeCard node={node} />
+                  {nestedSteps.length > 0 && (
+                    <div style={{
+                      borderLeft: '1px solid #cbd5e1',
+                      paddingLeft: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}>
+                      {nestedSteps.map(step => <GraphNodeCard key={step.id} node={step} />)}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      {dependencyEdges.length > 0 && (
+        <>
+          <Divider style={{ margin: '12px 0' }} />
+          <Space direction="vertical" size={4}>
+            <Text strong style={{ fontSize: 12 }}>Dependency path</Text>
+            <Space wrap>
+              {dependencyEdges.map(edge => {
+                const source = graph.nodes.find(node => node.id === edge.source)
+                const target = graph.nodes.find(node => node.id === edge.target)
+                return (
+                  <Tag key={edge.id} color="geekblue">
+                    {`${source?.label || edge.source} -> ${target?.label || edge.target}`}
+                  </Tag>
+                )
+              })}
+            </Space>
+          </Space>
+        </>
+      )}
+    </Card>
+  )
+}
+
 export default function AgentExecution() {
   const [goal, setGoal] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [strategy, setStrategy] = useState<OrchestrationStrategy>('quality_first')
   const [history, setHistory] = useState<ExecutionHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -97,15 +239,14 @@ export default function AgentExecution() {
     try {
       setHistory(await executionApi.history())
     } catch (e: unknown) {
-      setHistoryError(getApiErrorMessage(e, 'Failed to load execution history'))
+      setHistoryError(getApiErrorMessage(e, '执行历史加载失败'))
     } finally {
       setHistoryLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => { void loadHistory() }, 0)
-    return () => window.clearTimeout(timeoutId)
+    void loadHistory()
   }, [loadHistory])
 
   const handleExecute = async () => {
@@ -114,11 +255,11 @@ export default function AgentExecution() {
     setError(null)
     setResult(null)
     try {
-      const res = await executionApi.executePlan(goal)
+      const res = await executionApi.executePlan(goal, {}, strategy)
       setResult(res)
       void loadHistory()
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e, 'Execution failed'))
+      setError(getApiErrorMessage(e, '执行失败'))
     } finally {
       setLoading(false)
     }
@@ -132,20 +273,37 @@ export default function AgentExecution() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Agent Execution</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          Enter a task goal. SkillOS will retrieve relevant Skills, build an execution plan, and run it.
+          输入任务目标，SkillOS 将自动检索相关 Skill、生成执行计划并运行。
         </p>
 
         <Card variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
           <TextArea
             value={goal}
             onChange={e => setGoal(e.target.value)}
-            placeholder="Describe your task goal, for example: find the login button on a page, click it, then fill in the username and password..."
+            placeholder="描述你的任务目标，例如：在网页上找到登录按钮并点击，然后填写用户名和密码..."
             rows={3}
             style={{ marginBottom: 12, fontSize: 14 }}
           />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <Space direction="vertical" size={2}>
+              <Text strong style={{ fontSize: 13 }}>Execution strategy</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Compose retrieved skills for quality, speed, or simplicity.
+              </Text>
+            </Space>
+            <Segmented
+              value={strategy}
+              onChange={value => setStrategy(value as OrchestrationStrategy)}
+              options={[
+                { label: 'Quality', value: 'quality_first' },
+                { label: 'Efficiency', value: 'efficiency_first' },
+                { label: 'Simplicity', value: 'simplicity_first' },
+              ]}
+            />
+          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              SkillOS will decompose the task, retrieve Skills, and generate an execution plan.
+              SkillOS 将自动分解任务、检索 Skill 并生成执行计划
             </Text>
             <Button
               type="primary"
@@ -155,18 +313,18 @@ export default function AgentExecution() {
               disabled={!goal.trim()}
               size="large"
             >
-              Execute
+              执行
             </Button>
           </div>
         </Card>
 
-        {/* Example tasks */}
+        {/* 示例任务 */}
         <div style={{ marginBottom: 24 }}>
-          <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>Examples:</Text>
+          <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>示例：</Text>
           {[
-            'Click the submit button on the page',
-            'Fill and submit the login form',
-            'Type a keyword into the search box and search',
+            '点击页面上的提交按钮',
+            '填写登录表单并提交',
+            '在搜索框中输入关键词并搜索',
           ].map(ex => (
             <Tag
               key={ex}
@@ -180,13 +338,13 @@ export default function AgentExecution() {
       </motion.div>
 
       <Card
-        title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />Recent Execution History</span>}
+        title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />最近执行历史</span>}
         variant="borderless"
         size="small"
         style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
         extra={
           <Button size="small" icon={<ReloadOutlined />} loading={historyLoading} onClick={loadHistory}>
-            Refresh
+            刷新
           </Button>
         }
       >
@@ -194,7 +352,7 @@ export default function AgentExecution() {
           <Alert type="warning" showIcon title={historyError} style={{ marginBottom: 12 }} />
         )}
         {!historyLoading && history.length === 0 ? (
-          <Empty description="No execution history yet. Completed tasks will appear here automatically." image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="暂无执行历史，完成一次任务后会自动显示在这里" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <Table
             rowKey="execution_id"
@@ -244,21 +402,21 @@ export default function AgentExecution() {
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin size="large" description="Planning and executing..." />
+          <Spin size="large" description="正在规划并执行..." />
         </div>
       )}
 
       {error && (
-        <Alert type="error" title="Execution Failed" description={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert type="error" title="执行失败" description={error} showIcon style={{ marginBottom: 16 }} />
       )}
 
       <AnimatePresence>
         {result && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          {/* Retrieved Skills */}
+          {/* 检索到的 Skill */}
             {retrieved.length > 0 && (
               <Card
-                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />Retrieved Skills ({retrieved.length})</span>}
+                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
                 variant="borderless"
                 size="small"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
@@ -290,7 +448,21 @@ export default function AgentExecution() {
               </Card>
             )}
 
-            {/* Execution summary */}
+            {/* 执行摘要 */}
+            <Card
+              variant="borderless"
+              size="small"
+              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+            >
+              <Space wrap>
+                <Tag color="blue">Strategy: {STRATEGY_LABEL[result.orchestration_strategy] || result.orchestration_strategy}</Tag>
+                <Tag color="purple">DAG: {result.composition_source || 'planner'}</Tag>
+                <Tag color="green">Parallel groups: {result.parallel_groups?.length || 0}</Tag>
+              </Space>
+            </Card>
+
+            <ExecutionGraphTree graph={result.execution_graph} />
+
             <Card
               variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
@@ -298,20 +470,20 @@ export default function AgentExecution() {
               <Row gutter={16}>
                 <Col span={6}>
                   <Statistic
-                    title="Status"
+                    title="状态"
                     value={result.status}
                     styles={{ content: { color: result.status === 'success' ? '#52c41a' : result.status === 'failed' ? '#ff4d4f' : '#faad14' } }}
                   />
                 </Col>
                 <Col span={6}>
-                  <Statistic title="Total Steps" value={result.steps.length} />
+                  <Statistic title="总步骤" value={result.steps.length} />
                 </Col>
                 <Col span={6}>
-                  <Statistic title="Successful" value={successCount} styles={{ content: { color: '#52c41a' } }} />
+                  <Statistic title="成功" value={successCount} styles={{ content: { color: '#52c41a' } }} />
                 </Col>
                 <Col span={6}>
                   <Statistic
-                    title="Total Latency"
+                    title="总耗时"
                     value={result.total_latency_ms.toFixed(0)}
                     suffix="ms"
                     styles={{ content: { color: '#1677ff' } }}
@@ -320,23 +492,23 @@ export default function AgentExecution() {
               </Row>
             </Card>
 
-            {/* Execution steps */}
+            {/* 执行步骤 */}
             <Card
-              title={<><ThunderboltOutlined /> Execution Steps</>}
+              title={<><ThunderboltOutlined /> 执行步骤</>}
               variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
             >
               {result.steps.length === 0 ? (
-                <Alert type="warning" title="No executable Skill was found. Try a more specific task description." />
+                <Alert type="warning" title="未找到可执行的 Skill，请尝试更具体的任务描述" />
               ) : (
                 result.steps.map((step, i) => <StepCard key={step.step_id} step={step} index={i} />)
               )}
             </Card>
 
-            {/* Final state */}
+            {/* 最终状态 */}
             {Object.keys(result.final_state).length > 0 && (
               <Card
-                title="Final State"
+                title="最终状态"
                 variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >
@@ -345,7 +517,7 @@ export default function AgentExecution() {
                 </pre>
               </Card>
             )}
-            {/* Experience recording feedback */}
+            {/* 经验记录反馈 */}
             {result.experience_recorded && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <Card
@@ -356,7 +528,7 @@ export default function AgentExecution() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <DatabaseOutlined style={{ color: '#52c41a', fontSize: 16 }} />
                     <Text style={{ fontSize: 13 }}>
-                      <strong>Experience recorded</strong> - this execution trace was written to the Experience Store for Skill quality assessment and evolution decisions.
+                      <strong>经验已记录</strong> — 本次执行轨迹已写入 Experience Store，将用于 Skill 质量评估与演化决策。
                     </Text>
                   </div>
                 </Card>

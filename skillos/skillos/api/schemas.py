@@ -5,15 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
-from ..models.maintenance_model import (
-    MaintenanceProposal,
-    MaintenanceProposalStatus,
-    ReflectionMemoryEntry,
-)
 from ..models.skill_model import (
-    SkillEvaluation,
     SkillImplementation,
     SkillInterface,
     SkillMetrics,
@@ -42,25 +36,10 @@ class SkillCreateRequest(BaseModel):
     name: str
     description: str
     skill_type: SkillType = SkillType.ATOMIC
-    state: SkillState = SkillState.DRAFT
     tags: List[str] = Field(default_factory=list)
     interface: SkillInterface
     implementation: Optional[SkillImplementation] = None
-    evaluation: Optional[SkillEvaluation] = None
-    provenance: Optional[SkillProvenance] = None
     author: str = "api"
-
-    @field_validator("state")
-    @classmethod
-    def validate_create_state(cls, state: SkillState) -> SkillState:
-        allowed = {
-            SkillState.RAW_EXPERIENCE,
-            SkillState.SKILL_CANDIDATE,
-            SkillState.DRAFT,
-        }
-        if state not in allowed:
-            raise ValueError("Skill creation API only accepts S0/S1/S2; use lifecycle review for later states.")
-        return state
 
 
 class SkillUpdateRequest(BaseModel):
@@ -68,7 +47,6 @@ class SkillUpdateRequest(BaseModel):
     tags: Optional[List[str]] = None
     interface: Optional[SkillInterface] = None
     implementation: Optional[SkillImplementation] = None
-    evaluation: Optional[SkillEvaluation] = None
     author: str = "api"
 
 
@@ -88,7 +66,6 @@ class SkillSearchRequest(BaseModel):
     state: Optional[SkillState] = None
     min_success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     include_deprecated: bool = False
-    mode: str = Field(default="lexical", pattern=r"^(lexical|rule|hybrid|semantic)$")
     limit: int = Field(default=20, ge=1, le=100)
 
 
@@ -102,9 +79,6 @@ class SkillSearchResult(BaseModel):
     version: str
     score: float
     match_reason: str
-    search_mode: str = "lexical"
-    score_components: Dict[str, float] = Field(default_factory=dict)
-    explanation: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SkillSummary(BaseModel):
@@ -116,7 +90,6 @@ class SkillSummary(BaseModel):
     tags: List[str]
     version: str
     granularity_level: int
-    evaluation: SkillEvaluation = Field(default_factory=SkillEvaluation)
     metrics: SkillMetrics
     created_at: datetime
     updated_at: datetime
@@ -168,15 +141,11 @@ class SnapshotHistoryResponse(BaseModel):
 class SnapshotDiffResponse(BaseModel):
     skill_id: str
     snapshot_path: str
-    from_snapshot_path: Optional[str] = None
-    to_snapshot_path: Optional[str] = None
     from_ref: str
     to_ref: str
     raw_diff: str
     diffs: List[Dict[str, Any]]
     has_breaking_changes: bool
-    review_recommendation: str
-    impacted_skills: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ReleaseTagRequest(BaseModel):
@@ -185,28 +154,6 @@ class ReleaseTagRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     source_ref: str
-
-
-class MaintenanceReviewRequest(BaseModel):
-    proposal_id: str
-    patched_skill: Dict[str, Any]
-    reason: str = ""
-    author: str = "SkillMaintainerAgent"
-
-
-class MaintenanceReviewResponse(BaseModel):
-    skill_id: str
-    proposal_id: str
-    branch_name: str
-    base_commit: str
-    head_commit: str
-    snapshot_path: str
-    structured_diff: List[Dict[str, Any]]
-    has_breaking_changes: bool
-    review_status: str
-    impacted_skills: List[Dict[str, Any]] = Field(default_factory=list)
-    reason: str = ""
-    author: str = "SkillMaintainerAgent"
 
 
 # ─── 图谱 ─────────────────────────────────────────────────────────────────────
@@ -229,7 +176,10 @@ class GraphNodeData(BaseModel):
     granularity_level: int
     success_rate: float
     usage_count: int
-
+    label: Optional[str] = None
+    size: int = 16
+    color: str = "#9CA3AF"
+    tooltip: Optional[str] = None
 
 class GraphEdgeData(BaseModel):
     id: str
@@ -243,82 +193,6 @@ class GraphData(BaseModel):
     nodes: List[GraphNodeData]
     edges: List[GraphEdgeData]
     stats: Dict[str, Any] = Field(default_factory=dict)
-
-
-class SkillGraphProjectionEdgeData(BaseModel):
-    id: str
-    source: str
-    target: str
-    edge_type: str
-    weight: float
-    confidence: float
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class SkillGraphProjectionData(BaseModel):
-    nodes: List[GraphNodeData]
-    edges: List[SkillGraphProjectionEdgeData]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    validation_evidence: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
-    stats: Dict[str, Any] = Field(default_factory=dict)
-
-
-class HeterogeneousGraphNodeData(BaseModel):
-    id: str
-    kind: str
-    name: str
-    description: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class HeterogeneousGraphEdgeData(BaseModel):
-    id: str
-    source: str
-    target: str
-    edge_type: str
-    weight: float
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class HeterogeneousGraphData(BaseModel):
-    nodes: List[HeterogeneousGraphNodeData]
-    edges: List[HeterogeneousGraphEdgeData]
-    stats: Dict[str, Any] = Field(default_factory=dict)
-
-
-class GraphViewNodeData(BaseModel):
-    id: str
-    name: str
-    kind: str = "skill"
-    description: str = ""
-    skill_type: Optional[str] = None
-    state: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
-    version: Optional[str] = None
-    granularity_level: Optional[int] = None
-    success_rate: Optional[float] = None
-    usage_count: Optional[int] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class GraphViewEdgeData(BaseModel):
-    id: str
-    source: str
-    target: str
-    edge_type: str
-    weight: float
-    confidence: Optional[float] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class GraphViewData(BaseModel):
-    view: str
-    source_endpoint: str
-    nodes: List[GraphViewNodeData]
-    edges: List[GraphViewEdgeData]
-    stats: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    validation_evidence: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
 
 
 class SubgraphRequest(BaseModel):
@@ -338,6 +212,10 @@ class ExecutePlanRequest(BaseModel):
     goal: str
     context: Dict[str, Any] = Field(default_factory=dict)
     max_skills: int = Field(default=10, ge=1, le=50)
+    orchestration_strategy: str = Field(
+        default="quality_first",
+        pattern=r"^(quality_first|efficiency_first|simplicity_first)$",
+    )
 
 
 class ExecutionStepResult(BaseModel):
@@ -346,7 +224,6 @@ class ExecutionStepResult(BaseModel):
     skill_id: str
     skill_name: str
     status: str
-    input_mapping: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
@@ -362,23 +239,6 @@ class RetrievedSkill(BaseModel):
     match_reason: str
 
 
-class ExecutionExperienceUnit(BaseModel):
-    unit_id: str
-    source_type: str = "agent_execution"
-    source_execution_id: str
-    raw_content: str
-    extracted_actions: List[str] = Field(default_factory=list)
-    normalized_actions: List[Dict[str, Any]] = Field(default_factory=list)
-    summary: str = ""
-    proposed_skill_name: Optional[str] = None
-    proposed_description: Optional[str] = None
-    proposed_type: Optional[str] = None
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    index_keywords: List[str] = Field(default_factory=list)
-    index_embedding_hint: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
 class ExecutionResult(BaseModel):
     plan_id: str
     goal: str
@@ -388,10 +248,16 @@ class ExecutionResult(BaseModel):
     final_state: Dict[str, Any]
     retrieved_skills: List[RetrievedSkill] = Field(default_factory=list)
     experience_recorded: bool = False
-    experience_unit: Optional[ExecutionExperienceUnit] = None
     suggested_skill: Optional[Dict[str, Any]] = None
-    verifier_passed: Optional[bool] = None
-    verifier_summary: Optional[Dict[str, Any]] = None
+    orchestration_strategy: str = "quality_first"
+    parallel_groups: List[List[str]] = Field(default_factory=list)
+    composition_source: str = ""
+    verification: Optional[Dict[str, Any]] = None
+    reflection: Optional[Dict[str, Any]] = None
+    failure_type: str = "none"
+    recovery_route: str = "none"
+    runtime_memory: Optional[Dict[str, Any]] = None
+    execution_graph: Optional[Dict[str, Any]] = None
 
 
 class ExecutionHistoryItem(BaseModel):
@@ -403,8 +269,6 @@ class ExecutionHistoryItem(BaseModel):
     total_latency_ms: float
     retrieved_skill_count: int
     created_at: datetime
-    experience_unit_id: Optional[str] = None
-    experience_source_type: Optional[str] = None
 
 
 class EvolutionStats(BaseModel):
@@ -429,7 +293,6 @@ class HealthReportResponse(BaseModel):
     avg_latency_ms: float
     issues: List[str]
     recommendations: List[str]
-    maintenance_proposal: Optional[MaintenanceProposal] = None
 
 
 class SystemHealthResponse(BaseModel):
@@ -444,72 +307,6 @@ class SystemHealthResponse(BaseModel):
 
 # ─── 演化 ─────────────────────────────────────────────────────────────────────
 
-class MaintenanceProposalNextAction(BaseModel):
-    """Next human-governed action after accepting a D-side proposal."""
-
-    action: str = "create_review_bundle"
-    method: str = "POST"
-    endpoint: str
-    required_payload_fields: List[str] = Field(default_factory=list)
-    reason: str = ""
-
-
-class MaintenanceProposalResponse(MaintenanceProposal):
-    """API representation for D-side human-review maintenance proposals."""
-
-    next_action: Optional[MaintenanceProposalNextAction] = None
-
-
-class MaintenanceProposalListResponse(BaseModel):
-    proposals: List[MaintenanceProposalResponse] = Field(default_factory=list)
-    total: int = 0
-    pending_count: int = 0
-
-    @classmethod
-    def from_proposals(
-        cls,
-        proposals: List[MaintenanceProposal],
-    ) -> "MaintenanceProposalListResponse":
-        pending = [
-            proposal
-            for proposal in proposals
-            if proposal.status == MaintenanceProposalStatus.PENDING
-        ]
-        return cls(
-            proposals=[
-                MaintenanceProposalResponse.model_validate(proposal.model_dump())
-                for proposal in proposals
-            ],
-            total=len(proposals),
-            pending_count=len(pending),
-        )
-
-
-class ReflectionMemoryRequest(BaseModel):
-    """Runtime reflection memory item submitted before creating a proposal."""
-
-    task_id: str = ""
-    skill_id: str
-    goal: str = ""
-    success: bool = False
-    failure_signature: str = ""
-    reflection_text: str = ""
-    evidence: List[str] = Field(default_factory=list)
-    verifier_result: Dict[str, Any] = Field(default_factory=dict)
-    trajectory_summary: str = ""
-    human_decision: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class ReflectionMemoryResponse(BaseModel):
-    """Stored reflection memory and optional threshold-triggered proposal."""
-
-    memory: ReflectionMemoryEntry
-    occurrence_count: int
-    threshold: int
-    proposal: Optional[MaintenanceProposalResponse] = None
-
-
 class EvolutionCycleResponse(BaseModel):
     cycle_id: str
     started_at: datetime
@@ -522,7 +319,6 @@ class EvolutionCycleResponse(BaseModel):
     merged: List[Tuple[List[str], str]]
     split: List[Tuple[str, List[str]]]
     errors: List[str]
-    maintenance_proposals: List[MaintenanceProposal] = Field(default_factory=list)
 
 
 # ─── 统计 ─────────────────────────────────────────────────────────────────────
