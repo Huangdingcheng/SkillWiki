@@ -113,37 +113,21 @@ async def execute_plan(
     app.state_tracker.update(req.context)
     t0 = time.monotonic()
 
-    from ...layers.skill_repository.indexing import SearchQuery
     from ...layers.skill_runtime import (
         OrchestrationStrategy,
         execution_plan_from_skill_graph,
     )
 
-    search_results = await app.search.search(
-        SearchQuery(
-            text=req.goal,
-            max_results=max(req.max_skills, 50),
-        )
-    )
-    runtime_results = _runtime_execution_results(search_results)[: req.max_skills]
-    available_skills = [r.skill for r in runtime_results]
-
-    retrieved = [
-        RetrievedSkill(
-            skill_id=r.skill.skill_id,
-            name=r.skill.name,
-            description=r.skill.description,
-            skill_type=r.skill.skill_type.value,
-            score=round(r.score, 3),
-            match_reason=_format_match_reason(r),
-        )
-        for r in runtime_results
-    ]
+    retrieval = await _retrieve_runtime_skills(app, req.goal, req.context, req.max_skills)
+    available_skills = retrieval["skills"]
+    retrieved = retrieval["retrieved"]
+    skill_group = retrieval["skill_group"]
 
     strategy = OrchestrationStrategy(req.orchestration_strategy)
     graph = app.composer.compose(
         available_skills,
         task_description=req.goal,
+        skill_group=skill_group,
         strategy=strategy,
     )
     plan = execution_plan_from_skill_graph(
@@ -280,6 +264,63 @@ def _format_match_reason(search_result: Any) -> str:
         return "; ".join(str(reason) for reason in reasons)
     reason = getattr(search_result, "match_reason", "")
     return str(reason or "")
+
+
+async def _retrieve_runtime_skills(
+    app: AppState,
+    goal: str,
+    context: Dict[str, Any],
+    max_skills: int,
+) -> Dict[str, Any]:
+    """Retrieve executable skills through SkillRetriever, with search fallback."""
+
+    retriever = getattr(app, "retriever", None)
+    if retriever:
+        try:
+            retrieval = await retriever.retrieve(goal, current_state=context)
+            skills = list(retrieval.skills[:max_skills])
+            return {
+                "skills": skills,
+                "skill_group": retrieval.skill_group,
+                "retrieved": [
+                    RetrievedSkill(
+                        skill_id=skill.skill_id,
+                        name=skill.name,
+                        description=skill.description,
+                        skill_type=skill.skill_type.value,
+                        score=round(float(retrieval.confidence or 0.0), 3),
+                        match_reason=retrieval.rationale or "selected by runtime retriever",
+                    )
+                    for skill in skills
+                ],
+            }
+        except Exception as exc:
+            logger.warning("Runtime retriever failed; falling back to search: %s", exc)
+
+    from ...layers.skill_repository.indexing import SearchQuery
+
+    search_results = await app.search.search(
+        SearchQuery(
+            text=goal,
+            max_results=max(max_skills, 50),
+        )
+    )
+    runtime_results = _runtime_execution_results(search_results)[:max_skills]
+    return {
+        "skills": [r.skill for r in runtime_results],
+        "skill_group": None,
+        "retrieved": [
+            RetrievedSkill(
+                skill_id=r.skill.skill_id,
+                name=r.skill.name,
+                description=r.skill.description,
+                skill_type=r.skill.skill_type.value,
+                score=round(r.score, 3),
+                match_reason=_format_match_reason(r),
+            )
+            for r in runtime_results
+        ],
+    }
 
 
 def _runtime_execution_results(search_results: List[Any]) -> List[Any]:

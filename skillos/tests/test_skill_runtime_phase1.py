@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Optional
 
 import pytest
 
 from skillos.api.routes import execution
 from skillos.api.schemas import ExecutePlanRequest
 from skillos.layers.skill_repository.indexing import SearchResult
+from skillos.layers.skill_runtime.composition import SkillGraph
 from skillos.layers.skill_runtime.executor import SkillExecutor
 from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
+from skillos.layers.skill_runtime.retriever import RetrievalResult, RetrievalStrategy, SkillGroup
 from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
 
@@ -44,6 +47,44 @@ async def test_execute_plan_formats_match_reasons_and_records_metrics():
     assert skill.metrics.usage_count == 1
     assert skill.metrics.success_count == 1
     assert app.recorded == [(skill.skill_id, True)]
+
+
+@pytest.mark.asyncio
+async def test_execute_plan_uses_runtime_retriever_skill_group():
+    support = make_skill("prepare_customer_data")
+    start = make_skill("process_order")
+    check = make_skill("validate_order")
+    skill_group = SkillGroup(
+        anchor_skill_id=start.skill_id,
+        support_skill_ids=[support.skill_id],
+        start_skill_ids=[start.skill_id],
+        check_skill_ids=[check.skill_id],
+    )
+    app = FakeAppState(
+        skills=[support, start, check],
+        search_results=[],
+        plan_steps=[],
+        retrieval=RetrievalResult(
+            strategy=RetrievalStrategy.COMPOSE,
+            skills=[support, start, check],
+            confidence=0.92,
+            rationale="structured runtime group",
+            skill_group=skill_group,
+        ),
+    )
+
+    result = await execution.execute_plan(ExecutePlanRequest(goal="process order"), app=app)
+
+    assert result.status == "success"
+    assert result.composition_source == "skill_group"
+    assert [step.skill_id for step in result.steps] == [
+        support.skill_id,
+        start.skill_id,
+        check.skill_id,
+    ]
+    assert result.steps[1].status == "success"
+    assert result.retrieved_skills[0].match_reason == "structured runtime group"
+    assert app.search.calls == 0
 
 
 @pytest.mark.asyncio
@@ -112,10 +153,18 @@ async def test_executor_schedules_async_callbacks_and_ignores_callback_errors():
 
 
 class FakeAppState:
-    def __init__(self, skills: list[Skill], search_results: list[SearchResult], plan_steps: list[PlanStep]) -> None:
+    def __init__(
+        self,
+        skills: list[Skill],
+        search_results: list[SearchResult],
+        plan_steps: list[PlanStep],
+        retrieval: Optional[RetrievalResult] = None,
+    ) -> None:
         self.state_tracker = FakeStateTracker()
         self.wiki = FakeWiki(skills)
         self.search = FakeSearch(search_results)
+        self.retriever = FakeRetriever(retrieval) if retrieval else None
+        self.composer = FakeComposer()
         self.planner = FakePlanner(plan_steps)
         self.executor = FakeExecutor()
         self.recorded = self.wiki.recorded
@@ -147,9 +196,58 @@ class FakeWiki:
 class FakeSearch:
     def __init__(self, results: list[SearchResult]) -> None:
         self.results = results
+        self.calls = 0
 
     async def search(self, query: object) -> list[SearchResult]:
+        self.calls += 1
         return self.results
+
+
+class FakeRetriever:
+    def __init__(self, retrieval: RetrievalResult) -> None:
+        self.retrieval = retrieval
+
+    async def retrieve(
+        self,
+        task_description: str,
+        current_state: Optional[dict] = None,
+        domain: Optional[str] = None,
+    ) -> RetrievalResult:
+        return self.retrieval
+
+
+class FakeComposer:
+    def compose(
+        self,
+        skills: list[Skill],
+        task_description: str = "",
+        skill_group: Optional[SkillGroup] = None,
+        strategy: object = None,
+    ) -> SkillGraph:
+        if not skill_group:
+            return SkillGraph(graph_id="graph-1", task_description=task_description)
+        graph = SkillGraph(
+            graph_id="graph-1",
+            task_description=task_description,
+            nodes=list(skills),
+            entry_skill_id=skills[0].skill_id if skills else "",
+        )
+        if skill_group.support_skill_ids and skill_group.start_skill_ids:
+            graph.metadata["composition_source"] = "skill_group"
+            graph.edges.append(SimpleNamespace(
+                source_id=skill_group.support_skill_ids[0],
+                target_id=skill_group.start_skill_ids[0],
+                edge_type="sequence",
+                data_mapping={},
+            ))
+            if skill_group.check_skill_ids:
+                graph.edges.append(SimpleNamespace(
+                    source_id=skill_group.start_skill_ids[0],
+                    target_id=skill_group.check_skill_ids[0],
+                    edge_type="sequence",
+                    data_mapping={},
+                ))
+        return graph
 
 
 class FakePlanner:
