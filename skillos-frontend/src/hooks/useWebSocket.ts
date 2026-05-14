@@ -31,6 +31,10 @@ export function useWebSocket() {
   const pushWsEvent = useAppStore(s => s.pushWsEvent)
 
   useEffect(() => {
+    if (import.meta.env.VITE_SKILLOS_DISABLE_WS === '1') {
+      return
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const ws = new WebSocket(`${protocol}://${window.location.host}/ws`)
     wsRef.current = ws

@@ -6,7 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ...models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
+from ...models.skill_model import (
+    Skill,
+    SkillEvaluation,
+    SkillImplementation,
+    SkillInterface,
+    SkillState,
+    SkillType,
+)
 from ...storage.skill_repo.common import GitSkillStore
 from ...utils.logger import get_logger
 
@@ -163,6 +170,8 @@ class SkillWikiManager:
                 value = SkillInterface.model_validate(value)
             elif key == "implementation" and isinstance(value, dict):
                 value = SkillImplementation.model_validate(value)
+            elif key == "evaluation" and isinstance(value, dict):
+                value = SkillEvaluation.model_validate(value)
             setattr(skill, key, value)
         skill.updated_at = datetime.utcnow()
 

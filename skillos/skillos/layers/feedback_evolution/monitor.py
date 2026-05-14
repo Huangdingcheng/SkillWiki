@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...models.maintenance_model import MaintenanceProposal
 from ...models.skill_model import Skill, SkillState
 from ...utils.logger import get_logger
 
@@ -168,3 +169,8 @@ class SkillMonitor:
             report.status == HealthStatus.CRITICAL
             or (report.status == HealthStatus.STALE and skill.metrics.usage_count < 10)
         )
+
+    def propose_maintenance(self, skill: Skill) -> Optional[MaintenanceProposal]:
+        """Create a human-review proposal for unhealthy Skills."""
+        report = self.evaluate_skill(skill)
+        return MaintenanceProposal.from_health_report(report)

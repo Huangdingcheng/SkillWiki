@@ -1,0 +1,867 @@
+{
+  "generated_at": "2026-05-13T11:55:36Z",
+  "benchmark": "llm_planner_eval",
+  "task_count": 12,
+  "modes": [
+    "llm"
+  ],
+  "config": {
+    "api_url": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.0,
+    "max_tokens": 2000,
+    "timeout": 60,
+    "retry_count": 0,
+    "seed": null,
+    "context": "",
+    "distractor_count": 6,
+    "api_key_provided": true
+  },
+  "results": [
+    {
+      "task_id": "web_fill_login_form",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 19217.227,
+      "expected_skills": [
+        "fill_form"
+      ],
+      "selected_skill_ids": [
+        "fill_form"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 759,
+        "completion_tokens": 287,
+        "total_tokens": 1046,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 142
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 759
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "245d2607-481f-4850-bf5d-83f64650133b",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "fill_form",
+          "skill_name": "fill_form",
+          "depends_on": [],
+          "input_mapping": {
+            "url": "https://demo.local/login",
+            "form_data": {
+              "username": "demo",
+              "password": "secret"
+            }
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_click_and_type",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 16582.83,
+      "expected_skills": [
+        "click_element",
+        "type_text"
+      ],
+      "selected_skill_ids": [
+        "click_element",
+        "type_text"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 771,
+        "completion_tokens": 380,
+        "total_tokens": 1151,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 207
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 771
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "64990b6c-cc01-43a5-aaa2-b9672d9063ea",
+      "step_count": 2,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [],
+          "input_mapping": {
+            "selector": "#search"
+          }
+        },
+        {
+          "step_index": 1,
+          "skill_id": "type_text",
+          "skill_name": "type_text",
+          "depends_on": [
+            "5721d364-71c8-48dc-9d29-fc0a513102f6"
+          ],
+          "input_mapping": {
+            "selector": "#search",
+            "text": "SkillOS"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_extract_selector",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 15480.363,
+      "expected_skills": [
+        "extract_selector"
+      ],
+      "selected_skill_ids": [
+        "extract_selector"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 749,
+        "completion_tokens": 395,
+        "total_tokens": 1144,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 257
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 749
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "0f23a462-3a75-4bef-878c-f5257ab5518a",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [],
+          "input_mapping": {
+            "html": "<form id=\"login-form\"><input name=\"email\" /></form>"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_submit_form",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 14616.604,
+      "expected_skills": [
+        "submit_form"
+      ],
+      "selected_skill_ids": [
+        "submit_form"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 726,
+        "completion_tokens": 208,
+        "total_tokens": 934,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 94
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 726
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "a99e7ecf-8902-4678-8783-840b45226052",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "submit_form",
+          "skill_name": "submit_form",
+          "depends_on": [],
+          "input_mapping": {
+            "selector": "#submit"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_parse_openapi_endpoint",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 18718.739,
+      "expected_skills": [
+        "parse_openapi_endpoint"
+      ],
+      "selected_skill_ids": [
+        "parse_openapi_endpoint"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 752,
+        "completion_tokens": 756,
+        "total_tokens": 1508,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 640
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 752
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "862592a5-8809-4057-9929-8a90da6f8e5b",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "parse_openapi_endpoint",
+          "skill_name": "parse_openapi_endpoint",
+          "depends_on": [],
+          "input_mapping": {
+            "openapi_fragment": "${task.input.openapi_fragment}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_build_tool_call",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 17633.384,
+      "expected_skills": [
+        "build_tool_call"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 751,
+        "completion_tokens": 233,
+        "total_tokens": 984,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 108
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 751
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "300b351a-0ca4-4f27-8e10-ef6ed40b3565",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {
+            "operation_id": "createUser",
+            "arguments": {
+              "name": "Ada"
+            }
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_validate_response_schema",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 19301.767,
+      "expected_skills": [
+        "validate_response_schema"
+      ],
+      "selected_skill_ids": [
+        "validate_response_schema"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 758,
+        "completion_tokens": 266,
+        "total_tokens": 1024,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 139
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 758
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "1f31116b-9771-49d4-adc7-e5aaf4173986",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "validate_response_schema",
+          "skill_name": "validate_response_schema",
+          "depends_on": [],
+          "input_mapping": {
+            "response": "${task.input.response}",
+            "required": "${task.input.required}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "doc_extract_steps",
+      "domain": "doc",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 32753.494,
+      "expected_skills": [
+        "extract_steps"
+      ],
+      "selected_skill_ids": [
+        "extract_steps"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 747,
+        "completion_tokens": 224,
+        "total_tokens": 971,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 97
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 747
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "11a725a6-3cc9-4a19-85f9-885cea160741",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [],
+          "input_mapping": {
+            "text": "Open settings, select profile, then save changes."
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "script_extract_function_skill",
+      "domain": "script",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 31367.55,
+      "expected_skills": [
+        "extract_function_skill"
+      ],
+      "selected_skill_ids": [
+        "extract_function_skill"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 746,
+        "completion_tokens": 342,
+        "total_tokens": 1088,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 200
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 746
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "593e1093-5288-49a9-b870-2a331f5b1f35",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [],
+          "input_mapping": {
+            "code": "def normalize_email(email): return email.strip().lower()"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_repair_failed_postcondition",
+      "domain": "runtime",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 34951.889,
+      "expected_skills": [
+        "reflect_failure"
+      ],
+      "selected_skill_ids": [
+        "reflect_failure"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 763,
+        "completion_tokens": 764,
+        "total_tokens": 1527,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 639
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 763
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "11bdff5a-e433-4829-95ad-3bb89d52c666",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "reflect_failure",
+          "skill_name": "reflect_failure",
+          "depends_on": [],
+          "input_mapping": {
+            "failed_skill_id": "fill_form",
+            "issue": "submitted flag missing"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_detect_breaking_schema_change",
+      "domain": "governance",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 23372.032,
+      "expected_skills": [
+        "detect_schema_change"
+      ],
+      "selected_skill_ids": [
+        "detect_schema_change"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 762,
+        "completion_tokens": 451,
+        "total_tokens": 1213,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 314
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 762
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "934ceec9-104e-43d9-b890-9eeb148a9bb1",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [],
+          "input_mapping": {
+            "before": "${input.before}",
+            "after": "${input.after}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_graph_trace_provenance",
+      "domain": "graph",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 19591.729,
+      "expected_skills": [
+        "trace_provenance"
+      ],
+      "selected_skill_ids": [
+        "trace_provenance"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "inputs_complete": true,
+      "missing_required_inputs": [],
+      "plan_source": "llm",
+      "input_mapping_repairs": [],
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 765,
+        "completion_tokens": 276,
+        "total_tokens": 1041,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 124
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 765
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "bae640ff-e680-47bc-9244-f3ecd5b71778",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "trace_provenance",
+          "skill_name": "trace_provenance",
+          "depends_on": [],
+          "input_mapping": {
+            "start": "source_demo_trajectory",
+            "target": "version_demo"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    }
+  ],
+  "summary": {
+    "task_count": 12,
+    "mode_totals": {
+      "llm": {
+        "total": 12,
+        "success": 12,
+        "functional_failure": 0,
+        "api_failure": 0,
+        "skipped": 0,
+        "success_rate_excluding_api_failures": 1.0
+      }
+    },
+    "rows": [
+      {
+        "task_id": "api_build_tool_call",
+        "llm_status": "success",
+        "llm_selected": [
+          "build_tool_call"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "api_parse_openapi_endpoint",
+        "llm_status": "success",
+        "llm_selected": [
+          "parse_openapi_endpoint"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "api_validate_response_schema",
+        "llm_status": "success",
+        "llm_selected": [
+          "validate_response_schema"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "doc_extract_steps",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_steps"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "script_extract_function_skill",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_function_skill"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_detect_breaking_schema_change",
+        "llm_status": "success",
+        "llm_selected": [
+          "detect_schema_change"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_graph_trace_provenance",
+        "llm_status": "success",
+        "llm_selected": [
+          "trace_provenance"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_repair_failed_postcondition",
+        "llm_status": "success",
+        "llm_selected": [
+          "reflect_failure"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_click_and_type",
+        "llm_status": "success",
+        "llm_selected": [
+          "click_element",
+          "type_text"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_extract_selector",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_selector"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_fill_login_form",
+        "llm_status": "success",
+        "llm_selected": [
+          "fill_form"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_submit_form",
+        "llm_status": "success",
+        "llm_selected": [
+          "submit_form"
+        ],
+        "winner": "llm"
+      }
+    ]
+  }
+}

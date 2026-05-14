@@ -296,10 +296,21 @@ def test_skill_and_graph_api_smoke(
 
     patch_resp = client.patch(
         f"/api/v1/skills/{first.skill_id}",
-        json={"description": "Patched from API"},
+        json={
+            "description": "Patched from API",
+            "evaluation": {
+                "verifier_specs": [
+                    {"type": "json_exists", "path": "output.clicked"}
+                ],
+                "test_case_refs": ["api-click-smoke"],
+                "benchmark_task_ids": ["web_click_and_type"],
+                "validation_summary": "manual smoke verifier placeholder",
+            },
+        },
     )
     assert patch_resp.status_code == 200
     assert patch_resp.json()["description"] == "Patched from API"
+    assert patch_resp.json()["evaluation"]["verifier_specs"][0]["type"] == "json_exists"
 
     edge_resp = client.post(
         "/api/v1/graph/edges",
@@ -328,6 +339,88 @@ def test_skill_and_graph_api_smoke(
 
     delete_resp = client.delete(f"/api/v1/skills/{second.skill_id}")
     assert delete_resp.status_code == 200
+
+
+def test_skill_api_accepts_evaluation_on_create(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    create_resp = client.post(
+        "/api/v1/skills",
+        json={
+            **create_skill_payload("api_schema_v02_skill"),
+            "evaluation": {
+                "verifier_specs": [
+                    {"type": "json_equals", "path": "output.success", "value": True}
+                ],
+                "test_case_refs": ["case-schema-v02"],
+                "benchmark_task_ids": ["skill_graph_trace_provenance"],
+            },
+        },
+    )
+
+    assert create_resp.status_code == 201
+    payload = create_resp.json()
+    assert payload["evaluation"]["test_case_refs"] == ["case-schema-v02"]
+    assert payload["evaluation"]["benchmark_task_ids"] == ["skill_graph_trace_provenance"]
+
+
+def test_skill_api_can_create_candidate_with_provenance(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    create_resp = client.post(
+        "/api/v1/skills",
+        json={
+            **create_skill_payload("trajectory_candidate_skill"),
+            "state": "S1",
+            "interface": {
+                "input_schema": {"type": "object", "properties": {}},
+                "output_schema": {"type": "object", "properties": {}},
+                "postconditions": ["returns a structured result"],
+            },
+            "evaluation": {
+                "verifier_specs": [
+                    {
+                        "type": "placeholder",
+                        "description": "Replace with deterministic verifier before release.",
+                    }
+                ],
+            },
+            "provenance": {
+                "source_type": "trajectory",
+                "source_ids": ["unit-trajectory-1"],
+                "parent_skill_ids": [],
+                "created_by_agent": "candidate_review_panel",
+                "creation_context": {"source_type": "trajectory"},
+            },
+            "author": "candidate_review_panel",
+        },
+    )
+
+    assert create_resp.status_code == 201
+    payload = create_resp.json()
+    assert payload["state"] == "S1"
+    assert payload["evaluation"]["verifier_specs"][0]["type"] == "placeholder"
+
+    full_resp = client.get(f"/api/v1/skills/{payload['skill_id']}/full")
+    assert full_resp.status_code == 200
+    full_payload = full_resp.json()
+    assert full_payload["interface"]["postconditions"] == ["returns a structured result"]
+    assert full_payload["provenance"]["source_type"] == "trajectory"
+    assert full_payload["provenance"]["source_ids"] == ["unit-trajectory-1"]
+
+
+def test_skill_api_rejects_direct_trusted_state_create(api_app: FastAPI):
+    client = TestClient(api_app)
+
+    create_resp = client.post(
+        "/api/v1/skills",
+        json={
+            **create_skill_payload("unsafe_released_create"),
+            "state": "S4",
+        },
+    )
+
+    assert create_resp.status_code == 422
 
 
 def test_skill_api_auto_syncs_graph_relations(api_app: FastAPI):

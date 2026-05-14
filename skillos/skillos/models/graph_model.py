@@ -1,10 +1,11 @@
-"""同质图数据模型 — 仅 Skill 节点，类型化边。"""
+﻿"""同质图数据模型 — 仅 Skill 节点，类型化边。"""
 
 from __future__ import annotations
 
 import json
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -208,3 +209,252 @@ class GraphStats(BaseModel):
     total_usage_count: int = 0
 
     computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Heterogeneous Graph
+# ---------------------------------------------------------------------------
+
+class HeteroNodeKind(str, Enum):
+    SOURCE = "source"
+    SKILL = "skill"
+    EXECUTION = "execution"
+    VALIDATION = "validation"
+    VERSION = "version"
+
+
+GraphNodeKind = HeteroNodeKind
+
+
+class HeteroEdgeType(str, Enum):
+    DERIVED_FROM = "derived_from"
+    EXECUTED_AS = "executed_as"
+    VALIDATED_BY = "validated_by"
+    VERSIONED_AS = "versioned_as"
+    COMPOSES_WITH = "composes_with"
+
+
+class HeteroGraphNode(BaseModel):
+    node_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    node_kind: HeteroNodeKind
+    name: str
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by: Optional[str] = Field(default=None)
+
+    @field_validator("node_id")
+    @classmethod
+    def validate_node_id(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("节点 ID 不能为空")
+        return value.strip()
+
+
+class SourceGraphNode(HeteroGraphNode):
+    node_kind: HeteroNodeKind = Field(default=HeteroNodeKind.SOURCE)
+    source_uri: str = ""
+    source_type: str = "trajectory"
+
+
+class HeteroSkillNode(HeteroGraphNode):
+    node_kind: HeteroNodeKind = Field(default=HeteroNodeKind.SKILL)
+    skill_id: str = ""
+    skill_version: str = "1.0.0"
+    skill_state: str = "S2"
+
+
+class ExecutionGraphNode(HeteroGraphNode):
+    node_kind: HeteroNodeKind = Field(default=HeteroNodeKind.EXECUTION)
+    execution_id: str = ""
+    status: str = "completed"
+    skill_ref: Optional[str] = None
+
+
+class ValidationGraphNode(HeteroGraphNode):
+    node_kind: HeteroNodeKind = Field(default=HeteroNodeKind.VALIDATION)
+    validation_id: str = ""
+    outcome: str = "passed"
+    validator: str = "system"
+
+
+class VersionGraphNode(HeteroGraphNode):
+    node_kind: HeteroNodeKind = Field(default=HeteroNodeKind.VERSION)
+    version_id: str = ""
+    version_label: str = "v1.0.0"
+    release_state: str = "draft"
+
+
+class HeteroGraphEdge(BaseModel):
+    edge_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    source_id: str = Field(description="源节点 ID")
+    target_id: str = Field(description="目标节点 ID")
+    edge_type: HeteroEdgeType
+    weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by: Optional[str] = Field(default=None)
+
+    @field_validator("source_id", "target_id")
+    @classmethod
+    def validate_ids(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("节点 ID 不能为空")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_no_self_loop(self) -> "HeteroGraphEdge":
+        if self.source_id == self.target_id:
+            raise ValueError(f"不允许自环边: {self.source_id}")
+        return self
+
+
+class HeteroGraph(BaseModel):
+    graph_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = "heterogeneous"
+    nodes: Dict[str, HeteroGraphNode] = Field(default_factory=dict)
+    edges: List[HeteroGraphEdge] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def add_node(self, node: HeteroGraphNode) -> None:
+        self.nodes[node.node_id] = node
+
+    def add_edge(self, edge: HeteroGraphEdge) -> None:
+        if edge.source_id not in self.nodes or edge.target_id not in self.nodes:
+            raise ValueError(
+                f"边的端点不在异构图中: {edge.source_id} -> {edge.target_id}"
+            )
+        self.edges = [existing for existing in self.edges if existing.edge_id != edge.edge_id]
+        self.edges.append(edge)
+
+    def get_node_kinds(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for node in self.nodes.values():
+            counts[node.node_kind.value] = counts.get(node.node_kind.value, 0) + 1
+        return counts
+
+    def get_edge_types(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for edge in self.edges:
+            counts[edge.edge_type.value] = counts.get(edge.edge_type.value, 0) + 1
+        return counts
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "graph_id": self.graph_id,
+            "name": self.name,
+            "node_count": len(self.nodes),
+            "edge_count": len(self.edges),
+            "node_kind_distribution": self.get_node_kinds(),
+            "edge_type_distribution": self.get_edge_types(),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "graph_id": self.graph_id,
+            "name": self.name,
+            "node_count": len(self.nodes),
+            "edge_count": len(self.edges),
+            "nodes": [node.model_dump() for node in self.nodes.values()],
+            "edges": [edge.model_dump() for edge in self.edges],
+            "stats": self.get_stats(),
+        }
+
+
+def build_demo_hetero_graph(
+    *,
+    fill_form_skill_id: str = "fill_form",
+    fill_form_skill_version: str = "1.0.0",
+) -> HeteroGraph:
+    graph = HeteroGraph(name="heterogeneous-demo")
+
+    source = SourceGraphNode(
+        node_id="source_demo_trajectory",
+        name="source_demo_trajectory",
+        description="Original browser trajectory used to derive the fill_form Skill.",
+        source_uri="trajectory://source_demo_trajectory",
+        source_type="browser_trajectory",
+        metadata={"demo": True},
+    )
+    skill = HeteroSkillNode(
+        node_id="fill_form",
+        name="fill_form",
+        description="Reusable Skill extracted from the source trajectory.",
+        skill_id=fill_form_skill_id,
+        skill_version=fill_form_skill_version,
+        skill_state="S4",
+        metadata={"demo": True},
+    )
+    execution = ExecutionGraphNode(
+        node_id="execution_demo",
+        name="execution_demo",
+        description="Recorded execution instance for the fill_form Skill.",
+        execution_id="execution_demo",
+        status="completed",
+        skill_ref=skill.node_id,
+        metadata={"demo": True},
+    )
+    validation = ValidationGraphNode(
+        node_id="validation_demo",
+        name="validation_demo",
+        description="Validation summary for the execution.",
+        validation_id="validation_demo",
+        outcome="passed",
+        validator="demo-verifier",
+        metadata={"demo": True},
+    )
+    version = VersionGraphNode(
+        node_id="version_demo",
+        name="version_demo",
+        description="Released Skill version tied to the validation result.",
+        version_id="version_demo",
+        version_label=fill_form_skill_version,
+        release_state="released",
+        metadata={"demo": True},
+    )
+
+    for node in [source, skill, execution, validation, version]:
+        graph.add_node(node)
+
+    for edge in [
+        HeteroGraphEdge(
+            edge_id="demo-hetero-derived-from",
+            source_id=source.node_id,
+            target_id=skill.node_id,
+            edge_type=HeteroEdgeType.DERIVED_FROM,
+            metadata={"demo": True},
+        ),
+        HeteroGraphEdge(
+            edge_id="demo-hetero-executed-as",
+            source_id=skill.node_id,
+            target_id=execution.node_id,
+            edge_type=HeteroEdgeType.EXECUTED_AS,
+            metadata={"demo": True},
+        ),
+        HeteroGraphEdge(
+            edge_id="demo-hetero-validated-by",
+            source_id=execution.node_id,
+            target_id=validation.node_id,
+            edge_type=HeteroEdgeType.VALIDATED_BY,
+            metadata={"demo": True},
+        ),
+        HeteroGraphEdge(
+            edge_id="demo-hetero-versioned-as",
+            source_id=validation.node_id,
+            target_id=version.node_id,
+            edge_type=HeteroEdgeType.VERSIONED_AS,
+            metadata={"demo": True},
+        ),
+        HeteroGraphEdge(
+            edge_id="demo-hetero-composes-with",
+            source_id=version.node_id,
+            target_id=skill.node_id,
+            edge_type=HeteroEdgeType.COMPOSES_WITH,
+            metadata={"demo": True},
+        ),
+    ]:
+        graph.add_edge(edge)
+
+    return graph

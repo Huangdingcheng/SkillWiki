@@ -372,6 +372,8 @@ class SkillExecutor:
 
         for sub_id in impl.sub_skill_ids:
             sub_skill = await self._registry.get(sub_id)
+            if not sub_skill and hasattr(self._registry, "get_by_name"):
+                sub_skill = await self._registry.get_by_name(sub_id)
             if not sub_skill:
                 logger.warning(f"子 Skill 不存在，跳过: {sub_id}")
                 continue

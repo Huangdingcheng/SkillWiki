@@ -69,6 +69,61 @@ class SearchResult:
 - 同名多版本 Skill 会保留最高分版本。
 - 同分时按状态、成功率、使用次数、更新时间稳定排序。
 
+### A-P1 Hybrid Search
+
+A-P1-1 adds an explicit hybrid search mode while preserving the existing lexical/rule mode as the default.
+
+Paper grounding:
+
+- SkillX uses a lightweight retrieval module over hierarchical skills, retrieves planning skills for similar tasks, then retrieves functional and atomic skills from rewritten pseudo-plan steps. It also uses embedding cosine similarity to merge semantically similar skills during library refinement.
+- ToolLLM trains and evaluates an API retriever against BM25 and embedding baselines with NDCG@1/NDCG@5, which motivates paired lexical-vs-hybrid retrieval reporting instead of only reporting end task success.
+- Gorilla compares zero-shot, BM25, GPT-index, and oracle retrieval settings and shows that non-optimal retrieval can hurt. SkillOS therefore keeps lexical search as the default and makes hybrid mode opt-in.
+- SkillsBench evaluates augmentation with paired conditions; SkillOS search evaluation follows that principle by reporting lexical and hybrid metrics side by side.
+
+Implementation:
+
+```python
+score = lexical_score * 0.5 + semantic_score * 0.4 + health_score * 0.1
+```
+
+- `lexical_score` uses local name, display name, description, tag, and domain signals.
+- `semantic_score` uses a dependency-free `LocalHashEmbeddingProvider` with token, synonym, and character n-gram features. This is an offline placeholder provider, not a claim of production-grade embedding quality.
+- `health_score` uses success/usage and lifecycle state; zero-execution Skills get neutral health rather than being penalized as failed.
+- `SearchResult.score_components` exposes `lexical`, `semantic`, and `health` so API responses and benchmark outputs remain explainable.
+- `SearchQuery.mode` defaults to `lexical`; callers must set `mode="hybrid"` to use the A-P1 ranking path.
+- `benchmarks/run_search_eval.py` writes a paired lexical-vs-hybrid report and preserves the lexical baseline fields for older consumers.
+
+### A-P1 Graph View API
+
+A-P1-2 adds a unified read-only graph view endpoint for frontend and demo-paper evidence views:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/graph/view?view=skill_only` | Legacy Skill-only graph as a stable view contract |
+| `GET` | `/api/v1/graph/view?view=provenance` | Heterogeneous Source/Skill/Execution/Validation/Version evidence graph |
+| `GET` | `/api/v1/graph/view?view=version_impact` | Skill-only projection from heterogeneous meta-paths with confidence and validation evidence |
+
+The endpoint does not introduce a new graph store. It normalizes existing graph data for UI consumption:
+
+- `skill_only` reuses `/api/v1/graph`.
+- `provenance` reuses `/api/v1/graph/heterogeneous`.
+- `version_impact` reuses `/api/v1/graph/projection/skill-only`.
+- Optional `skill_id` focuses any view on one Skill's graph neighborhood, for example
+  `GET /api/v1/graph/view?view=provenance&skill_id=fill_form`.
+- Optional `depth` controls the focused neighborhood depth and defaults to `2`, which is enough to trace
+  `Skill -> Execution -> Validation` and `Skill -> Version -> Skill` evidence paths in the demo graph.
+- Focused responses keep `validation_evidence` at the top level so callers can inspect one Skill's source,
+  validation, version, and impact context without inferring it from raw edges.
+
+Paper grounding:
+
+- SKILLFOUNDRY motivates keeping Skill views tied to heterogeneous resources, provenance, executable contracts, and validation/test evidence. Local PDF URLs extracted during implementation include `https://arxiv.org/abs/2604.03964v1`, `https://github.com/ma-compbio-lab/SkillFoundry`, `https://ma-compbio-lab.github.io/SkillFoundry/`, and `https://openreview.net/forum?id=kZHSvETWdi`.
+- The HIN survey motivates typed nodes, typed relations, schema-level constraints, and meta-path projection. Local PDF URLs include `http://aminer.org/`, `http://dblp.uni-trier.de/`, `http://pminer.org/home.do?m=home`, `http://www.douban.com/`, and `http://www.uspto.gov/patents/`.
+- GraphRAG motivates graph-organized nodes, edges, relationships, claims, and summaries as explanation support. Local PDF URLs extracted during implementation include `https://github.com/microsoft/graphrag`, `https://neo4j.com/developer-blog/graphrag-ecosystem-tools/`, `https://langchain-graphrag.readthedocs.io/en/latest/`, and `https://www.nebula-graph.io/posts/graph-RAG`.
+- The selected A-P1-2 method is SKILLFOUNDRY-style Skill provenance tracing: given a Skill, expose source,
+  execution/validation evidence, version lineage, and impact context through a typed graph view. HIN meta-path
+  projection is used only for the derived `version_impact` view.
+
 ### SkillGraph
 
 当前 demo 实现位于 `MemoryGraphManager`，支持基础图谱能力：

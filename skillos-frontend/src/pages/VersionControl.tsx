@@ -1,25 +1,73 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  Card, Select, Table, Tag, Button, Space, Typography,
-  Timeline, Badge, Descriptions, Drawer, Popconfirm, message, Row, Col, Collapse, Empty,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Collapse,
+  Descriptions,
+  Drawer,
+  Empty,
+  Input,
+  Popconfirm,
+  Row,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Timeline,
+  Typography,
+  message,
 } from 'antd'
+import type { TableColumnsType } from 'antd'
 import {
-  BranchesOutlined, TagOutlined, HistoryOutlined,
-  PlusOutlined, RocketOutlined, DiffOutlined,
+  BranchesOutlined,
+  DiffOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RocketOutlined,
+  RollbackOutlined,
+  SaveOutlined,
+  TagOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
-import { skillsApi, lifecycleApi } from '@/api/client'
-import type { SkillSummary } from '@/api/types'
+import { useLocation } from 'react-router-dom'
+import { lifecycleApi, skillsApi } from '@/api/client'
+import { getApiErrorMessage } from '@/api/errors'
+import type {
+  SkillReleaseRecord,
+  SkillRollbackRecord,
+  SkillSummary,
+  SnapshotCommitResponse,
+  SnapshotDiffResponse,
+  SnapshotHistoryItem,
+  StructuredDiffEntry,
+} from '@/api/types'
 
 const { Text } = Typography
 
 const STATE_COLOR: Record<string, string> = {
-  S4: 'green', S3: 'cyan', S2: 'blue', S1: 'orange',
-  S5: 'gold', S6: 'red', S7: 'default', S0: 'purple',
+  S4: 'green',
+  S3: 'cyan',
+  S2: 'blue',
+  S1: 'orange',
+  S5: 'gold',
+  S6: 'red',
+  S7: 'default',
+  S0: 'purple',
 }
+
 const STATE_LABEL: Record<string, string> = {
-  S0: 'Raw', S1: 'Candidate', S2: 'Draft', S3: 'Verified',
-  S4: 'Released', S5: 'Degraded', S6: 'Deprecated', S7: 'Archived',
+  S0: 'Raw',
+  S1: 'Candidate',
+  S2: 'Draft',
+  S3: 'Verified',
+  S4: 'Released',
+  S5: 'Degraded',
+  S6: 'Deprecated',
+  S7: 'Archived',
 }
 
 interface DiffLine {
@@ -51,35 +99,86 @@ interface DiffData {
 function semverCompare(a: string, b: string) {
   const pa = a.split('.').map(Number)
   const pb = b.split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 3; i += 1) {
     if ((pa[i] || 0) !== (pb[i] || 0)) return (pb[i] || 0) - (pa[i] || 0)
   }
   return 0
 }
 
+function shortRef(ref?: string | null) {
+  if (!ref) return ''
+  return ref.length > 14 ? ref.slice(0, 12) : ref
+}
+
+function dateText(value?: string) {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
+
+function diffField(entry: StructuredDiffEntry) {
+  return String(entry.field_path ?? entry.field ?? 'skill')
+}
+
+function diffChange(entry: StructuredDiffEntry) {
+  return String(entry.change_type ?? entry.type ?? 'modified')
+}
+
+function diffCategory(entry: StructuredDiffEntry) {
+  return String(entry.category ?? 'general')
+}
+
+function isBreakingDiff(entry: StructuredDiffEntry) {
+  return entry.is_breaking === true || diffCategory(entry).toLowerCase().includes('breaking')
+}
+
+function renderValue(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return <Text type="secondary">-</Text>
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return <Text>{String(value)}</Text>
+  }
+  return (
+    <pre style={{
+      margin: 0,
+      maxHeight: 120,
+      overflow: 'auto',
+      fontSize: 12,
+      background: '#f6f8fa',
+      borderRadius: 6,
+      padding: 8,
+    }}
+    >
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  )
+}
+
 function DiffView({ lines }: { lines: DiffLine[] }) {
-  if (!lines.length) return <Empty description="无变更记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+  if (!lines.length) return <Empty description="No version diff records" image={Empty.PRESENTED_IMAGE_SIMPLE} />
   return (
     <div style={{ fontFamily: 'monospace', fontSize: 12 }}>
       {lines.map((line, i) => (
-        <div key={i} style={{ marginBottom: 12 }}>
+        <div key={`${line.field}-${i}`} style={{ marginBottom: 12 }}>
           <div style={{ fontWeight: 600, color: '#1677ff', marginBottom: 4 }}>
             {line.field}
-            {line.type === 'modified' && <Tag color="orange" style={{ marginLeft: 8 }}>modified</Tag>}
-            {line.type === 'added' && <Tag color="green" style={{ marginLeft: 8 }}>added</Tag>}
+            <Tag color={line.type === 'removed' ? 'red' : line.type === 'added' ? 'green' : 'orange'} style={{ marginLeft: 8 }}>
+              {line.type}
+            </Tag>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {line.old_lines.length > 0 && (
               <div style={{ flex: 1, background: '#fff1f0', borderRadius: 4, padding: '4px 8px', border: '1px solid #ffccc7' }}>
-                {line.old_lines.map((l, j) => (
-                  <div key={j} style={{ color: '#cf1322' }}>- {l}</div>
+                {line.old_lines.map((item, index) => (
+                  <div key={`${line.field}-old-${index}`} style={{ color: '#cf1322' }}>- {item}</div>
                 ))}
               </div>
             )}
             {line.new_lines.length > 0 && (
               <div style={{ flex: 1, background: '#f6ffed', borderRadius: 4, padding: '4px 8px', border: '1px solid #b7eb8f' }}>
-                {line.new_lines.map((l, j) => (
-                  <div key={j} style={{ color: '#389e0d' }}>+ {l}</div>
+                {line.new_lines.map((item, index) => (
+                  <div key={`${line.field}-new-${index}`} style={{ color: '#389e0d' }}>+ {item}</div>
                 ))}
               </div>
             )}
@@ -90,7 +189,50 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
   )
 }
 
+function StructuredDiffTable({ diff }: { diff: SnapshotDiffResponse }) {
+  const columns: TableColumnsType<StructuredDiffEntry> = [
+    {
+      title: 'Field',
+      render: (_, record) => <Text code>{diffField(record)}</Text>,
+    },
+    {
+      title: 'Change',
+      render: (_, record) => (
+        <Space>
+          <Tag color={diffChange(record) === 'removed' ? 'red' : diffChange(record) === 'added' ? 'green' : 'blue'}>
+            {diffChange(record)}
+          </Tag>
+          <Tag>{diffCategory(record)}</Tag>
+          {isBreakingDiff(record) && <Tag color="red">BREAKING</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'Before',
+      dataIndex: 'old_value',
+      render: renderValue,
+    },
+    {
+      title: 'After',
+      dataIndex: 'new_value',
+      render: renderValue,
+    },
+  ]
+
+  return (
+    <Table
+      dataSource={diff.diffs}
+      columns={columns}
+      rowKey={(_, index) => `${diff.from_ref}-${diff.to_ref}-${index}`}
+      pagination={false}
+      size="small"
+      locale={{ emptyText: 'No structured field changes' }}
+    />
+  )
+}
+
 export default function VersionControl() {
+  const location = useLocation()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [versions, setVersions] = useState<SkillSummary[]>([])
@@ -99,50 +241,103 @@ export default function VersionControl() {
   const [drawerSkill, setDrawerSkill] = useState<SkillSummary | null>(null)
   const [diffData, setDiffData] = useState<DiffData | null>(null)
   const [loadingDiff, setLoadingDiff] = useState(false)
+  const [snapshotPath, setSnapshotPath] = useState('')
+  const [snapshotHistory, setSnapshotHistory] = useState<SnapshotHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const [snapshotDiffLoading, setSnapshotDiffLoading] = useState(false)
+  const [releaseTagLoading, setReleaseTagLoading] = useState(false)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [sourceRef, setSourceRef] = useState('')
+  const [snapshotDiff, setSnapshotDiff] = useState<SnapshotDiffResponse | null>(null)
+  const [lastSnapshot, setLastSnapshot] = useState<SnapshotCommitResponse | null>(null)
+  const [lastRelease, setLastRelease] = useState<SkillReleaseRecord | null>(null)
+  const [lastRestore, setLastRestore] = useState<SkillRollbackRecord | null>(null)
 
   useEffect(() => {
-    skillsApi.list({ limit: 200 }).then(setSkills)
+    skillsApi.list({ limit: 200 }).then(setSkills).catch(err => {
+      message.error(getApiErrorMessage(err, 'Load Skills failed'))
+    })
   }, [])
 
-  const loadVersions = async (id: string) => {
+  const loadVersions = useCallback(async (id: string) => {
     setLoadingVersions(true)
     try {
-      const vs = await skillsApi.versions(id)
-      setVersions(vs.sort((a, b) => semverCompare(a.version, b.version)))
+      const nextVersions = await skillsApi.versions(id)
+      setVersions(nextVersions.sort((a, b) => semverCompare(a.version, b.version)))
     } finally {
       setLoadingVersions(false)
     }
-  }
+  }, [])
 
-  const loadDiff = async (id: string) => {
+  const loadDiff = useCallback(async (id: string) => {
     setLoadingDiff(true)
     try {
       const data = await lifecycleApi.getDiff(id)
       setDiffData(data as unknown as DiffData)
-    } catch {
-      message.error('获取 diff 失败')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Load version diff failed'))
     } finally {
       setLoadingDiff(false)
     }
-  }
+  }, [])
 
-  const handleSelect = (id: string) => {
+  const loadSnapshotHistory = useCallback(async (id: string, options: { silent?: boolean } = {}) => {
+    setHistoryLoading(true)
+    try {
+      const data = await lifecycleApi.snapshotHistory(id)
+      setSnapshotPath(data.snapshot_path)
+      setSnapshotHistory(data.history)
+      setSourceRef(prev => prev || data.history[0]?.commit_hash || '')
+    } catch (err) {
+      setSnapshotPath('')
+      setSnapshotHistory([])
+      if (!options.silent) {
+        message.warning(getApiErrorMessage(err, 'Snapshot history is not available yet'))
+      }
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [])
+
+  const handleSelect = useCallback((id: string, options: { loadCurrentDiff?: boolean } = {}) => {
     setSelectedId(id)
     setDiffData(null)
-    loadVersions(id)
-  }
+    setSnapshotDiff(null)
+    setLastSnapshot(null)
+    setLastRelease(null)
+    setLastRestore(null)
+    setSourceRef('')
+    void loadVersions(id)
+    void loadSnapshotHistory(id, { silent: true })
+    if (options.loadCurrentDiff) {
+      void loadDiff(id)
+    }
+  }, [loadDiff, loadSnapshotHistory, loadVersions])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const query = new URLSearchParams(location.search)
+      const querySkillId = query.get('skill_id')
+      if (!querySkillId || selectedId === querySkillId) return
+      if (skills.length > 0 && skills.some(skill => skill.skill_id === querySkillId)) {
+        handleSelect(querySkillId, { loadCurrentDiff: Boolean(query.get('proposal_id')) })
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [handleSelect, location.search, selectedId, skills])
 
   const handleBump = async (bump: 'major' | 'minor' | 'patch') => {
     if (!selectedId) return
     setBumpLoading(true)
     try {
       const newSkill = await lifecycleApi.newVersion(selectedId, bump)
-      message.success(`已创建新版本 v${newSkill.version}`)
+      message.success(`Created version v${newSkill.version}`)
       const allSkills = await skillsApi.list({ limit: 200 })
       setSkills(allSkills)
-      loadVersions(selectedId)
-    } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '创建失败')
+      void loadVersions(selectedId)
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Create version failed'))
     } finally {
       setBumpLoading(false)
     }
@@ -151,54 +346,178 @@ export default function VersionControl() {
   const handleRelease = async (id: string) => {
     try {
       await lifecycleApi.release(id)
-      message.success('已发布')
-      if (selectedId) loadVersions(selectedId)
-    } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '发布失败')
+      message.success('Released')
+      if (selectedId) void loadVersions(selectedId)
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Release failed'))
     }
   }
 
-  const selectedSkill = selectedId ? skills.find(s => s.skill_id === selectedId) : null
+  const handleCreateSnapshot = async () => {
+    if (!selectedId) return
+    setSnapshotLoading(true)
+    try {
+      const snapshot = await lifecycleApi.createSnapshot(selectedId, { author: 'human_reviewer' })
+      setLastSnapshot(snapshot)
+      setSourceRef(snapshot.commit)
+      message.success(`Snapshot commit ${shortRef(snapshot.commit)} created`)
+      await loadSnapshotHistory(selectedId, { silent: true })
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Create snapshot commit failed'))
+    } finally {
+      setSnapshotLoading(false)
+    }
+  }
 
-  const columns = [
+  const handleSnapshotDiff = async (ref = sourceRef) => {
+    if (!selectedId || !ref.trim()) {
+      message.warning('Select or enter a base commit/tag first')
+      return
+    }
+    setSnapshotDiffLoading(true)
+    try {
+      const data = await lifecycleApi.snapshotDiff(selectedId, {
+        from_ref: ref.trim(),
+        to_ref: 'HEAD',
+      })
+      setSnapshotDiff(data)
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Load snapshot structured diff failed'))
+    } finally {
+      setSnapshotDiffLoading(false)
+    }
+  }
+
+  const handleReleaseTag = async (ref = sourceRef || 'HEAD') => {
+    if (!selectedId) return
+    setReleaseTagLoading(true)
+    try {
+      const release = await lifecycleApi.releaseTag(selectedId, ref.trim() || 'HEAD')
+      setLastRelease(release)
+      message.success(`Release tag ${release.tag_name} created`)
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Create release tag failed'))
+    } finally {
+      setReleaseTagLoading(false)
+    }
+  }
+
+  const handleRestoreCommit = async (ref = sourceRef) => {
+    if (!selectedId || !ref.trim()) {
+      message.warning('Select or enter a source commit/tag first')
+      return
+    }
+    setRestoreLoading(true)
+    try {
+      const restore = await lifecycleApi.restoreSnapshot(selectedId, ref.trim())
+      setLastRestore(restore)
+      message.success(`Restore commit ${shortRef(restore.restore_commit)} created`)
+      await loadSnapshotHistory(selectedId, { silent: true })
+    } catch (err) {
+      message.error(getApiErrorMessage(err, 'Create restore commit failed'))
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
+  const selectedSkill = selectedId ? skills.find(skill => skill.skill_id === selectedId) : null
+  const queryProposalId = new URLSearchParams(location.search).get('proposal_id')
+
+  const versionColumns: TableColumnsType<SkillSummary> = [
     {
       title: 'Version',
       dataIndex: 'version',
-      render: (v: string, r: SkillSummary) => (
+      render: (version: string, record) => (
         <Space>
           <TagOutlined style={{ color: '#1677ff' }} />
-          <Text code style={{ cursor: 'pointer' }} onClick={() => setDrawerSkill(r)}>v{v}</Text>
-          {r.skill_id === selectedId && <Tag color="blue">HEAD</Tag>}
+          <Text code style={{ cursor: 'pointer' }} onClick={() => setDrawerSkill(record)}>v{version}</Text>
+          {record.skill_id === selectedId && <Tag color="blue">HEAD</Tag>}
         </Space>
       ),
     },
     {
       title: 'State',
       dataIndex: 'state',
-      render: (s: string) => <Badge color={STATE_COLOR[s] || 'default'} text={STATE_LABEL[s] || s} />,
+      render: (state: string) => <Badge color={STATE_COLOR[state] || 'default'} text={STATE_LABEL[state] || state} />,
     },
     {
       title: 'Created',
       dataIndex: 'created_at',
-      render: (t: string) => new Date(t).toLocaleString(),
+      render: dateText,
     },
     {
       title: 'Success Rate',
       dataIndex: 'metrics',
-      render: (m: SkillSummary['metrics']) =>
-        m.total_executions >= 5
-          ? `${(m.success_rate * 100).toFixed(1)}%`
+      render: (metrics: SkillSummary['metrics']) =>
+        metrics.total_executions >= 5
+          ? `${(metrics.success_rate * 100).toFixed(1)}%`
           : <Text type="secondary">N/A</Text>,
     },
     {
       title: 'Actions',
-      render: (_: unknown, r: SkillSummary) => (
+      render: (_, record) => (
         <Space>
-          {r.state === 'S2' || r.state === 'S3' ? (
-            <Popconfirm title="确认发布此版本？" onConfirm={() => handleRelease(r.skill_id)}>
-              <Button size="small" type="primary" icon={<RocketOutlined />}>发布</Button>
+          {(record.state === 'S2' || record.state === 'S3') && (
+            <Popconfirm title="Release this version?" onConfirm={() => handleRelease(record.skill_id)}>
+              <Button size="small" type="primary" icon={<RocketOutlined />}>Release</Button>
             </Popconfirm>
-          ) : null}
+          )}
+        </Space>
+      ),
+    },
+  ]
+
+  const snapshotColumns: TableColumnsType<SnapshotHistoryItem> = [
+    {
+      title: 'Commit',
+      dataIndex: 'commit_hash',
+      render: (commit: string) => <Text code copyable={{ text: commit }}>{shortRef(commit)}</Text>,
+    },
+    {
+      title: 'Subject',
+      dataIndex: 'subject',
+      render: (subject: string) => <Text>{subject}</Text>,
+    },
+    {
+      title: 'Author',
+      dataIndex: 'author',
+      width: 140,
+    },
+    {
+      title: 'Time',
+      dataIndex: 'authored_at',
+      render: dateText,
+      width: 180,
+    },
+    {
+      title: 'Paths',
+      dataIndex: 'changed_paths',
+      render: (paths: string[]) => (
+        <Space wrap>
+          {paths.slice(0, 2).map(path => <Tag key={path}>{path}</Tag>)}
+          {paths.length > 2 && <Tag>+{paths.length - 2}</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'Actions',
+      render: (_, record) => (
+        <Space>
+          <Button size="small" icon={<DiffOutlined />} onClick={() => { setSourceRef(record.commit_hash); void handleSnapshotDiff(record.commit_hash) }}>
+            Diff
+          </Button>
+          <Button size="small" icon={<TagOutlined />} loading={releaseTagLoading} onClick={() => handleReleaseTag(record.commit_hash)}>
+            Tag
+          </Button>
+          <Popconfirm
+            title="Create a restore commit from this snapshot?"
+            description="This writes a new restore commit; it does not reset Git history."
+            onConfirm={() => handleRestoreCommit(record.commit_hash)}
+          >
+            <Button size="small" danger icon={<RollbackOutlined />} loading={restoreLoading}>
+              Restore commit
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -207,98 +526,246 @@ export default function VersionControl() {
   return (
     <div style={{ padding: 24 }}>
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h2 style={{ fontWeight: 700, marginBottom: 4 }}>版本管理</h2>
+        <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Version Governance</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          Git 式 Skill 版本控制 — 查看版本历史、创建新版本、管理发布。
+          Review Skill versions, Git snapshots, structured diffs, release tags, and restore commits.
         </p>
       </motion.div>
+
+      {queryProposalId && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Accepted maintenance proposal"
+          description={(
+            <Space direction="vertical" size={2}>
+              <Text>
+                Proposal <Text code>{queryProposalId.slice(0, 8)}</Text> is ready for B-side review.
+              </Text>
+              <Text type="secondary">
+                Submit a patched Skill through the maintenance review endpoint before creating any live Skill change.
+              </Text>
+            </Space>
+          )}
+        />
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={16}>
           <Card
-            title={<span><BranchesOutlined /> 版本历史</span>}
+            title={<span><BranchesOutlined /> Version history</span>}
             variant="borderless"
-            style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
-            extra={
-              selectedId && (
-                <Space>
+            style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+            extra={selectedId && (
+              <Space wrap>
+                <Button size="small" icon={<DiffOutlined />} loading={loadingDiff} onClick={() => loadDiff(selectedId)}>
+                  Legacy diff
+                </Button>
+                {(['patch', 'minor', 'major'] as const).map(bump => (
                   <Button
+                    key={bump}
                     size="small"
-                    icon={<DiffOutlined />}
-                    loading={loadingDiff}
-                    onClick={() => loadDiff(selectedId)}
+                    icon={<PlusOutlined />}
+                    loading={bumpLoading}
+                    onClick={() => handleBump(bump)}
                   >
-                    查看 Diff
+                    {bump}
                   </Button>
-                  <Text type="secondary" style={{ fontSize: 12 }}>新版本：</Text>
-                  {(['patch', 'minor', 'major'] as const).map(bump => (
-                    <Button
-                      key={bump}
-                      size="small"
-                      icon={<PlusOutlined />}
-                      loading={bumpLoading}
-                      onClick={() => handleBump(bump)}
-                    >
-                      {bump}
-                    </Button>
-                  ))}
-                </Space>
-              )
-            }
+                ))}
+              </Space>
+            )}
           >
             <div style={{ marginBottom: 16 }}>
               <Select
-                placeholder="选择 Skill 查看版本历史"
+                value={selectedId ?? undefined}
+                placeholder="Select a Skill"
                 style={{ width: '100%' }}
-                onChange={handleSelect}
+                onChange={value => handleSelect(value)}
                 showSearch
-                filterOption={(input, opt) =>
-                  (opt?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                filterOption={(input, option) =>
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
-                options={[...new Map(skills.map(s => [s.name, s])).values()].map(s => ({
-                  label: `${s.name} (${STATE_LABEL[s.state] || s.state})`,
-                  value: s.skill_id,
+                options={[...new Map(skills.map(skill => [skill.name, skill])).values()].map(skill => ({
+                  label: `${skill.name} (${STATE_LABEL[skill.state] || skill.state})`,
+                  value: skill.skill_id,
                 }))}
               />
             </div>
 
             <Table
               dataSource={versions}
-              columns={columns}
+              columns={versionColumns}
               rowKey="skill_id"
               loading={loadingVersions}
               size="small"
               pagination={false}
-              locale={{ emptyText: selectedId ? '暂无版本记录' : '请先选择一个 Skill' }}
+              locale={{ emptyText: selectedId ? 'No version records' : 'Select a Skill first' }}
             />
+          </Card>
+
+          <Card
+            title={<span><SaveOutlined /> Git-backed governance snapshots</span>}
+            variant="borderless"
+            style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
+            extra={selectedId && (
+              <Space wrap>
+                <Button icon={<SaveOutlined />} loading={snapshotLoading} onClick={handleCreateSnapshot}>
+                  Create snapshot
+                </Button>
+                <Button icon={<ReloadOutlined />} loading={historyLoading} onClick={() => loadSnapshotHistory(selectedId)}>
+                  Refresh history
+                </Button>
+              </Space>
+            )}
+          >
+            {!selectedId ? (
+              <Empty description="Select a Skill to manage snapshots" />
+            ) : (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {snapshotPath && (
+                  <Text type="secondary">Snapshot path: <Text code>{snapshotPath}</Text></Text>
+                )}
+                {lastSnapshot && (
+                  <Alert
+                    type="success"
+                    showIcon
+                    message="Snapshot commit created"
+                    description={<Text code copyable={{ text: lastSnapshot.commit }}>{shortRef(lastSnapshot.commit)}</Text>}
+                  />
+                )}
+                {lastRelease && (
+                  <Alert
+                    type="success"
+                    showIcon
+                    message="Release tag created"
+                    description={<Text code copyable={{ text: lastRelease.tag_name }}>{lastRelease.tag_name}</Text>}
+                  />
+                )}
+                {lastRestore && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="Restore commit created"
+                    description={(
+                      <Space direction="vertical" size={2}>
+                        <Text code copyable={{ text: lastRestore.restore_commit }}>{shortRef(lastRestore.restore_commit)}</Text>
+                        <Text type="secondary">{lastRestore.commit_message}</Text>
+                      </Space>
+                    )}
+                  />
+                )}
+
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    value={sourceRef}
+                    onChange={event => setSourceRef(event.target.value)}
+                    placeholder="Base commit, release tag, or source ref"
+                  />
+                  <Button icon={<DiffOutlined />} loading={snapshotDiffLoading} onClick={() => handleSnapshotDiff()}>
+                    Structured diff
+                  </Button>
+                  <Button icon={<TagOutlined />} loading={releaseTagLoading} onClick={() => handleReleaseTag()}>
+                    Release tag
+                  </Button>
+                  <Popconfirm
+                    title="Create restore commit from this ref?"
+                    description="This creates a new commit from the selected snapshot; it does not reset history."
+                    onConfirm={() => handleRestoreCommit()}
+                  >
+                    <Button danger icon={<RollbackOutlined />} loading={restoreLoading}>
+                      Restore commit
+                    </Button>
+                  </Popconfirm>
+                </Space.Compact>
+
+                <Table
+                  dataSource={snapshotHistory}
+                  columns={snapshotColumns}
+                  rowKey="commit_hash"
+                  loading={historyLoading}
+                  size="small"
+                  pagination={{ pageSize: 5 }}
+                  locale={{ emptyText: 'No snapshot commits yet' }}
+                />
+
+                {snapshotDiff && (
+                  <Card
+                    size="small"
+                    title={(
+                      <Space>
+                        <Text code>{`${shortRef(snapshotDiff.from_ref)} -> ${shortRef(snapshotDiff.to_ref)}`}</Text>
+                        <Tag color={snapshotDiff.has_breaking_changes ? 'red' : 'green'}>
+                          {snapshotDiff.has_breaking_changes ? 'BREAKING' : 'compatible'}
+                        </Tag>
+                      </Space>
+                    )}
+                    variant="borderless"
+                    style={{ background: '#fafafa' }}
+                  >
+                    <Alert
+                      type={snapshotDiff.has_breaking_changes ? 'warning' : 'info'}
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={snapshotDiff.review_recommendation}
+                    />
+                    <StructuredDiffTable diff={snapshotDiff} />
+                    {snapshotDiff.raw_diff && (
+                      <Collapse
+                        style={{ marginTop: 12 }}
+                        items={[{
+                          key: 'raw',
+                          label: 'Raw Git diff',
+                          children: (
+                            <pre style={{
+                              margin: 0,
+                              maxHeight: 260,
+                              overflow: 'auto',
+                              fontSize: 12,
+                              background: '#111827',
+                              color: '#f9fafb',
+                              borderRadius: 6,
+                              padding: 12,
+                            }}
+                            >
+                              {snapshotDiff.raw_diff}
+                            </pre>
+                          ),
+                        }]}
+                      />
+                    )}
+                  </Card>
+                )}
+              </Space>
+            )}
           </Card>
 
           {diffData && (
             <Card
-              title={<span><DiffOutlined /> 变更历史 — {diffData.skill_name}</span>}
+              title={<span><DiffOutlined /> Version change history - {diffData.skill_name}</span>}
               variant="borderless"
-              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
+              style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
               {diffData.history.length === 0 ? (
-                <Empty description="暂无变更记录" />
+                <Empty description="No version change records" />
               ) : (
                 <Collapse
-                  items={diffData.history.map(h => ({
-                    key: h.record_id,
+                  items={diffData.history.map(item => ({
+                    key: item.record_id,
                     label: (
-                      <Space>
-                        <Text code>{h.from_version} → {h.to_version}</Text>
-                        <Tag color={h.is_breaking ? 'red' : 'blue'}>{h.change_type}</Tag>
-                        {h.is_breaking && <Tag color="red">BREAKING</Tag>}
-                        <Text type="secondary" style={{ fontSize: 11 }}>{h.summary}</Text>
+                      <Space wrap>
+                        <Text code>{`${item.from_version} -> ${item.to_version}`}</Text>
+                        <Tag color={item.is_breaking ? 'red' : 'blue'}>{item.change_type}</Tag>
+                        {item.is_breaking && <Tag color="red">BREAKING</Tag>}
+                        <Text type="secondary" style={{ fontSize: 11 }}>{item.summary}</Text>
                       </Space>
                     ),
                     children: (
                       <div>
                         <div style={{ marginBottom: 8, color: '#666', fontSize: 12 }}>
-                          {h.author} · {new Date(h.created_at).toLocaleString()}
+                          {item.author} - {dateText(item.created_at)}
                         </div>
-                        <DiffView lines={h.diff} />
+                        <DiffView lines={item.diff} />
                       </div>
                     ),
                   }))}
@@ -310,61 +777,70 @@ export default function VersionControl() {
 
         <Col xs={24} lg={8}>
           <Card
-            title={<span><HistoryOutlined /> 版本时间线</span>}
+            title={<span><HistoryOutlined /> Timeline</span>}
             variant="borderless"
-            style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+            style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
-            {versions.length > 0 ? (
+            {versions.length > 0 || snapshotHistory.length > 0 ? (
               <Timeline
-                items={versions.map((v, i) => ({
-                  color: STATE_COLOR[v.state] || 'blue',
-                  children: (
-                    <div>
-                      <div style={{ fontWeight: i === 0 ? 700 : 400 }}>
-                        <Text code>v{v.version}</Text>
-                        <Badge
-                          color={STATE_COLOR[v.state] || 'default'}
-                          text={STATE_LABEL[v.state] || v.state}
-                          style={{ marginLeft: 8 }}
-                        />
+                items={[
+                  ...snapshotHistory.slice(0, 8).map(item => ({
+                    color: 'blue',
+                    children: (
+                      <div>
+                        <div><Text code>{shortRef(item.commit_hash)}</Text> snapshot</div>
+                        <div style={{ fontSize: 11, color: '#999' }}>{dateText(item.authored_at)}</div>
+                        <div style={{ fontSize: 11, color: '#666' }}>{item.subject}</div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#999' }}>
-                        {new Date(v.created_at).toLocaleString()}
-                      </div>
-                      {v.metrics.total_executions > 0 && (
-                        <div style={{ fontSize: 11, color: '#666' }}>
-                          {v.metrics.total_executions} 次执行，
-                          成功率 {(v.metrics.success_rate * 100).toFixed(0)}%
+                    ),
+                  })),
+                  ...versions.slice(0, 8).map(version => ({
+                    color: STATE_COLOR[version.state] || 'blue',
+                    children: (
+                      <div>
+                        <div>
+                          <Text code>v{version.version}</Text>
+                          <Badge
+                            color={STATE_COLOR[version.state] || 'default'}
+                            text={STATE_LABEL[version.state] || version.state}
+                            style={{ marginLeft: 8 }}
+                          />
                         </div>
-                      )}
-                    </div>
-                  ),
-                }))}
+                        <div style={{ fontSize: 11, color: '#999' }}>{dateText(version.created_at)}</div>
+                        {version.metrics.total_executions > 0 && (
+                          <div style={{ fontSize: 11, color: '#666' }}>
+                            {version.metrics.total_executions} executions, {(version.metrics.success_rate * 100).toFixed(0)}% success
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  })),
+                ]}
               />
             ) : (
               <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>
                 <BranchesOutlined style={{ fontSize: 32, marginBottom: 8 }} />
-                <div>选择 Skill 查看版本时间线</div>
+                <div>Select a Skill to view timeline</div>
               </div>
             )}
           </Card>
 
           {selectedSkill && (
             <Card
-              title="当前版本信息"
+              title="Current version"
               variant="borderless"
-              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
+              style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="名称">{selectedSkill.name}</Descriptions.Item>
-                <Descriptions.Item label="版本"><Text code>v{selectedSkill.version}</Text></Descriptions.Item>
-                <Descriptions.Item label="状态">
+                <Descriptions.Item label="Name">{selectedSkill.name}</Descriptions.Item>
+                <Descriptions.Item label="Version"><Text code>v{selectedSkill.version}</Text></Descriptions.Item>
+                <Descriptions.Item label="State">
                   <Badge color={STATE_COLOR[selectedSkill.state]} text={STATE_LABEL[selectedSkill.state]} />
                 </Descriptions.Item>
-                <Descriptions.Item label="类型">
+                <Descriptions.Item label="Type">
                   <Tag>{selectedSkill.skill_type}</Tag>
                 </Descriptions.Item>
-                <Descriptions.Item label="执行次数">{selectedSkill.metrics.total_executions}</Descriptions.Item>
+                <Descriptions.Item label="Executions">{selectedSkill.metrics.total_executions}</Descriptions.Item>
               </Descriptions>
             </Card>
           )}
@@ -372,7 +848,7 @@ export default function VersionControl() {
       </Row>
 
       <Drawer
-        title={drawerSkill ? `v${drawerSkill.version} 详情` : ''}
+        title={drawerSkill ? `v${drawerSkill.version} details` : ''}
         open={!!drawerSkill}
         onClose={() => setDrawerSkill(null)}
         size="default"
@@ -382,18 +858,18 @@ export default function VersionControl() {
             <Descriptions.Item label="Skill ID">
               <Text code copyable style={{ fontSize: 11 }}>{drawerSkill.skill_id}</Text>
             </Descriptions.Item>
-            <Descriptions.Item label="版本"><Text code>v{drawerSkill.version}</Text></Descriptions.Item>
-            <Descriptions.Item label="状态">
+            <Descriptions.Item label="Version"><Text code>v{drawerSkill.version}</Text></Descriptions.Item>
+            <Descriptions.Item label="State">
               <Badge color={STATE_COLOR[drawerSkill.state]} text={STATE_LABEL[drawerSkill.state]} />
             </Descriptions.Item>
-            <Descriptions.Item label="描述">{drawerSkill.description}</Descriptions.Item>
-            <Descriptions.Item label="标签">
-              {drawerSkill.tags.map(t => <Tag key={t}>{t}</Tag>)}
+            <Descriptions.Item label="Description">{drawerSkill.description}</Descriptions.Item>
+            <Descriptions.Item label="Tags">
+              {drawerSkill.tags.map(tag => <Tag key={tag}>{tag}</Tag>)}
             </Descriptions.Item>
-            <Descriptions.Item label="创建时间">{new Date(drawerSkill.created_at).toLocaleString()}</Descriptions.Item>
-            <Descriptions.Item label="更新时间">{new Date(drawerSkill.updated_at).toLocaleString()}</Descriptions.Item>
-            <Descriptions.Item label="执行次数">{drawerSkill.metrics.total_executions}</Descriptions.Item>
-            <Descriptions.Item label="成功率">
+            <Descriptions.Item label="Created">{dateText(drawerSkill.created_at)}</Descriptions.Item>
+            <Descriptions.Item label="Updated">{dateText(drawerSkill.updated_at)}</Descriptions.Item>
+            <Descriptions.Item label="Executions">{drawerSkill.metrics.total_executions}</Descriptions.Item>
+            <Descriptions.Item label="Success rate">
               {drawerSkill.metrics.total_executions >= 5
                 ? `${(drawerSkill.metrics.success_rate * 100).toFixed(1)}%`
                 : 'N/A'}

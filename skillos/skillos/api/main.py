@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
@@ -16,7 +19,7 @@ from fastapi.responses import JSONResponse
 from ..utils.llm_client import LLMClient
 from .deps import app_state
 from .memory_store import MemoryGraphManager, MemoryWikiManager
-from .routes import evolution, execution, graph, ingest, lifecycle, repository, skills, ws
+from .routes import evaluation, evolution, execution, graph, ingest, lifecycle, repository, skills, ws
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if app.state.seed_demo:
         await _seed_demo_skills(wiki)
         await _sync_graph_from_wiki(wiki, graph_mgr)
+        await _seed_demo_heterogeneous_graph(wiki, graph_mgr)
 
     # Wire WebSocket broadcast events into the executor.
     from .routes.ws import broadcast
@@ -524,8 +528,10 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
     ]
 
     for data in demos + meta_skills + test_graph_skills:
+        skill_data = dict(data)
+        skill_data.setdefault("skill_id", skill_data["name"])
         skill = Skill(
-            **data,
+            **skill_data,
             provenance=SkillProvenance(source_type="demo", created_by_agent="system"),
         )
         skill.transition_to(SkillState.VERIFIED)
@@ -538,6 +544,70 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
             await wiki.create(skill)
         except ValueError:
             pass
+
+    await _seed_degraded_demo_skill(wiki, iface)
+
+
+async def _seed_degraded_demo_skill(wiki: MemoryWikiManager, iface: Any) -> None:
+    """Seed a fixed unhealthy Skill for D-P0-2 maintenance proposal demos."""
+    from ..models.skill_model import (
+        Skill, SkillEvaluation, SkillImplementation,
+        SkillProvenance, SkillState, SkillType,
+    )
+
+    skill_id = "demo_degraded_submit_form"
+    existing = await wiki.get(skill_id)
+    if existing:
+        return
+
+    skill = Skill(
+        skill_id=skill_id,
+        name=skill_id,
+        description=(
+            "Demo degraded Skill that simulates a form submission postcondition failure "
+            "so D self-management can generate a maintenance proposal."
+        ),
+        skill_type=SkillType.FUNCTIONAL,
+        tags=["demo", "degraded", "maintenance", "verifier"],
+        interface=iface(
+            [
+                {"name": "form_data", "type": "object", "required": True},
+            ],
+            [
+                {"name": "submitted", "type": "boolean"},
+                {"name": "error", "type": "string"},
+            ],
+            post=["submitted must be true"],
+        ),
+        implementation=SkillImplementation(
+            language="python",
+            code='output["submitted"] = False\noutput["error"] = "demo degraded postcondition failure"',
+        ),
+        evaluation=SkillEvaluation(
+            verifier_specs=[
+                {"type": "boolean_success", "path": "output.submitted"},
+            ],
+            test_case_refs=["demo_degraded_submit_form_case"],
+            benchmark_task_ids=["demo_degraded_submit_form"],
+            validation_summary="Seeded as a deterministic degraded case for D-P0-2.",
+        ),
+        provenance=SkillProvenance(
+            source_type="demo",
+            created_by_agent="system",
+            creation_context={"paper_backlog_task": "D-P0-2", "demo_degraded_case": True},
+        ),
+    )
+    skill.transition_to(SkillState.VERIFIED)
+    skill.transition_to(SkillState.RELEASED)
+    for _ in range(2):
+        skill.record_execution(success=True, latency_ms=150.0)
+    for _ in range(8):
+        skill.record_execution(success=False, latency_ms=650.0)
+    skill.transition_to(SkillState.DEGRADED)
+    try:
+        await wiki.create(skill)
+    except ValueError:
+        pass
 
 
 async def _seed_demo_graph_edges(graph_mgr: MemoryGraphManager) -> None:
@@ -566,17 +636,41 @@ async def _seed_demo_graph_edges(graph_mgr: MemoryGraphManager) -> None:
         ))
 
 
+async def _seed_demo_heterogeneous_graph(wiki: Any, graph_mgr: Any) -> None:
+    """Seed a demo hetero chain that spans source, execution, validation, and version stages."""
+    fill_form = None
+    get_by_name = getattr(wiki, "get_by_name", None)
+    if callable(get_by_name):
+        fill_form = await get_by_name("fill_form")
+    if not fill_form:
+        fill_form = await wiki.get("fill_form")
+
+    fill_form_graph_id = fill_form.skill_id if fill_form else "fill_form"
+    fill_form_version = fill_form.version if fill_form else "1.0.0"
+
+    hetero_seed = getattr(graph_mgr, "seed_demo_hetero_chain", None)
+    if callable(hetero_seed):
+        try:
+            await hetero_seed(
+                fill_form_skill_id=fill_form_graph_id,
+                fill_form_skill_version=fill_form_version,
+            )
+        except Exception as exc:  # pragma: no cover - startup should survive graph issues
+            logger.warning("Failed to seed demo heterogeneous graph: %s", exc)
+
+
 def create_app(
     api_key: str,
     model: str = "claude-sonnet-4-6",
     *,
+    api_url: str = "https://yunwu.ai",
     repository_backend: str = "git",
     skill_storage_dir: Optional[Path] = None,
     seed_demo: bool = True,
 ) -> FastAPI:
     from ..config.llm_config import LLMConfig
 
-    llm_cfg = LLMConfig(api_key=api_key, model=model)
+    llm_cfg = LLMConfig(api_key=api_key, api_url=api_url, model=model)
 
     app = FastAPI(
         title="SkillOS API",
@@ -590,6 +684,7 @@ def create_app(
     app.state.repository_backend = repository_backend
     app.state.skill_storage_dir = (skill_storage_dir or _default_skill_storage_dir()).resolve()
     app.state.seed_demo = seed_demo
+    evolution.configure_persistent_stores(app.state.skill_storage_dir)
 
     app.add_middleware(
         CORSMiddleware,
@@ -608,6 +703,7 @@ def create_app(
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(execution.router, prefix="/api/v1")
     app.include_router(evolution.router, prefix="/api/v1")
+    app.include_router(evaluation.router, prefix="/api/v1")
     app.include_router(ingest.router, prefix="/api/v1")
     app.include_router(repository.router, prefix="/api/v1")
     app.include_router(ws.router)
@@ -624,9 +720,13 @@ def create_app(
 
 
 def main() -> None:
+    if sys.platform == "win32" and hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     parser = argparse.ArgumentParser(description="SkillOS API Server")
-    parser.add_argument("--api-key", required=True, help="Anthropic API Key")
-    parser.add_argument("--model", default="claude-sonnet-4-6")
+    parser.add_argument("--api-key", default=None, help="LLM API key; defaults to LLM_API_KEY")
+    parser.add_argument("--api-url", default=None, help="LLM API base URL; defaults to LLM_API_URL")
+    parser.add_argument("--model", default=None, help="LLM model; defaults to LLM_MODEL")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
@@ -636,9 +736,13 @@ def main() -> None:
     args = parser.parse_args()
 
     storage_dir = Path(args.skill_storage_dir).resolve() if args.skill_storage_dir else None
+    api_key = args.api_key or os.getenv("LLM_API_KEY") or "demo-placeholder-key"
+    api_url = args.api_url or os.getenv("LLM_API_URL") or "https://yunwu.ai"
+    model = args.model or os.getenv("LLM_MODEL") or "claude-sonnet-4-6"
     app = create_app(
-        api_key=args.api_key,
-        model=args.model,
+        api_key=api_key,
+        api_url=api_url,
+        model=model,
         repository_backend=args.repository_backend,
         skill_storage_dir=storage_dir,
         seed_demo=not args.no_seed_demo,

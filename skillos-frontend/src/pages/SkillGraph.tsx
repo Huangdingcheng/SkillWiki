@@ -8,6 +8,7 @@ import {
   InputNumber,
   Popover,
   Select,
+  Segmented,
   Slider,
   Space,
   Spin,
@@ -28,7 +29,13 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { graphApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { GraphData, GraphEdgeData, GraphNodeData } from '@/api/types'
+import type {
+  GraphData,
+  GraphViewData,
+  GraphViewEdgeData,
+  GraphViewMode,
+  GraphViewNodeData,
+} from '@/api/types'
 
 const { Text, Paragraph } = Typography
 
@@ -38,11 +45,31 @@ const TYPE_COLOR: Record<string, string> = {
   strategic: '#fa8c16',
 }
 
+const KIND_COLOR: Record<string, string> = {
+  source: '#08979c',
+  trajectory: '#08979c',
+  skill: '#1677ff',
+  execution: '#2f54eb',
+  validation: '#52c41a',
+  version: '#fa8c16',
+}
+
+const KIND_LABEL: Record<string, string> = {
+  source: 'Source / Trajectory',
+  trajectory: 'Trajectory',
+  skill: 'Skill',
+  execution: 'Execution',
+  validation: 'Validation',
+  version: 'Version',
+}
+
 const STATE_OPACITY: Record<string, number> = {
+  S0: 0.4,
+  S1: 0.5,
+  S2: 0.6,
+  S3: 0.75,
   S4: 1,
-  S2: 0.55,
-  S3: 0.7,
-  S5: 0.8,
+  S5: 0.85,
   S6: 0.3,
   S7: 0.2,
 }
@@ -67,6 +94,34 @@ const EDGE_COLOR: Record<string, string> = {
   replaces: '#eb2f96',
   specializes: '#13c2c2',
   generalizes: '#d4a106',
+  derived_from: '#08979c',
+  executed_as: '#2f54eb',
+  validated_by: '#52c41a',
+  versioned_as: '#fa8c16',
+}
+
+const GRAPH_VIEW_OPTIONS: { label: string; value: GraphViewMode }[] = [
+  { label: 'Skill-only', value: 'skill_only' },
+  { label: 'Provenance', value: 'provenance' },
+  { label: 'Version impact', value: 'version_impact' },
+]
+
+const GRAPH_VIEW_COPY: Record<GraphViewMode, { subtitle: string; empty: string; reload: string }> = {
+  skill_only: {
+    subtitle: 'Skill dependency, composition, similarity, and evolution links.',
+    empty: 'No Skill graph data is available.',
+    reload: 'Reload Skill graph',
+  },
+  provenance: {
+    subtitle: 'Typed Source, Skill, Execution, Validation, and Version evidence chain.',
+    empty: 'No heterogeneous provenance graph data is available.',
+    reload: 'Reload provenance graph',
+  },
+  version_impact: {
+    subtitle: 'Meta-path projection with version, shared-source, and validation evidence.',
+    empty: 'No projected version-impact graph data is available.',
+    reload: 'Reload impact view',
+  },
 }
 
 type GraphMode = 'full' | 'subgraph'
@@ -85,12 +140,11 @@ type GraphCanvasSize = {
 
 type GraphEvent = {
   target?: { id?: string }
-  targetType?: string
 }
 
 type GraphInstance = {
-  draw: () => void | Promise<void>
   destroy: () => void
+  draw: () => void | Promise<void>
   fitView: (options?: unknown, animation?: unknown) => void | Promise<void>
   getZoom: () => number
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
@@ -158,18 +212,28 @@ function saveLayoutSettings(settings: GraphLayoutSettings) {
   try {
     window.localStorage.setItem(GRAPH_LAYOUT_STORAGE_KEY, JSON.stringify(settings))
   } catch {
-    // Ignore storage failures; the graph should still remain usable.
+    // Layout persistence is optional.
   }
 }
 
-function formatPercent(value: number) {
-  if (!Number.isFinite(value)) return 'N/A'
-  return `${Math.round(value * 100)}%`
+function formatPercent(value?: number | null) {
+  if (!Number.isFinite(Number(value))) return 'N/A'
+  return `${Math.round(Number(value) * 100)}%`
 }
 
-function nodeColor(node?: GraphNodeData) {
+function formatEdgeType(edgeType: string) {
+  return edgeType.replace(/_/g, ' ')
+}
+
+function formatKind(kind?: string) {
+  if (!kind) return 'Skill'
+  return KIND_LABEL[kind] || kind
+}
+
+function nodeColor(node?: GraphViewNodeData) {
   if (!node) return '#8c8c8c'
-  return TYPE_COLOR[node.skill_type] || '#8c8c8c'
+  if (node.kind && KIND_COLOR[node.kind]) return KIND_COLOR[node.kind]
+  return TYPE_COLOR[String(node.skill_type || '')] || '#8c8c8c'
 }
 
 function uniqueTags(tags?: string[]): string[] {
@@ -199,17 +263,66 @@ function weightedEdgeStrength(edge: ForceEdgeDatum | undefined, baseAttraction: 
   return baseAttraction * (0.45 + weight * 0.75) * 80
 }
 
-function formatEdgeLabel(edge: GraphEdgeData) {
-  return `${edge.edge_type.replace(/_/g, ' ')} \u00b7 ${edge.weight.toFixed(2)}`
+function formatEdgeLabel(edge: GraphViewEdgeData) {
+  const score = edge.confidence ?? edge.weight
+  return `${formatEdgeType(edge.edge_type)} / ${score.toFixed(2)}`
 }
 
 function shouldShowEdgeLabels(zoom: number) {
   return zoom >= EDGE_LABEL_ZOOM_THRESHOLD
 }
 
+function formatMetadataValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return 'N/A'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'number' || typeof value === 'string') return String(value)
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function metadataEntries(metadata?: Record<string, unknown>) {
+  return Object.entries(metadata ?? {}).filter(([, value]) => value !== undefined && value !== null && value !== '')
+}
+
+function graphDataToView(data: GraphData): GraphViewData {
+  return {
+    view: 'skill_only',
+    source_endpoint: '/api/v1/graph/subgraph',
+    nodes: data.nodes.map(node => ({
+      id: node.id,
+      name: node.name,
+      kind: 'skill',
+      description: node.description || '',
+      skill_type: node.skill_type,
+      state: node.state,
+      tags: node.tags,
+      version: node.version,
+      granularity_level: node.granularity_level,
+      success_rate: node.success_rate,
+      usage_count: node.usage_count,
+      metadata: node.metadata || {},
+    })),
+    edges: data.edges.map(edge => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      edge_type: edge.edge_type,
+      weight: edge.weight,
+      confidence: edge.confidence ?? null,
+      metadata: edge.metadata || {},
+    })),
+    stats: data.stats,
+    metadata: {},
+    validation_evidence: {},
+  }
+}
+
 function calculateInitialNodePositions(
-  nodes: GraphNodeData[],
-  edges: GraphEdgeData[],
+  nodes: GraphViewNodeData[],
+  edges: GraphViewEdgeData[],
   canvasSize: GraphCanvasSize,
   settings: GraphLayoutSettings,
 ) {
@@ -268,13 +381,15 @@ export default function SkillGraph() {
   const graphRef = useRef<GraphInstance | null>(null)
   const openedFromQuery = useRef<string | null>(null)
 
-  const [graphData, setGraphData] = useState<GraphData | null>(null)
+  const [viewMode, setViewMode] = useState<GraphViewMode>('skill_only')
+  const [mode, setMode] = useState<GraphMode>('full')
+  const [graphData, setGraphData] = useState<GraphViewData | null>(null)
   const [loading, setLoading] = useState(true)
   const [subgraphLoading, setSubgraphLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [edgeFilter, setEdgeFilter] = useState<string[]>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [mode, setMode] = useState<GraphMode>('full')
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [centerSkillId, setCenterSkillId] = useState<string | null>(null)
   const [depth, setDepth] = useState(2)
   const [layoutSettings, setLayoutSettings] = useState<GraphLayoutSettings>(loadLayoutSettings)
@@ -287,44 +402,76 @@ export default function SkillGraph() {
     [graphData, selectedNodeId],
   )
 
+  const selectedEdge = useMemo(
+    () => graphData?.edges.find(edge => edge.id === selectedEdgeId) || null,
+    [graphData, selectedEdgeId],
+  )
+
   const centerNode = useMemo(
     () => graphData?.nodes.find(node => node.id === centerSkillId) || null,
     [graphData, centerSkillId],
   )
+
+  const nodeById = useMemo(() => {
+    const nodes = new Map<string, GraphViewNodeData>()
+    graphData?.nodes.forEach(node => nodes.set(node.id, node))
+    return nodes
+  }, [graphData])
 
   const edgeTypes = useMemo(
     () => (graphData ? [...new Set(graphData.edges.map(edge => edge.edge_type))] : []),
     [graphData],
   )
 
-  const loadFullGraph = useCallback(async () => {
+  const nodeLegend = useMemo(() => {
+    if (!graphData) return []
+    const values = viewMode === 'skill_only'
+      ? Object.keys(TYPE_COLOR)
+      : [...new Set(graphData.nodes.map(node => node.kind))]
+    return values.map(value => ({
+      value,
+      label: viewMode === 'skill_only' ? value : formatKind(value),
+      color: viewMode === 'skill_only' ? TYPE_COLOR[value] : KIND_COLOR[value] || '#8c8c8c',
+    }))
+  }, [graphData, viewMode])
+
+  const resetSelection = useCallback(() => {
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setCenterSkillId(null)
+    setEdgeFilter([])
+  }, [])
+
+  const loadGraphForView = useCallback(async (nextView: GraphViewMode) => {
     setLoading(true)
     setError(null)
+    resetSelection()
     try {
-      const data = await graphApi.full(300)
+      const data = await graphApi.view(nextView, 300)
       setGraphData(data)
       setMode('full')
-      setCenterSkillId(null)
-      setSelectedNodeId(null)
     } catch (err) {
-      setError(getApiErrorMessage(err, '加载完整图谱失败'))
+      setError(getApiErrorMessage(err, 'Failed to load graph data'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [resetSelection])
 
   const loadSubgraph = useCallback(async (skillId: string, nextDepth = depth) => {
     if (!skillId) return
     setSubgraphLoading(true)
     setError(null)
+    setViewMode('skill_only')
     try {
       const data = await graphApi.subgraph(skillId, nextDepth)
-      setGraphData(data)
+      setGraphData(graphDataToView(data))
       setMode('subgraph')
       setCenterSkillId(skillId)
       setSelectedNodeId(skillId)
+      setSelectedEdgeId(null)
+      setEdgeFilter([])
     } catch (err) {
-      setError(getApiErrorMessage(err, '加载子图失败，已保留当前视图'))
+      setError(getApiErrorMessage(err, 'Failed to load subgraph; current view is preserved'))
     } finally {
       setSubgraphLoading(false)
       setLoading(false)
@@ -332,16 +479,20 @@ export default function SkillGraph() {
   }, [depth])
 
   useEffect(() => {
+    if (viewMode !== 'skill_only') return
     const querySkillId = new URLSearchParams(location.search).get('skill_id')
-    if (querySkillId && openedFromQuery.current !== querySkillId) {
-      openedFromQuery.current = querySkillId
-      void loadSubgraph(querySkillId, depth)
-      return
-    }
-    if (!querySkillId && !graphData) {
-      void loadFullGraph()
-    }
-  }, [depth, graphData, loadFullGraph, loadSubgraph, location.search])
+    const timeoutId = window.setTimeout(() => {
+      if (querySkillId && openedFromQuery.current !== querySkillId) {
+        openedFromQuery.current = querySkillId
+        void loadSubgraph(querySkillId, depth)
+        return
+      }
+      if (!querySkillId && !graphData) {
+        void loadGraphForView('skill_only')
+      }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [depth, graphData, loadGraphForView, loadSubgraph, location.search, viewMode])
 
   useEffect(() => {
     if (!graphData?.nodes.length || !graphShellRef.current) return
@@ -415,18 +566,18 @@ export default function SkillGraph() {
           id: node.id,
           data: {
             label: node.name,
-            skillType: node.skill_type,
+            nodeKind: node.kind,
             state: node.state,
           },
           style: {
             x: position?.x,
             y: position?.y,
             fill: color,
-            fillOpacity: STATE_OPACITY[node.state] || 0.65,
+            fillOpacity: node.kind === 'skill' ? (STATE_OPACITY[String(node.state || '')] || 0.65) : 0.92,
             stroke: selected || centered ? '#111827' : color,
             strokeOpacity: 1,
             lineWidth: selected || centered ? 3 : 1,
-            size: Math.max(28, Math.min(56, 28 + node.usage_count * 0.5)),
+            size: Math.max(28, Math.min(58, 30 + Number(node.usage_count || 0) * 0.5)),
             labelText: node.name,
             labelFill: '#111827',
             labelFontSize: 8,
@@ -442,37 +593,42 @@ export default function SkillGraph() {
         }
       })
 
-      const edges = filteredEdges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        data: { edgeType: edge.edge_type, weight: edge.weight },
-        style: {
-          stroke: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
-          strokeOpacity: 0.85,
-          lineWidth: Math.max(1, edge.weight * 2),
-          endArrow: true,
-          labelText: `${edge.edge_type.replace(/_/g, ' ')} · ${edge.weight.toFixed(2)}`,
-          labelFontSize: 9,
-          labelFill: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
-          label: false,
-          labelStroke: '#fff',
-          labelLineWidth: 3,
-          labelPlacement: 'center' as const,
-          labelOffsetX: 0,
-          labelOffsetY: -18,
-          badgeText: formatEdgeLabel(edge),
-          badgeFontSize: 9,
-          badgeFill: EDGE_COLOR[edge.edge_type] || '#8c8c8c',
-          badgeBackgroundFill: '#fff',
-          badgeBackgroundOpacity: 0.9,
-          badgeBackgroundRadius: 4,
-          badgePadding: [1, 4, 1, 4],
-          badgePlacement: 'suffix' as const,
-          badgeOffsetX: 0,
-          badgeOffsetY: -18,
-        },
-      }))
+      const edges = filteredEdges.map(edge => {
+        const selected = edge.id === selectedEdgeId
+        const color = EDGE_COLOR[edge.edge_type] || '#8c8c8c'
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          data: { edgeType: edge.edge_type, weight: edge.weight },
+          style: {
+            stroke: color,
+            strokeOpacity: selected ? 1 : 0.82,
+            lineWidth: selected ? Math.max(2.5, edge.weight * 3) : Math.max(1, edge.weight * 2),
+            endArrow: true,
+            labelText: formatEdgeLabel(edge),
+            labelFontSize: 9,
+            labelFill: color,
+            label: false,
+            labelStroke: '#fff',
+            labelLineWidth: 3,
+            labelPlacement: 'center' as const,
+            labelOffsetX: 0,
+            labelOffsetY: -18,
+            badgeText: formatEdgeLabel(edge),
+            badgeFontSize: 9,
+            badgeFill: color,
+            badgeBackgroundFill: '#fff',
+            badgeBackgroundOpacity: 0.9,
+            badgeBackgroundRadius: 4,
+            badgePadding: [1, 4, 1, 4],
+            badgePlacement: 'suffix' as const,
+            badgeOffsetX: 0,
+            badgeOffsetY: -18,
+            cursor: 'pointer',
+          },
+        }
+      })
 
       const g = new G6.Graph({
         container: containerRef.current,
@@ -497,12 +653,8 @@ export default function SkillGraph() {
             degree: 0,
           },
         ],
-        node: {
-          type: 'circle',
-        },
-        edge: {
-          type: 'line',
-        },
+        node: { type: 'circle' },
+        edge: { type: 'line' },
       }) as GraphInstance
 
       let graphReady = false
@@ -515,20 +667,30 @@ export default function SkillGraph() {
         edgeLabelsVisible = visible
         g.updateEdgeData(filteredEdges.map(edge => ({
           id: edge.id,
-          style: {
-            badgeText: visible ? formatEdgeLabel(edge) : '',
-          },
+          style: { badgeText: visible ? formatEdgeLabel(edge) : '' },
         })))
         void Promise.resolve(g.draw())
       }
 
-      g.on('node:click', (event) => {
+      g.on('node:click', event => {
         const id = event.target?.id
-        if (id) setSelectedNodeId(id)
+        if (id) {
+          setSelectedNodeId(id)
+          setSelectedEdgeId(null)
+        }
+      })
+
+      g.on('edge:click', event => {
+        const id = event.target?.id
+        if (id) {
+          setSelectedEdgeId(id)
+          setSelectedNodeId(null)
+        }
       })
 
       g.on('canvas:click', () => {
         setSelectedNodeId(null)
+        setSelectedEdgeId(null)
       })
 
       graphRef.current = g
@@ -551,30 +713,59 @@ export default function SkillGraph() {
         graphRef.current = null
       }
     }
-  }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, selectedNodeId])
+  }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, selectedEdgeId, selectedNodeId])
+
+  const handleViewChange = (nextView: GraphViewMode) => {
+    setViewMode(nextView)
+    openedFromQuery.current = null
+    navigate('/graph', { replace: true })
+    void loadGraphForView(nextView)
+  }
+
+  const reloadCurrentView = () => {
+    if (viewMode === 'skill_only' && mode === 'subgraph' && centerSkillId) {
+      void loadSubgraph(centerSkillId, depth)
+      return
+    }
+    void loadGraphForView(viewMode)
+  }
 
   const returnToFullGraph = () => {
     openedFromQuery.current = null
     navigate('/graph', { replace: true })
-    void loadFullGraph()
+    setViewMode('skill_only')
+    void loadGraphForView('skill_only')
   }
 
   const openWiki = () => {
-    if (!selectedNode) return
+    if (!selectedNode || selectedNode.kind !== 'skill') return
     navigate(`/wiki?skill_id=${encodeURIComponent(selectedNode.id)}`)
+  }
+
+  const expandSelectedSkill = () => {
+    if (!selectedNode || selectedNode.kind !== 'skill') return
+    void loadSubgraph(selectedNode.id, depth)
   }
 
   const hasNodes = Boolean(graphData?.nodes.length)
   const selectedNodeTags = uniqueTags(selectedNode?.tags)
+  const selectedNodeMetadata = metadataEntries(selectedNode?.metadata)
+  const selectedEdgeMetadata = metadataEntries(selectedEdge?.metadata)
+  const viewCopy = GRAPH_VIEW_COPY[viewMode]
+  const detailTitle = selectedEdge ? 'Edge Details' : 'Node Details'
+
   const zoomGraph = (ratio: number) => {
     void graphRef.current?.zoomBy(ratio, { duration: 180 })
   }
+
   const fitGraph = () => {
     void graphRef.current?.fitView({ when: 'always' }, { duration: 180 })
   }
+
   const updateLayoutDraft = (field: keyof GraphLayoutSettings, value: number) => {
     setLayoutDraft(previous => normalizeLayoutSettings({ ...previous, [field]: value }))
   }
+
   const applyLayoutSettings = () => {
     const next = normalizeLayoutSettings(layoutDraft)
     setLayoutSettings(next)
@@ -582,19 +773,23 @@ export default function SkillGraph() {
     saveLayoutSettings(next)
     setLayoutPanelOpen(false)
   }
+
   const resetLayoutSettings = () => {
     const next = DEFAULT_GRAPH_LAYOUT
     setLayoutSettings(next)
     setLayoutDraft(next)
     saveLayoutSettings(next)
   }
+
   const applyLayoutPreset = (preset: keyof typeof GRAPH_LAYOUT_PRESETS) => {
     setLayoutDraft(normalizeLayoutSettings(GRAPH_LAYOUT_PRESETS[preset]))
   }
+
   const handleLayoutPanelOpenChange = (open: boolean) => {
     setLayoutPanelOpen(open)
     if (open) setLayoutDraft(layoutSettings)
   }
+
   const renderLayoutSlider = (
     label: string,
     field: keyof GraphLayoutSettings,
@@ -621,22 +816,23 @@ export default function SkillGraph() {
       </div>
     )
   }
+
   const layoutSettingsContent = (
     <div style={{ width: 292 }}>
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Text strong>布局设置</Text>
+        <Text strong>Layout Settings</Text>
         <Space.Compact block>
-          <Button size="small" onClick={() => applyLayoutPreset('compact')}>紧凑</Button>
-          <Button size="small" onClick={() => applyLayoutPreset('balanced')}>均衡</Button>
-          <Button size="small" onClick={() => applyLayoutPreset('open')}>开阔</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('compact')}>Compact</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('balanced')}>Balanced</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('open')}>Open</Button>
         </Space.Compact>
-        {renderLayoutSlider('排斥力度', 'repulsion', 40, 400)}
-        {renderLayoutSlider('吸引力度', 'attraction', 0.05, 1, 0.05)}
-        {renderLayoutSlider('连接距离', 'linkDistance', 60, 280)}
-        {renderLayoutSlider('节点间距', 'nodeSpacing', 36, 96)}
+        {renderLayoutSlider('Repulsion', 'repulsion', 40, 400)}
+        {renderLayoutSlider('Attraction', 'attraction', 0.05, 1, 0.05)}
+        {renderLayoutSlider('Link distance', 'linkDistance', 60, 280)}
+        {renderLayoutSlider('Node spacing', 'nodeSpacing', 36, 96)}
         <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
-          <Button size="small" onClick={resetLayoutSettings}>恢复默认</Button>
-          <Button size="small" type="primary" onClick={applyLayoutSettings}>应用布局</Button>
+          <Button size="small" onClick={resetLayoutSettings}>Reset</Button>
+          <Button size="small" type="primary" onClick={applyLayoutSettings}>Apply</Button>
         </Space>
       </Space>
     </div>
@@ -647,22 +843,25 @@ export default function SkillGraph() {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ margin: 0, fontWeight: 700 }}>Skill Knowledge Graph</h2>
-          <Text type="secondary">
-            点击节点查看摘要，展开关联子图，或跳转到 Wiki 详情。
-          </Text>
+          <Text type="secondary">{viewCopy.subtitle}</Text>
         </div>
         <Space wrap>
+          <Segmented
+            options={GRAPH_VIEW_OPTIONS}
+            value={viewMode}
+            onChange={value => handleViewChange(value as GraphViewMode)}
+          />
           <Select
             mode="multiple"
-            placeholder="过滤边类型"
+            placeholder="Filter edge types"
             style={{ minWidth: 220 }}
             allowClear
             value={edgeFilter}
             onChange={setEdgeFilter}
-            options={edgeTypes.map(type => ({ label: type, value: type }))}
+            options={edgeTypes.map(type => ({ label: formatEdgeType(type), value: type }))}
           />
-          <Button icon={<ReloadOutlined />} onClick={loadFullGraph} loading={loading}>
-            刷新全图
+          <Button icon={<ReloadOutlined />} onClick={reloadCurrentView} loading={loading}>
+            {viewCopy.reload}
           </Button>
         </Space>
       </div>
@@ -682,33 +881,41 @@ export default function SkillGraph() {
         <Alert
           type="info"
           showIcon
-          title={`当前子图中心：${centerNode.name}`}
-          description={`depth=${depth}，共 ${graphData?.nodes.length || 0} 个节点、${graphData?.edges.length || 0} 条边。`}
+          title={`Subgraph center: ${centerNode.name}`}
+          description={`depth=${depth}, ${graphData?.nodes.length || 0} nodes, ${graphData?.edges.length || 0} edges.`}
           action={(
             <Button size="small" icon={<RollbackOutlined />} onClick={returnToFullGraph}>
-              返回全图
+              Back to full graph
             </Button>
           )}
           style={{ marginBottom: 12 }}
         />
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'stretch' }}>
+      {viewMode === 'version_impact' && Boolean(graphData?.metadata?.meta_paths) && (
+        <Alert
+          type="info"
+          showIcon
+          title="Projection meta-paths"
+          description={formatMetadataValue(graphData?.metadata?.meta_paths)}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 16, alignItems: 'stretch' }}>
         <Card
-          style={{ minHeight: 560, borderRadius: 8, overflow: 'hidden' }}
+          style={{ minHeight: 560, borderRadius: 8, overflow: 'hidden', minWidth: 0 }}
           styles={{ body: { padding: 0, height: 560 } }}
         >
           {loading && !graphData ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-              <Spin size="large" description="加载图谱数据..." />
+              <Spin size="large" tip="Loading graph data..." />
             </div>
           ) : !hasNodes ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', padding: 24 }}>
-              <Empty
-                description="暂无可展示的 Skill 图谱数据"
-              >
-                <Button icon={<ReloadOutlined />} onClick={loadFullGraph}>
-                  重新加载
+              <Empty description={viewCopy.empty}>
+                <Button icon={<ReloadOutlined />} onClick={reloadCurrentView}>
+                  Reload
                 </Button>
               </Empty>
             </div>
@@ -723,16 +930,16 @@ export default function SkillGraph() {
                   open={layoutPanelOpen}
                   onOpenChange={handleLayoutPanelOpenChange}
                 >
-                  <Button size="small" icon={<SettingOutlined />} aria-label="布局设置" />
+                  <Button size="small" icon={<SettingOutlined />} aria-label="Layout settings" />
                 </Popover>
-                <Tooltip title="放大图谱">
-                  <Button size="small" icon={<ZoomInOutlined />} aria-label="放大图谱" onClick={() => zoomGraph(1.2)} />
+                <Tooltip title="Zoom in">
+                  <Button size="small" icon={<ZoomInOutlined />} aria-label="Zoom in" onClick={() => zoomGraph(1.2)} />
                 </Tooltip>
-                <Tooltip title="缩小图谱">
-                  <Button size="small" icon={<ZoomOutOutlined />} aria-label="缩小图谱" onClick={() => zoomGraph(0.8)} />
+                <Tooltip title="Zoom out">
+                  <Button size="small" icon={<ZoomOutOutlined />} aria-label="Zoom out" onClick={() => zoomGraph(0.8)} />
                 </Tooltip>
-                <Tooltip title="适配视图">
-                  <Button size="small" icon={<AimOutlined />} aria-label="适配视图" onClick={fitGraph} />
+                <Tooltip title="Fit view">
+                  <Button size="small" icon={<AimOutlined />} aria-label="Fit view" onClick={fitGraph} />
                 </Tooltip>
               </Space.Compact>
             </div>
@@ -740,76 +947,139 @@ export default function SkillGraph() {
         </Card>
 
         <Card
-          title="节点详情"
-          style={{ borderRadius: 8 }}
+          title={detailTitle}
+          style={{ borderRadius: 8, minWidth: 0 }}
           styles={{ body: { paddingTop: 12 } }}
-          extra={selectedNode ? <Tag color={nodeColor(selectedNode)}>{selectedNode.skill_type}</Tag> : null}
+          extra={selectedNode ? <Tag color={nodeColor(selectedNode)}>{formatKind(selectedNode.kind)}</Tag> : null}
         >
-          {selectedNode ? (
+          {selectedEdge ? (
+            <Space orientation="vertical" size={14} style={{ width: '100%' }}>
+              <div>
+                <Text strong style={{ fontSize: 16 }}>{formatEdgeType(selectedEdge.edge_type)}</Text>
+                <Paragraph copyable={{ text: selectedEdge.id }} style={{ margin: '6px 0 0' }}>
+                  <Text code>{selectedEdge.id}</Text>
+                </Paragraph>
+              </div>
+              <Descriptions column={1} size="small" bordered>
+                <Descriptions.Item label="Source">
+                  {nodeById.get(selectedEdge.source)?.name || selectedEdge.source}
+                </Descriptions.Item>
+                <Descriptions.Item label="Target">
+                  {nodeById.get(selectedEdge.target)?.name || selectedEdge.target}
+                </Descriptions.Item>
+                <Descriptions.Item label="Weight">
+                  {selectedEdge.weight.toFixed(2)}
+                </Descriptions.Item>
+                {selectedEdge.confidence !== undefined && selectedEdge.confidence !== null && (
+                  <Descriptions.Item label="Confidence">
+                    {selectedEdge.confidence.toFixed(2)}
+                  </Descriptions.Item>
+                )}
+              </Descriptions>
+              {selectedEdgeMetadata.length > 0 && (
+                <Descriptions column={1} size="small" bordered title="Evidence">
+                  {selectedEdgeMetadata.slice(0, 8).map(([key, value]) => (
+                    <Descriptions.Item key={key} label={key}>
+                      <Text style={{ whiteSpace: 'pre-wrap' }}>{formatMetadataValue(value)}</Text>
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              )}
+            </Space>
+          ) : selectedNode ? (
             <Space orientation="vertical" size={14} style={{ width: '100%' }}>
               <div>
                 <Text strong style={{ fontSize: 16 }}>{selectedNode.name}</Text>
                 <Paragraph copyable={{ text: selectedNode.id }} style={{ margin: '6px 0 0' }}>
                   <Text code>{selectedNode.id}</Text>
                 </Paragraph>
+                {selectedNode.description && (
+                  <Paragraph style={{ marginBottom: 0 }}>{selectedNode.description}</Paragraph>
+                )}
               </div>
 
               <Descriptions column={1} size="small" bordered>
-                <Descriptions.Item label="状态">
-                  <Tag>{STATE_LABEL[selectedNode.state] || selectedNode.state}</Tag>
+                <Descriptions.Item label="Kind">
+                  <Tag color={nodeColor(selectedNode)}>{formatKind(selectedNode.kind)}</Tag>
                 </Descriptions.Item>
-                <Descriptions.Item label="版本">
-                  <Text code>{selectedNode.version}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="成功率">
-                  {formatPercent(selectedNode.success_rate)}
-                </Descriptions.Item>
-                <Descriptions.Item label="使用次数">
-                  {selectedNode.usage_count}
-                </Descriptions.Item>
-                <Descriptions.Item label="粒度级别">
-                  {selectedNode.granularity_level}
-                </Descriptions.Item>
+                {selectedNode.state && (
+                  <Descriptions.Item label="State">
+                    <Tag>{STATE_LABEL[selectedNode.state] || selectedNode.state}</Tag>
+                  </Descriptions.Item>
+                )}
+                {selectedNode.version && (
+                  <Descriptions.Item label="Version">
+                    <Text code>{selectedNode.version}</Text>
+                  </Descriptions.Item>
+                )}
+                {selectedNode.success_rate !== undefined && selectedNode.success_rate !== null && (
+                  <Descriptions.Item label="Success rate">
+                    {formatPercent(selectedNode.success_rate)}
+                  </Descriptions.Item>
+                )}
+                {selectedNode.usage_count !== undefined && selectedNode.usage_count !== null && (
+                  <Descriptions.Item label="Usage count">
+                    {selectedNode.usage_count}
+                  </Descriptions.Item>
+                )}
+                {selectedNode.granularity_level !== undefined && selectedNode.granularity_level !== null && (
+                  <Descriptions.Item label="Granularity">
+                    {selectedNode.granularity_level}
+                  </Descriptions.Item>
+                )}
               </Descriptions>
 
-              <div>
-                <Text type="secondary">标签</Text>
-                <div style={{ marginTop: 6 }}>
-                  {selectedNodeTags.length > 0
-                    ? selectedNodeTags.map(tag => <Tag key={tag}>{tag}</Tag>)
-                    : <Text type="secondary">暂无标签</Text>}
+              {selectedNodeTags.length > 0 && (
+                <div>
+                  <Text type="secondary">Tags</Text>
+                  <div style={{ marginTop: 6 }}>
+                    {selectedNodeTags.map(tag => <Tag key={tag}>{tag}</Tag>)}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <Space.Compact style={{ width: '100%' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 10px', border: '1px solid #d9d9d9', borderRight: 0, borderRadius: '6px 0 0 6px', color: '#666', background: '#fafafa' }}>
-                  Depth
-                </span>
-                <InputNumber
-                  min={1}
-                  max={5}
-                  value={depth}
-                  onChange={value => setDepth(value || 2)}
-                  style={{ width: 92 }}
-                />
-                <Button
-                  icon={<ShareAltOutlined />}
-                  loading={subgraphLoading}
-                  onClick={() => loadSubgraph(selectedNode.id, depth)}
-                  style={{ flex: 1 }}
-                >
-                  展开关联
-                </Button>
-              </Space.Compact>
+              {selectedNodeMetadata.length > 0 && (
+                <Descriptions column={1} size="small" bordered title="Metadata">
+                  {selectedNodeMetadata.slice(0, 8).map(([key, value]) => (
+                    <Descriptions.Item key={key} label={key}>
+                      <Text style={{ whiteSpace: 'pre-wrap' }}>{formatMetadataValue(value)}</Text>
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              )}
 
-              <Button block type="primary" icon={<ExportOutlined />} onClick={openWiki}>
-                在 Wiki 中查看
-              </Button>
+              {selectedNode.kind === 'skill' && (
+                <>
+                  <Space.Compact style={{ width: '100%' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 10px', border: '1px solid #d9d9d9', borderRight: 0, borderRadius: '6px 0 0 6px', color: '#666', background: '#fafafa' }}>
+                      Depth
+                    </span>
+                    <InputNumber
+                      min={1}
+                      max={5}
+                      value={depth}
+                      onChange={value => setDepth(value || 2)}
+                      style={{ width: 92 }}
+                    />
+                    <Button
+                      icon={<ShareAltOutlined />}
+                      loading={subgraphLoading}
+                      onClick={expandSelectedSkill}
+                      style={{ flex: 1 }}
+                    >
+                      Expand related
+                    </Button>
+                  </Space.Compact>
+                  <Button block type="primary" icon={<ExportOutlined />} onClick={openWiki}>
+                    Open in Wiki
+                  </Button>
+                </>
+              )}
             </Space>
           ) : (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="点击图中的节点后，这里会显示 Skill 摘要和操作入口。"
+              description="Click a node or edge to inspect its evidence."
             />
           )}
         </Card>
@@ -817,14 +1087,18 @@ export default function SkillGraph() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 10, color: '#8c8c8c', fontSize: 12, flexWrap: 'wrap' }}>
         <Space wrap>
-          {Object.entries(TYPE_COLOR).map(([type, color]) => (
-            <Tag key={type} color={color} style={{ borderRadius: 8 }}>{type}</Tag>
+          {nodeLegend.map(item => (
+            <Tag key={item.value} color={item.color} style={{ borderRadius: 8 }}>{item.label}</Tag>
           ))}
-          <span>节点颜色 = 类型，节点大小 = 使用频率，透明度 = 生命周期状态。</span>
+          <span>
+            {viewMode === 'skill_only'
+              ? 'Node color = skill type; opacity = lifecycle state.'
+              : 'Node color = provenance kind; edges preserve typed evidence links.'}
+          </span>
         </Space>
         {graphData && (
           <span>
-            {graphData.nodes.length} 个节点 / {graphData.edges.length} 条边
+            {graphData.nodes.length} nodes / {graphData.edges.length} edges
           </span>
         )}
       </div>

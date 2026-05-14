@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator, computed_field
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +104,8 @@ class SkillImplementation(BaseModel):
 
     @model_validator(mode="after")
     def validate_implementation(self) -> "SkillImplementation":
-        if not self.code and not self.prompt_template and not self.sub_skill_ids:
-            raise ValueError("至少需要提供 code、prompt_template 或 sub_skill_ids 之一")
+        if not self.code and not self.prompt_template and not self.tool_calls and not self.sub_skill_ids:
+            raise ValueError("至少需要提供 code、prompt_template、tool_calls 或 sub_skill_ids 之一")
         return self
 
 
@@ -119,6 +119,46 @@ class SkillTestCase(BaseModel):
     expected_state_changes: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     is_regression: bool = False
+
+
+class SkillEvaluation(BaseModel):
+    """Paper-driven evaluation contract for Skill schema v0.2."""
+
+    verifier_specs: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Deterministic verifier specs such as json_equals, json_exists, or contains.",
+    )
+    test_case_refs: List[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("test_case_refs", "test_cases_refs"),
+        description="External or repository test case identifiers tied to this Skill.",
+    )
+    benchmark_task_ids: List[str] = Field(
+        default_factory=list,
+        description="Benchmark task IDs that exercise this Skill.",
+    )
+    validation_summary: Optional[str] = Field(
+        default=None,
+        description="Short human-readable validation result summary.",
+    )
+
+    @field_validator("verifier_specs")
+    @classmethod
+    def validate_verifier_specs(cls, specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for index, spec in enumerate(specs):
+            if not isinstance(spec, dict):
+                raise ValueError(f"verifier_specs[{index}] must be an object")
+            verifier_type = spec.get("type")
+            if verifier_type is not None and not str(verifier_type).strip():
+                raise ValueError(f"verifier_specs[{index}].type must not be blank")
+            normalized.append(dict(spec))
+        return normalized
+
+    @field_validator("test_case_refs", "benchmark_task_ids")
+    @classmethod
+    def normalize_reference_ids(cls, values: List[str]) -> List[str]:
+        return [str(value).strip() for value in values if str(value).strip()]
 
 
 class SkillMetrics(BaseModel):
@@ -240,6 +280,7 @@ class Skill(BaseModel):
         default_factory=list,
         description="关联的测试轨迹 ID（存储在 PostgreSQL，非图节点）",
     )
+    evaluation: SkillEvaluation = Field(default_factory=SkillEvaluation)
 
     # --- External References (stored as IDs, not graph nodes) ---
     tool_refs: List[str] = Field(

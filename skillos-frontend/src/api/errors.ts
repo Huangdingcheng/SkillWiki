@@ -25,7 +25,7 @@ function stringifyDetail(detail: unknown): string | null {
   return String(detail)
 }
 
-export function getApiErrorMessage(error: unknown, fallback = '请求失败'): string {
+export function getApiErrorMessage(error: unknown, fallback = 'Request failed'): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as ErrorPayload | string | undefined
     if (typeof data === 'string' && data.trim()) return data

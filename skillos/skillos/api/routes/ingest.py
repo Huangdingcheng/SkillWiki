@@ -5,13 +5,25 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from ...layers.skill_management.auditor import SkillAuditorAgent
+from ...models.skill_model import (
+    MetaSkillCategory,
+    Skill,
+    SkillEvaluation,
+    SkillImplementation,
+    SkillInterface,
+    SkillProvenance,
+    SkillState,
+    SkillType,
+)
 from ..deps import AppState, get_app_state
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
-ALLOWED_SOURCE_TYPES = {"trajectory", "document", "api_doc", "script"}
+PARSE_SOURCE_TYPES = {"trajectory", "document", "api_doc", "script"}
+CANDIDATE_SOURCE_TYPES = PARSE_SOURCE_TYPES | {"agent_execution"}
 
 
 class IngestRequest(BaseModel):
@@ -43,6 +55,43 @@ class CreatedSkillOut(BaseModel):
     version: str
 
 
+class CandidateSkillReviewRequest(BaseModel):
+    source_type: str
+    unit_id: str
+    raw_content: str = ""
+    name: str
+    description: str
+    skill_type: SkillType = SkillType.ATOMIC
+    tags: List[str] = Field(default_factory=list)
+    input_schema: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    output_schema: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    preconditions: List[str] = Field(default_factory=list)
+    postconditions: List[str] = Field(default_factory=list)
+    prompt_template: str = ""
+    provenance: Optional[SkillProvenance] = None
+    evaluation: SkillEvaluation = Field(default_factory=SkillEvaluation)
+    author: str = "human_reviewer"
+
+
+class CandidateAuditOut(BaseModel):
+    skill_id: str
+    skill_name: str
+    passed: bool
+    schema_ok: bool
+    safety_ok: bool
+    postcondition_ok: bool
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    audit_score: float
+
+
+class CandidateCreateResponse(BaseModel):
+    success: bool
+    created_skill: CreatedSkillOut
+    audit: CandidateAuditOut
+
+
 class IngestResponse(BaseModel):
     success: bool
     source_type: str
@@ -55,8 +104,8 @@ class IngestResponse(BaseModel):
 
 def _validate_request(req: IngestRequest) -> str:
     source_type = req.source_type.strip().lower()
-    if source_type not in ALLOWED_SOURCE_TYPES:
-        allowed = ", ".join(sorted(ALLOWED_SOURCE_TYPES))
+    if source_type not in PARSE_SOURCE_TYPES:
+        allowed = ", ".join(sorted(PARSE_SOURCE_TYPES))
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported source_type '{req.source_type}'. Expected one of: {allowed}.",
@@ -82,6 +131,82 @@ def _unit_to_out(unit: Any) -> ExperienceUnitOut:
         index_keywords=getattr(unit, "index_keywords", []) or [],
         index_embedding_hint=getattr(unit, "index_embedding_hint", "") or "",
     )
+
+
+def _build_candidate_skill(req: CandidateSkillReviewRequest) -> Skill:
+    source_type = req.source_type.strip().lower()
+    if source_type not in CANDIDATE_SOURCE_TYPES:
+        allowed = ", ".join(sorted(CANDIDATE_SOURCE_TYPES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported source_type '{req.source_type}'. Expected one of: {allowed}.",
+        )
+
+    prompt_template = req.prompt_template.strip() or req.description
+    provenance = req.provenance or SkillProvenance(
+        source_type=source_type,
+        source_ids=[req.unit_id],
+        created_by_agent=req.author,
+        creation_context={},
+    )
+    provenance_context = dict(provenance.creation_context)
+    paper_backlog_task = "C-P1-2" if source_type == "agent_execution" else "E-P0-1"
+    provenance_context.update(
+        {
+            "source_type": source_type,
+            "unit_id": req.unit_id,
+            "raw_content_preview": req.raw_content[:500],
+            "paper_backlog_task": paper_backlog_task,
+            "human_review_required": True,
+        }
+    )
+    provenance = provenance.model_copy(update={"creation_context": provenance_context})
+
+    return Skill(
+        name=req.name,
+        description=req.description,
+        skill_type=req.skill_type,
+        meta_category=MetaSkillCategory.GENERATION if req.skill_type == SkillType.STRATEGIC else None,
+        state=SkillState.SKILL_CANDIDATE,
+        tags=[source_type, "candidate-review"] + req.tags,
+        interface=SkillInterface(
+            input_schema=req.input_schema,
+            output_schema=req.output_schema,
+            preconditions=req.preconditions,
+            postconditions=req.postconditions,
+        ),
+        implementation=SkillImplementation(
+            language="prompt",
+            prompt_template=prompt_template,
+        ),
+        evaluation=req.evaluation,
+        provenance=provenance,
+    )
+
+
+def _audit_to_out(result: Any) -> CandidateAuditOut:
+    return CandidateAuditOut(
+        skill_id=result.skill_id,
+        skill_name=result.skill_name,
+        passed=result.passed,
+        schema_ok=result.schema_ok,
+        safety_ok=result.safety_ok,
+        postcondition_ok=result.postcondition_ok,
+        issues=result.issues,
+        warnings=result.warnings,
+        recommendations=result.recommendations,
+        audit_score=result.audit_score,
+    )
+
+
+async def _sync_candidate_graph(app: AppState, skill: Skill) -> None:
+    graph = getattr(app, "graph", None)
+    if graph is None or not hasattr(graph, "sync_skill"):
+        return
+    try:
+        await graph.sync_skill(skill)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
 
 
 @router.post("/parse", response_model=IngestResponse)
@@ -112,6 +237,56 @@ async def parse_input(
     )
 
 
+@router.post("/audit-candidate", response_model=CandidateAuditOut)
+async def audit_candidate_skill(
+    req: CandidateSkillReviewRequest,
+    app: AppState = Depends(get_app_state),
+) -> CandidateAuditOut:
+    """Audit an edited candidate Skill draft without writing it to the Wiki."""
+    try:
+        skill = _build_candidate_skill(req)
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    auditor = getattr(app, "auditor", None) or SkillAuditorAgent()
+    return _audit_to_out(auditor.audit(skill))
+
+
+@router.post("/create-candidate", response_model=CandidateCreateResponse, status_code=201)
+async def create_candidate_skill(
+    req: CandidateSkillReviewRequest,
+    app: AppState = Depends(get_app_state),
+) -> CandidateCreateResponse:
+    """Create an S1 Candidate Skill after human review of parsed experience."""
+    if not app.wiki:
+        raise HTTPException(status_code=503, detail="Skill Wiki is not initialized.")
+
+    try:
+        skill = _build_candidate_skill(req)
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    auditor = getattr(app, "auditor", None) or SkillAuditorAgent()
+    audit = _audit_to_out(auditor.audit(skill))
+    try:
+        created = await app.wiki.create(skill)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await _sync_candidate_graph(app, created)
+    return CandidateCreateResponse(
+        success=True,
+        created_skill=CreatedSkillOut(
+            skill_id=created.skill_id,
+            name=created.name,
+            skill_type=created.skill_type.value,
+            state=created.state.value,
+            version=created.version,
+        ),
+        audit=audit,
+    )
+
+
 @router.post("/parse-and-create", response_model=IngestResponse)
 async def parse_and_create_skills(
     req: IngestRequest,
@@ -124,16 +299,6 @@ async def parse_and_create_skills(
     source_type = _validate_request(req)
 
     import asyncio
-
-    from ...models.skill_model import (
-        MetaSkillCategory,
-        Skill,
-        SkillImplementation,
-        SkillInterface,
-        SkillProvenance,
-        SkillState,
-        SkillType,
-    )
 
     try:
         result = await asyncio.to_thread(app.pipeline.process, req.content, source_type)

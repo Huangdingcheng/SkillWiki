@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from ...models.maintenance_model import MaintenanceProposal
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 
@@ -29,6 +30,19 @@ class Feedback:
     improvement_suggestions: List[str] = field(default_factory=list)
     skill_update_proposals: List[Dict[str, Any]] = field(default_factory=list)
     experience_summary: str = ""
+
+    def to_maintenance_proposals(self) -> List[MaintenanceProposal]:
+        """Convert Reflection's D-compatible dicts into canonical proposals."""
+        proposals: List[MaintenanceProposal] = []
+        for item in self.skill_update_proposals:
+            proposal = MaintenanceProposal.from_reflection_proposal(
+                item,
+                task_id=self.task_id,
+                goal=self.goal,
+            )
+            if proposal:
+                proposals.append(proposal)
+        return proposals
 
 
 _REFLECT_PROMPT = """
@@ -65,7 +79,10 @@ Return this JSON shape:
       "issue": "what failed",
       "proposed_fix": "what D Maintainer should inspect or repair",
       "recommended_action": "repair",
-      "evidence": ["step failed with timeout"]
+      "evidence": ["step failed with timeout"],
+      "targets_to_fix": ["step failed with timeout"],
+      "invariants_to_preserve": ["existing successful login behavior"],
+      "validation_plan": ["replay the failed task", "rerun deterministic verifier specs"]
     }}
   ],
   "experience_summary": "brief reusable experience summary"
@@ -186,6 +203,9 @@ def _fallback_feedback(
             experience_summary="Task completed successfully.",
         )
 
+    if issues and not failed_skill_ids:
+        failed_skill_ids = _extract_skill_ids(trace)
+
     evidence = issues or _extract_failure_evidence(trace)
     root_cause = evidence[0] if evidence else "Runtime execution did not satisfy the goal."
     suggestions = _string_list(getattr(verification_result, "suggestions", []))
@@ -238,6 +258,9 @@ def _normalize_proposals(value: Any) -> List[Dict[str, Any]]:
                 "proposed_fix": str(item.get("proposed_fix", "")),
                 "recommended_action": action,
                 "evidence": _string_list(item.get("evidence", [])),
+                "targets_to_fix": _string_list(item.get("targets_to_fix", [])),
+                "invariants_to_preserve": _string_list(item.get("invariants_to_preserve", [])),
+                "validation_plan": _string_list(item.get("validation_plan", [])),
             }
         )
     return proposals
@@ -254,6 +277,24 @@ def _extract_failed_skill_ids(trace: Any) -> List[str]:
                 skill_id = value.get("skill_id")
                 if skill_id:
                     ids.append(str(skill_id))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(trace)
+    return list(dict.fromkeys(ids))
+
+
+def _extract_skill_ids(trace: Any) -> List[str]:
+    ids: List[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            skill_id = value.get("skill_id")
+            if skill_id:
+                ids.append(str(skill_id))
             for child in value.values():
                 visit(child)
         elif isinstance(value, list):

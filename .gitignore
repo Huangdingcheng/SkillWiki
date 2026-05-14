@@ -56,3 +56,7 @@ idea.txt
 
 # Runtime SkillStorage repository
 skillos/skillos/storage/skill_repo/SkillStorage/
+
+# Local one-click demo launcher state and secrets
+skillos-one-click-launcher/config.local.ps1
+skillos-one-click-launcher/runtime/

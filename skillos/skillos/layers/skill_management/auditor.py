@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ...models.skill_model import Skill
+from ...models.skill_model import Skill, SkillState, SkillType
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
 
@@ -23,6 +23,7 @@ class AuditResult:
     safety_ok: bool = True
     postcondition_ok: bool = True
     issues: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
     audit_score: float = 1.0
 
@@ -61,13 +62,14 @@ Return only valid JSON with this shape:
 class SkillAuditorAgent:
     """对 Skill 进行 schema/安全/后置条件审计。"""
 
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(self, llm_client: Optional[LLMClient] = None) -> None:
         self._llm = llm_client
 
     def audit(self, skill: Skill) -> AuditResult:
         """审计 Skill，返回审计结果。"""
         # 先做本地规则检查
         issues: List[str] = []
+        warnings: List[str] = []
         recommendations: List[str] = []
         schema_ok = True
         safety_ok = True
@@ -126,16 +128,65 @@ class SkillAuditorAgent:
             recommendations.append("Remove the blank prompt_template or replace it with an executable prompt")
             postcondition_ok = False
 
-        skill_type = skill.skill_type.value
-        if skill_type == "strategic" and skill.meta_category is None:
+        if skill.provenance is None:
+            provenance_message = (
+                "skill provenance is missing; trusted Skills must be traceable to a source, "
+                "agent, or maintenance action"
+            )
+            recommendations.append(
+                "Attach SkillProvenance so the Skill can be traced to a source, agent, or maintenance action"
+            )
+            if _requires_provenance_contract(skill):
+                issues.append(provenance_message)
+                schema_ok = False
+            else:
+                warnings.append("skill provenance is missing")
+                quality_penalty += 0.03
+
+        if skill.skill_type == SkillType.ATOMIC and impl:
+            has_atomic_implementation = bool(
+                (impl.code and impl.code.strip())
+                or (impl.prompt_template and impl.prompt_template.strip())
+                or impl.tool_calls
+            )
+            if not has_atomic_implementation:
+                issues.append("atomic Skill must define code, prompt_template, or tool_calls")
+                recommendations.append("Use atomic Skills for directly executable code, prompts, or tool calls")
+                postcondition_ok = False
+
+        if skill.skill_type == SkillType.FUNCTIONAL and impl:
+            has_workflow_prompt = bool(impl.prompt_template and impl.prompt_template.strip())
+            if not impl.sub_skill_ids and not has_workflow_prompt:
+                issues.append("functional Skill must define sub_skill_ids or a workflow prompt_template")
+                recommendations.append(
+                    "Reference child Skills through sub_skill_ids or describe the workflow in prompt_template"
+                )
+                postcondition_ok = False
+
+        if skill.skill_type == SkillType.STRATEGIC and skill.meta_category is None:
             issues.append("strategic Skill must define meta_category")
             recommendations.append("Set meta_category for strategic Skills so downstream routing can classify it")
             postcondition_ok = False
-        if skill_type in {"functional", "strategic"} and impl and not impl.sub_skill_ids:
+        if skill.skill_type in {SkillType.FUNCTIONAL, SkillType.STRATEGIC} and impl and not impl.sub_skill_ids:
             recommendations.append(
                 "Functional or strategic Skills should document composition intent or reference sub_skill_ids"
             )
             quality_penalty += 0.05
+
+        if _requires_verification_contract(skill) and not _has_verification_contract(skill):
+            issues.append(
+                "verified/released Skill must define interface.postconditions or evaluation verifier/test evidence"
+            )
+            recommendations.append(
+                "Add postconditions or SkillEvaluation.verifier_specs before moving this Skill to S3/S4"
+            )
+            postcondition_ok = False
+        elif skill.state in (SkillState.SKILL_CANDIDATE, SkillState.DRAFT) and not _has_verification_contract(skill):
+            warnings.append(
+                "candidate/draft Skill should define postconditions or verifier placeholder before verification"
+            )
+            recommendations.append("Add a verifier placeholder or postcondition before S3/S4 review")
+            quality_penalty += 0.03
 
         if impl and impl.code:
             dangerous = ["os.system", "subprocess", "eval(", "exec(", "__import__", "open("]
@@ -157,67 +208,69 @@ class SkillAuditorAgent:
                     schema_ok = False
 
         # LLM 深度审计
-        try:
-            impl_str = ""
-            if impl:
-                if impl.prompt_template:
-                    impl_str = f"prompt_template: {impl.prompt_template[:100]}"
-                elif impl.code:
-                    impl_str = f"code: {impl.code[:100]}"
-                elif impl.sub_skill_ids:
-                    impl_str = f"sub_skills: {impl.sub_skill_ids}"
+        if self._llm is not None:
+            try:
+                impl_str = ""
+                if impl:
+                    if impl.prompt_template:
+                        impl_str = f"prompt_template: {impl.prompt_template[:100]}"
+                    elif impl.code:
+                        impl_str = f"code: {impl.code[:100]}"
+                    elif impl.sub_skill_ids:
+                        impl_str = f"sub_skills: {impl.sub_skill_ids}"
 
-            prompt = _AUDIT_PROMPT.format(
-                name=skill.name,
-                description=skill.description,
-                skill_type=skill.skill_type.value,
-                tags=skill.tags,
-                input_schema=json.dumps(skill.interface.input_schema, ensure_ascii=False)[:200],
-                output_schema=json.dumps(skill.interface.output_schema, ensure_ascii=False)[:200],
-                implementation=impl_str or "(no implementation)",
-            )
-            response = self._llm.chat([
-                Message.system("You are the SkillOS Skill Auditor Agent. Return JSON only."),
-                Message.user(prompt),
-            ])
-            data = self._extract_json(response.content)
-            if data:
-                llm_issues = _string_list(data.get("issues"))
-                llm_recommendations = _string_list(data.get("recommendations"))
-                issues.extend(llm_issues)
-                recommendations.extend(llm_recommendations)
-                schema_ok = bool(data.get("schema_ok", schema_ok)) and schema_ok
-                safety_ok = bool(data.get("safety_ok", safety_ok)) and safety_ok
-                postcondition_ok = bool(data.get("postcondition_ok", postcondition_ok))
-                local_score = _score_audit(
-                    schema_ok=schema_ok,
-                    safety_ok=safety_ok,
-                    postcondition_ok=postcondition_ok,
-                    issue_count=len(issues),
-                    quality_penalty=quality_penalty,
+                prompt = _AUDIT_PROMPT.format(
+                    name=skill.name,
+                    description=skill.description,
+                    skill_type=skill.skill_type.value,
+                    tags=skill.tags,
+                    input_schema=json.dumps(skill.interface.input_schema, ensure_ascii=False)[:200],
+                    output_schema=json.dumps(skill.interface.output_schema, ensure_ascii=False)[:200],
+                    implementation=impl_str or "(no implementation)",
                 )
-                audit_score = min(_clamp_float(data.get("audit_score"), default=0.8), local_score)
-                passed = (
-                    bool(data.get("passed", True))
-                    and schema_ok
-                    and safety_ok
-                    and postcondition_ok
-                    and audit_score >= 0.6
-                    and not issues
-                )
-                return AuditResult(
-                    skill_id=skill.skill_id,
-                    skill_name=skill.name,
-                    passed=passed,
-                    schema_ok=schema_ok,
-                    safety_ok=safety_ok,
-                    postcondition_ok=postcondition_ok,
-                    issues=issues,
-                    recommendations=recommendations,
-                    audit_score=audit_score,
-                )
-        except Exception as exc:
-            logger.warning("Auditor LLM call failed: %s", exc)
+                response = self._llm.chat([
+                    Message.system("You are the SkillOS Skill Auditor Agent. Return JSON only."),
+                    Message.user(prompt),
+                ])
+                data = self._extract_json(response.content)
+                if data:
+                    llm_issues = _string_list(data.get("issues"))
+                    llm_recommendations = _string_list(data.get("recommendations"))
+                    issues.extend(llm_issues)
+                    recommendations.extend(llm_recommendations)
+                    schema_ok = bool(data.get("schema_ok", schema_ok)) and schema_ok
+                    safety_ok = bool(data.get("safety_ok", safety_ok)) and safety_ok
+                    postcondition_ok = bool(data.get("postcondition_ok", postcondition_ok))
+                    local_score = _score_audit(
+                        schema_ok=schema_ok,
+                        safety_ok=safety_ok,
+                        postcondition_ok=postcondition_ok,
+                        issue_count=len(issues),
+                        quality_penalty=quality_penalty,
+                    )
+                    audit_score = min(_clamp_float(data.get("audit_score"), default=0.8), local_score)
+                    passed = (
+                        bool(data.get("passed", True))
+                        and schema_ok
+                        and safety_ok
+                        and postcondition_ok
+                        and audit_score >= 0.6
+                        and not issues
+                    )
+                    return AuditResult(
+                        skill_id=skill.skill_id,
+                        skill_name=skill.name,
+                        passed=passed,
+                        schema_ok=schema_ok,
+                        safety_ok=safety_ok,
+                        postcondition_ok=postcondition_ok,
+                        issues=issues,
+                        warnings=warnings,
+                        recommendations=recommendations,
+                        audit_score=audit_score,
+                    )
+            except Exception as exc:
+                logger.warning("Auditor LLM call failed: %s", exc)
 
         passed = schema_ok and safety_ok and postcondition_ok and len(issues) == 0
         return AuditResult(
@@ -228,6 +281,7 @@ class SkillAuditorAgent:
             safety_ok=safety_ok,
             postcondition_ok=postcondition_ok,
             issues=issues,
+            warnings=warnings,
             recommendations=recommendations,
             audit_score=_score_audit(
                 schema_ok=schema_ok,
@@ -257,6 +311,34 @@ class SkillAuditorAgent:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _has_verification_contract(skill: Skill) -> bool:
+    if skill.interface.postconditions:
+        return True
+    evaluation = skill.evaluation
+    return bool(
+        _has_non_placeholder_verifier(evaluation.verifier_specs)
+        or evaluation.test_case_refs
+        or evaluation.benchmark_task_ids
+    )
+
+
+def _has_non_placeholder_verifier(specs: List[Dict[str, Any]]) -> bool:
+    placeholder_types = {"placeholder", "todo", "manual", "none", "tbd"}
+    for spec in specs:
+        verifier_type = str(spec.get("type") or "").strip().lower()
+        if verifier_type and verifier_type not in placeholder_types:
+            return True
+    return False
+
+
+def _requires_verification_contract(skill: Skill) -> bool:
+    return skill.state in (SkillState.VERIFIED, SkillState.RELEASED, SkillState.DEGRADED)
+
+
+def _requires_provenance_contract(skill: Skill) -> bool:
+    return skill.state in (SkillState.VERIFIED, SkillState.RELEASED, SkillState.DEGRADED)
 
 
 def _extract_prompt_variables(prompt_template: str) -> set[str]:

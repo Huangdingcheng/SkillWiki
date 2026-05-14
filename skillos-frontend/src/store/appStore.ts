@@ -8,24 +8,24 @@ export interface WsEvent {
 }
 
 interface AppStore {
-  // 主题
+  // Theme
   darkMode: boolean
   toggleDark: () => void
 
-  // Skill 列表缓存
+  // Skill list cache
   skills: SkillSummary[]
   setSkills: (skills: SkillSummary[]) => void
 
-  // 系统健康
+  // System health
   health: SystemHealth | null
   setHealth: (h: SystemHealth) => void
 
-  // WebSocket 事件日志
+  // WebSocket event log
   wsEvents: WsEvent[]
   pushWsEvent: (event: WsEvent) => void
   clearWsEvents: () => void
 
-  // 选中的 Skill
+  // Selected Skill
   selectedSkillId: string | null
   setSelectedSkillId: (id: string | null) => void
 }

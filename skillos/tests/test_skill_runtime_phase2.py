@@ -28,6 +28,24 @@ def make_skill(name: str, description: str | None = None) -> Skill:
     )
 
 
+def make_skill_with_required_inputs(name: str, required: list[str]) -> Skill:
+    return Skill(
+        skill_id=name,
+        name=name,
+        description=f"{name} test skill",
+        state=SkillState.RELEASED,
+        interface=SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {item: {"type": "string"} for item in required},
+                "required": required,
+            },
+            output_schema={"type": "object", "properties": {}},
+        ),
+        implementation=SkillImplementation(code="output['ok'] = True"),
+    )
+
+
 def result(skill: Skill, score: float = 0.8) -> SearchResult:
     return SearchResult(skill=skill, score=score, match_reasons=["test match"])
 
@@ -90,6 +108,50 @@ async def test_planner_normalizes_llm_steps_and_drops_invalid_skill_ids():
     assert plan.steps[0].input_mapping == {}
     assert plan.steps[0].depends_on == []
     assert plan.steps[1].depends_on == [plan.steps[0].step_id]
+
+
+@pytest.mark.asyncio
+async def test_planner_repairs_missing_required_inputs_from_task_state_and_previous_steps():
+    click = make_skill_with_required_inputs("click_element", ["selector"])
+    type_text = make_skill_with_required_inputs("type_text", ["selector", "text"])
+    payload = {
+        "steps": [
+            {
+                "step_index": 0,
+                "skill_id": click.skill_id,
+                "skill_name": click.name,
+                "description": "Click search.",
+                "input_mapping": {"selector": "#search"},
+                "depends_on": [],
+            },
+            {
+                "step_index": 1,
+                "skill_id": type_text.skill_id,
+                "skill_name": type_text.name,
+                "description": "Type query.",
+                "input_mapping": {"text": "SkillOS"},
+                "depends_on": ["0"],
+            },
+        ],
+        "plan_rationale": "Click then type.",
+    }
+    planner = SkillPlanner(FakeLLM(json.dumps(payload)))
+
+    plan = await planner.plan(
+        "click search and type",
+        [click, type_text],
+        current_state={"input": {"selector": "#search", "text": "SkillOS"}},
+    )
+
+    assert plan.steps[1].input_mapping == {"text": "SkillOS", "selector": "#search"}
+    assert plan.metadata["input_mapping_repairs"] == [
+        {
+            "step_index": 1,
+            "skill_id": "type_text",
+            "input": "selector",
+            "source": "planner_input_repair",
+        }
+    ]
 
 
 @pytest.mark.asyncio

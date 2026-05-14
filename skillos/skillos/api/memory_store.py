@@ -8,8 +8,26 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ..layers.skill_repository.indexing import SearchQuery, SearchResult, rank_search_results
-from ..models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
-from ..models.skill_model import EdgeType, Skill, SkillImplementation, SkillInterface, SkillState, SkillType
+from ..models.graph_model import (
+    HeteroEdgeType,
+    HeteroGraph,
+    HeteroGraphEdge,
+    HeteroGraphNode,
+    HeteroNodeKind,
+    SkillEdge,
+    SkillGraphNode,
+    SkillSubgraph,
+    build_demo_hetero_graph,
+)
+from ..models.skill_model import (
+    EdgeType,
+    Skill,
+    SkillEvaluation,
+    SkillImplementation,
+    SkillInterface,
+    SkillState,
+    SkillType,
+)
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -100,6 +118,8 @@ class MemoryWikiManager:
                 value = SkillInterface.model_validate(value)
             elif key == "implementation" and isinstance(value, dict):
                 value = SkillImplementation.model_validate(value)
+            elif key == "evaluation" and isinstance(value, dict):
+                value = SkillEvaluation.model_validate(value)
             object.__setattr__(updated, key, value)
         object.__setattr__(updated, "updated_at", datetime.utcnow())
         self._store[skill_id] = updated
@@ -200,6 +220,7 @@ class MemoryGraphManager:
     def __init__(self) -> None:
         self._nodes: Dict[str, SkillGraphNode] = {}
         self._edges: List[SkillEdge] = []
+        self._hetero_graph = HeteroGraph(name="heterogeneous-memory")
 
     async def sync_skill(self, skill: Skill) -> None:
         self._nodes[skill.skill_id] = _skill_to_graph_node(skill)
@@ -376,6 +397,75 @@ class MemoryGraphManager:
             weight=weight,
         ))
 
+    async def add_similarity(
+        self,
+        skill_id_a: str,
+        skill_id_b: str,
+        similarity: float = 1.0,
+    ) -> None:
+        similarity = max(0.0, min(1.0, similarity))
+        await self.create_edge(SkillEdge(
+            edge_id=f"maintenance:similar_to:{skill_id_a}:{skill_id_b}",
+            source_id=skill_id_a,
+            target_id=skill_id_b,
+            edge_type=EdgeType.SIMILAR_TO,
+            weight=similarity,
+            confidence=similarity,
+            metadata={"source": "memory_graph_manager"},
+        ))
+
+    async def add_replacement(
+        self,
+        replacement_id: str,
+        replaced_id: str,
+        reason: str = "",
+    ) -> None:
+        await self.create_edge(SkillEdge(
+            edge_id=f"maintenance:deprecate:replaces:{replacement_id}:{replaced_id}",
+            source_id=replacement_id,
+            target_id=replaced_id,
+            edge_type=EdgeType.REPLACES,
+            weight=1.0,
+            description=reason,
+            created_by="lifecycle",
+            metadata={
+                "maintenance_action": "deprecate",
+                "source": "memory_graph_manager",
+            },
+        ))
+
+    async def add_hetero_node(self, node: HeteroGraphNode) -> HeteroGraphNode:
+        self._hetero_graph.add_node(node)
+        return node
+
+    async def add_hetero_edge(self, edge: HeteroGraphEdge) -> HeteroGraphEdge:
+        self._hetero_graph.add_edge(edge)
+        return edge
+
+    async def get_hetero_graph(self) -> HeteroGraph:
+        if self._hetero_graph.nodes or self._hetero_graph.edges:
+            return self._hetero_graph
+        return build_demo_hetero_graph()
+
+    async def seed_demo_hetero_chain(
+        self,
+        *,
+        fill_form_skill_id: str = "fill_form",
+        fill_form_skill_version: str = "1.0.0",
+    ) -> HeteroGraph:
+        demo_graph = build_demo_hetero_graph(
+            fill_form_skill_id=fill_form_skill_id,
+            fill_form_skill_version=fill_form_skill_version,
+        )
+        for node in demo_graph.nodes.values():
+            self._hetero_graph.add_node(node)
+        for edge in demo_graph.edges:
+            self._hetero_graph.add_edge(edge)
+        return self._hetero_graph
+
+    async def project_hetero_to_skill_graph(self) -> SkillSubgraph:
+        return _project_hetero_to_skill_graph(await self.get_hetero_graph())
+
     async def get_stats(self) -> Dict[str, Any]:
         edge_types: Dict[str, int] = {}
         node_ids = set(self._nodes)
@@ -471,6 +561,230 @@ def _auto_edge(source_id: str, target_id: str, edge_type: EdgeType) -> SkillEdge
         weight=1.0,
         metadata={"auto_generated": True, "source": "skill_repository"},
     )
+
+
+def _project_hetero_to_skill_graph(hetero_graph: HeteroGraph) -> SkillSubgraph:
+    subgraph = SkillSubgraph(
+        name="heterogeneous-skill-projection",
+        metadata={
+            "projection_source": "heterogeneous_graph",
+            "meta_paths": [
+                "Skill->Version->Skill",
+                "Skill->Source<-Skill",
+                "Skill->Execution->Validation",
+            ],
+            "validation_evidence": {},
+        },
+    )
+    skill_nodes = {
+        node_id: node
+        for node_id, node in hetero_graph.nodes.items()
+        if node.node_kind == HeteroNodeKind.SKILL
+    }
+    for node in skill_nodes.values():
+        graph_node = _hetero_skill_to_graph_node(node)
+        subgraph.nodes[graph_node.skill_id] = graph_node
+
+    outgoing: Dict[str, List[HeteroGraphEdge]] = {}
+    incoming: Dict[str, List[HeteroGraphEdge]] = {}
+    for edge in hetero_graph.edges:
+        outgoing.setdefault(edge.source_id, []).append(edge)
+        incoming.setdefault(edge.target_id, []).append(edge)
+
+    projected: Dict[str, SkillEdge] = {}
+    _project_version_paths(hetero_graph, outgoing, projected)
+    _project_shared_source_paths(hetero_graph, incoming, outgoing, projected)
+    validation_evidence = _collect_validation_evidence(hetero_graph, outgoing)
+    subgraph.metadata["validation_evidence"] = validation_evidence
+    _annotate_projected_edges_with_validation_evidence(
+        projected.values(),
+        validation_evidence,
+    )
+
+    subgraph.edges = [
+        edge for edge in projected.values()
+        if edge.source_id in subgraph.nodes and edge.target_id in subgraph.nodes
+    ]
+    return subgraph
+
+
+def _project_version_paths(
+    hetero_graph: HeteroGraph,
+    outgoing: Dict[str, List[HeteroGraphEdge]],
+    projected: Dict[str, SkillEdge],
+) -> None:
+    for first in hetero_graph.edges:
+        if first.edge_type != HeteroEdgeType.VERSIONED_AS:
+            continue
+        source = hetero_graph.nodes.get(first.source_id)
+        version = hetero_graph.nodes.get(first.target_id)
+        if not source or not version:
+            continue
+        if source.node_kind != HeteroNodeKind.SKILL or version.node_kind != HeteroNodeKind.VERSION:
+            continue
+        for second in outgoing.get(version.node_id, []):
+            if second.edge_type != HeteroEdgeType.COMPOSES_WITH:
+                continue
+            target = hetero_graph.nodes.get(second.target_id)
+            if not target or target.node_kind != HeteroNodeKind.SKILL:
+                continue
+            confidence = min(first.weight, second.weight)
+            edge = _projected_skill_edge(
+                source_id=_hetero_skill_id(source),
+                target_id=_hetero_skill_id(target),
+                edge_type=EdgeType.EVOLVED_FROM,
+                confidence=confidence,
+                projection_source="hetero_skill_version_skill",
+                meta_path="Skill->Version->Skill",
+                source_edge_ids=[first.edge_id, second.edge_id],
+                via_node_ids=[version.node_id],
+            )
+            if edge:
+                projected[edge.edge_id] = edge
+
+
+def _project_shared_source_paths(
+    hetero_graph: HeteroGraph,
+    incoming: Dict[str, List[HeteroGraphEdge]],
+    outgoing: Dict[str, List[HeteroGraphEdge]],
+    projected: Dict[str, SkillEdge],
+) -> None:
+    for source_node in hetero_graph.nodes.values():
+        if source_node.node_kind != HeteroNodeKind.SOURCE:
+            continue
+        linked: Dict[str, HeteroGraphEdge] = {}
+        for edge in incoming.get(source_node.node_id, []) + outgoing.get(source_node.node_id, []):
+            other_id = edge.source_id if edge.target_id == source_node.node_id else edge.target_id
+            other = hetero_graph.nodes.get(other_id)
+            if not other or other.node_kind != HeteroNodeKind.SKILL:
+                continue
+            if edge.edge_type != HeteroEdgeType.DERIVED_FROM:
+                continue
+            linked[_hetero_skill_id(other)] = edge
+
+        skill_ids = sorted(linked)
+        for index, source_id in enumerate(skill_ids):
+            for target_id in skill_ids[index + 1:]:
+                first = linked[source_id]
+                second = linked[target_id]
+                confidence = min(first.weight, second.weight)
+                edge = _projected_skill_edge(
+                    source_id=source_id,
+                    target_id=target_id,
+                    edge_type=EdgeType.SIMILAR_TO,
+                    confidence=confidence,
+                    projection_source="hetero_shared_source",
+                    meta_path="Skill->Source<-Skill",
+                    source_edge_ids=[first.edge_id, second.edge_id],
+                    via_node_ids=[source_node.node_id],
+                )
+                if edge:
+                    projected[edge.edge_id] = edge
+
+
+def _collect_validation_evidence(
+    hetero_graph: HeteroGraph,
+    outgoing: Dict[str, List[HeteroGraphEdge]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    evidence_by_skill: Dict[str, List[Dict[str, Any]]] = {}
+    for first in hetero_graph.edges:
+        if first.edge_type != HeteroEdgeType.EXECUTED_AS:
+            continue
+        skill = hetero_graph.nodes.get(first.source_id)
+        execution = hetero_graph.nodes.get(first.target_id)
+        if not skill or not execution:
+            continue
+        if skill.node_kind != HeteroNodeKind.SKILL or execution.node_kind != HeteroNodeKind.EXECUTION:
+            continue
+        skill_id = _hetero_skill_id(skill)
+        for second in outgoing.get(execution.node_id, []):
+            if second.edge_type != HeteroEdgeType.VALIDATED_BY:
+                continue
+            validation = hetero_graph.nodes.get(second.target_id)
+            if not validation or validation.node_kind != HeteroNodeKind.VALIDATION:
+                continue
+            evidence_by_skill.setdefault(skill_id, []).append({
+                "projection_source": "hetero_skill_execution_validation",
+                "meta_path": "Skill->Execution->Validation",
+                "execution_node_id": execution.node_id,
+                "validation_node_id": validation.node_id,
+                "outcome": getattr(validation, "outcome", ""),
+                "validator": getattr(validation, "validator", ""),
+                "confidence": min(first.weight, second.weight),
+                "source_edge_ids": [first.edge_id, second.edge_id],
+            })
+    return evidence_by_skill
+
+
+def _annotate_projected_edges_with_validation_evidence(
+    edges: Iterable[SkillEdge],
+    validation_evidence: Dict[str, List[Dict[str, Any]]],
+) -> None:
+    for edge in edges:
+        edge_evidence: Dict[str, List[Dict[str, Any]]] = {}
+        source_evidence = validation_evidence.get(edge.source_id)
+        target_evidence = validation_evidence.get(edge.target_id)
+        if source_evidence:
+            edge_evidence["source"] = source_evidence
+        if target_evidence:
+            edge_evidence["target"] = target_evidence
+        if edge_evidence:
+            edge.metadata["validation_evidence"] = edge_evidence
+
+
+def _projected_skill_edge(
+    *,
+    source_id: str,
+    target_id: str,
+    edge_type: EdgeType,
+    confidence: float,
+    projection_source: str,
+    meta_path: str,
+    source_edge_ids: List[str],
+    via_node_ids: List[str],
+) -> Optional[SkillEdge]:
+    if not source_id or not target_id or source_id == target_id:
+        return None
+    edge_id = f"projection:{projection_source}:{source_id}:{target_id}:{':'.join(via_node_ids)}"
+    return SkillEdge(
+        edge_id=edge_id,
+        source_id=source_id,
+        target_id=target_id,
+        edge_type=edge_type,
+        weight=confidence,
+        confidence=confidence,
+        description=f"Projected from heterogeneous meta-path {meta_path}.",
+        metadata={
+            "projection_source": projection_source,
+            "projection_generated": True,
+            "meta_path": meta_path,
+            "source_edge_ids": source_edge_ids,
+            "via_node_ids": via_node_ids,
+        },
+        created_by="heterogeneous_projection",
+    )
+
+
+def _hetero_skill_to_graph_node(node: HeteroGraphNode) -> SkillGraphNode:
+    state_value = getattr(node, "skill_state", SkillState.DRAFT.value)
+    try:
+        state = SkillState(state_value)
+    except ValueError:
+        state = SkillState.DRAFT
+    return SkillGraphNode(
+        skill_id=_hetero_skill_id(node),
+        name=node.name,
+        version=getattr(node, "skill_version", "1.0.0") or "1.0.0",
+        skill_type=SkillType.FUNCTIONAL,
+        state=state,
+        domain=node.metadata.get("domain", "projection"),
+        granularity_level=2,
+        tags=["projection", "heterogeneous"],
+    )
+
+
+def _hetero_skill_id(node: HeteroGraphNode) -> str:
+    return getattr(node, "skill_id", "") or node.node_id
 
 
 def _unique_ids(skill_ids: Iterable[str]) -> List[str]:

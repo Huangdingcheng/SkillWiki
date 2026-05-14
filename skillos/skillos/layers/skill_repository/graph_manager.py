@@ -125,6 +125,29 @@ class SkillGraphManager:
         await self._graph.create_edge(edge)
         return edge
 
+    async def add_replacement(
+        self,
+        replacement_id: str,
+        replaced_id: str,
+        reason: str = "",
+    ) -> SkillEdge:
+        """Add replaces edge: replacement_id supersedes replaced_id."""
+        edge = SkillEdge(
+            edge_id=f"maintenance:deprecate:replaces:{replacement_id}:{replaced_id}",
+            source_id=replacement_id,
+            target_id=replaced_id,
+            edge_type=EdgeType.REPLACES,
+            weight=1.0,
+            description=reason,
+            created_by="lifecycle",
+            metadata={
+                "maintenance_action": "deprecate",
+                "source": "skill_graph_manager",
+            },
+        )
+        await self._graph.create_edge(edge)
+        return edge
+
     async def remove_edge(self, edge_id: str) -> None:
         await self._graph.delete_edge(edge_id)
 

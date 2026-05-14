@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from benchmarks.run_search_eval import load_fixture, run_search_eval, write_outputs
 from skillos.api.deps import app_state
 from skillos.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
 from skillos.api.routes import skills
-from skillos.layers.skill_repository.indexing import SearchQuery, score_skill_match
+from skillos.layers.skill_repository.indexing import (
+    LocalHashEmbeddingProvider,
+    SearchQuery,
+    cosine_similarity,
+    rank_search_results,
+    score_skill_hybrid,
+    score_skill_match,
+)
 from skillos.models.skill_model import Skill, SkillImplementation, SkillState, SkillType
 
 
@@ -226,3 +237,157 @@ def test_search_api_accepts_phase_two_fields():
     body = response.json()
     assert [item["name"] for item in body] == ["api_search_web"]
     assert body[0]["match_reason"]
+
+
+def test_local_hash_embedding_provider_is_deterministic_and_safe():
+    provider = LocalHashEmbeddingProvider(dimensions=32)
+
+    first = provider.embed("press css target")
+    second = provider.embed("press css target")
+
+    assert first == second
+    assert len(first) == 32
+    assert cosine_similarity(first, second) == pytest.approx(1.0)
+    assert provider.embed("") == [0.0] * 32
+    assert cosine_similarity([], first) == 0.0
+
+
+def test_hybrid_score_uses_lexical_semantic_health_formula():
+    skill = make_skill(
+        "click_element",
+        description="Click a browser element located by CSS selector",
+        tags=["web", "click", "selector"],
+        domain="web",
+    )
+    for _ in range(5):
+        skill.record_execution(success=True, latency_ms=40)
+
+    result = score_skill_hybrid(skill, SearchQuery(text="press css target", domain="web"))
+    components = result.score_components
+
+    assert set(components) == {"lexical", "semantic", "health"}
+    assert all(0.0 <= value <= 1.0 for value in components.values())
+    assert result.score == pytest.approx(
+        round(
+            0.5 * components["lexical"]
+            + 0.4 * components["semantic"]
+            + 0.1 * components["health"],
+            6,
+        )
+    )
+    assert "semantic match" in result.match_reasons
+
+
+def test_rank_search_results_can_use_explicit_hybrid_mode():
+    click = make_skill(
+        "click_element",
+        description="Click a browser element located by CSS selector",
+        tags=["web", "click", "selector"],
+        domain="web",
+    )
+    unrelated = make_skill(
+        "database_report",
+        description="Summarize records from a database table",
+        tags=["database", "report"],
+        domain="backend",
+    )
+
+    results = rank_search_results(
+        [unrelated, click],
+        SearchQuery(text="press css target", mode="hybrid", max_results=5),
+    )
+
+    assert results[0].skill.skill_id == click.skill_id
+    assert results[0].score_components["semantic"] > 0
+
+
+def test_search_api_accepts_hybrid_mode_with_explanations():
+    wiki = MemoryWikiManager()
+    app_state.wiki = wiki
+    app_state.graph = MemoryGraphManager()
+    app_state.search = MemorySearchEngine(wiki)
+    app = FastAPI()
+    app.include_router(skills.router, prefix="/api/v1")
+
+    import anyio
+
+    anyio.run(wiki.create, make_skill(
+        "click_element",
+        description="Click a browser element located by CSS selector",
+        tags=["web", "click", "selector"],
+        domain="web",
+    ))
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/skills/search",
+        json={
+            "query": "press css target",
+            "mode": "hybrid",
+            "limit": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["name"] == "click_element"
+    assert body[0]["search_mode"] == "hybrid"
+    assert set(body[0]["explanation"]) == {"lexical", "semantic", "health"}
+    assert body[0]["score_components"]["semantic"] > 0
+
+
+def test_search_eval_fixture_has_fixed_twenty_queries():
+    fixture = load_fixture(_search_eval_fixture_path())
+    queries = fixture["queries"]
+
+    assert fixture["benchmark"] == "skill_search_eval"
+    assert fixture["mode"] == "rule"
+    assert len(queries) == 20
+    assert len({query["query_id"] for query in queries}) == 20
+    assert all(query.get("query") for query in queries)
+    assert all(query.get("expected_skill_ids") for query in queries)
+    skill_ids = {skill["skill_id"] for skill in fixture["skills"]}
+    assert len(skill_ids) >= 20
+    assert all(
+        expected_skill_id in skill_ids
+        for query in queries
+        for expected_skill_id in query["expected_skill_ids"]
+    )
+
+
+def test_search_eval_rule_baseline_reports_top1_top3_and_writes_outputs(tmp_path: Path):
+    fixture = load_fixture(_search_eval_fixture_path())
+    payload = run_search_eval(fixture)
+
+    assert payload["schema_version"] == "search_eval.v0.2"
+    assert payload["retrieval_mode"] == "lexical_vs_hybrid"
+    assert payload["query_count"] == 20
+    assert payload["top_k"] == 3
+    assert payload["summary"]["top1_hits"] == 20
+    assert payload["summary"]["top1_hit_rate"] == pytest.approx(1.0)
+    assert payload["summary"]["top3_hits"] == 20
+    assert payload["summary"]["top3_hit_rate"] == pytest.approx(1.0)
+    assert payload["comparison"]["lexical"]["top1_hits"] == 20
+    assert payload["comparison"]["hybrid"]["top1_hits"] == 20
+    assert payload["comparison"]["hybrid"]["top3_hits"] == 20
+    assert payload["comparison"]["delta"]["top1_hit_rate"] == pytest.approx(0.0)
+    assert all(query["results"] for query in payload["queries"])
+    assert all(query["hybrid"]["results"] for query in payload["queries"])
+    assert all(
+        set(query["hybrid"]["results"][0]["explanation"]) == {"lexical", "semantic", "health"}
+        for query in payload["queries"]
+    )
+
+    paths = write_outputs(payload, tmp_path / "search_eval_test.json")
+
+    result_path = Path(paths["json"])
+    markdown_path = Path(paths["markdown"])
+    assert result_path.exists()
+    assert markdown_path.exists()
+    assert json.loads(result_path.read_text(encoding="utf-8"))["schema_version"] == "search_eval.v0.2"
+    assert "# SkillOS Search Evaluation Baseline" in markdown_path.read_text(encoding="utf-8")
+    assert "Hybrid Top-1 hit rate" in markdown_path.read_text(encoding="utf-8")
+
+
+def _search_eval_fixture_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "benchmarks" / "search_queries.json"

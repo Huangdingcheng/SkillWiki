@@ -184,15 +184,28 @@ def list_agents(ctx: click.Context, api_key: str) -> None:
 
 @cli.command()
 @click.option("--api-key", required=True, help="LLM API key")
+@click.option("--api-url", default=None, help="LLM API 地址（可选）")
+@click.option("--model", default=None, help="LLM 模型名称（可选）")
 @click.option("--agent-type", default=None, help="测试指定 Agent 的 LLM 配置")
 @click.pass_context
-def ping(ctx: click.Context, api_key: str, agent_type: Optional[str]) -> None:
+def ping(
+    ctx: click.Context,
+    api_key: str,
+    api_url: Optional[str],
+    model: Optional[str],
+    agent_type: Optional[str],
+) -> None:
     """测试 LLM API 连通性。"""
     from .utils.validators import test_llm_connectivity
 
     try:
         reset_config_manager()
-        mgr = ConfigManager(ctx.obj["config_file"], {"api_key": api_key})
+        cli_args = {"api_key": api_key}
+        if api_url:
+            cli_args["api_url"] = api_url
+        if model:
+            cli_args["model"] = model
+        mgr = ConfigManager(ctx.obj["config_file"], cli_args)
 
         if agent_type:
             cfg = mgr.get_agent_llm_config(agent_type)

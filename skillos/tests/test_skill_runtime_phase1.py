@@ -10,7 +10,13 @@ from skillos.api.schemas import ExecutePlanRequest
 from skillos.layers.skill_repository.indexing import SearchResult
 from skillos.layers.skill_runtime.executor import SkillExecutor
 from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
-from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
+from skillos.models.skill_model import (
+    Skill,
+    SkillEvaluation,
+    SkillImplementation,
+    SkillInterface,
+    SkillState,
+)
 
 
 def make_skill(name: str = "fill_form") -> Skill:
@@ -44,6 +50,13 @@ async def test_execute_plan_formats_match_reasons_and_records_metrics():
     assert skill.metrics.usage_count == 1
     assert skill.metrics.success_count == 1
     assert app.recorded == [(skill.skill_id, True)]
+    assert result.experience_recorded is True
+    assert result.experience_unit is not None
+    assert result.experience_unit.source_type == "agent_execution"
+    assert result.experience_unit.source_execution_id == result.plan_id
+    assert result.experience_unit.metadata["paper_backlog_task"] == "C-P1-2"
+    assert result.experience_unit.metadata["paper_method"] == "XSkill action-level experience stream"
+    assert result.experience_unit.normalized_actions[0]["skill_id"] == skill.skill_id
 
 
 @pytest.mark.asyncio
@@ -55,6 +68,28 @@ async def test_execute_plan_no_skills_returns_failed_without_crashing():
     assert result.status == "failed"
     assert result.steps == []
     assert result.retrieved_skills == []
+    assert result.verifier_summary is None
+
+
+@pytest.mark.asyncio
+async def test_execute_plan_attaches_deterministic_verifier_summary():
+    skill = make_skill()
+    skill.evaluation = SkillEvaluation(
+        verifier_specs=[{"type": "json_equals", "path": "output.ok", "value": True}]
+    )
+    app = FakeAppState(
+        skills=[skill],
+        search_results=[SearchResult(skill=skill, score=0.9, match_reasons=["name match"])],
+        plan_steps=[PlanStep(step_index=0, skill_id=skill.skill_id, skill_name=skill.name)],
+    )
+
+    result = await execution.execute_plan(ExecutePlanRequest(goal="fill form"), app=app)
+
+    assert result.verifier_passed is True
+    assert result.verifier_summary is not None
+    assert result.verifier_summary["mode"] == "deterministic"
+    assert result.verifier_summary["checked_skills"] == 1
+    assert result.verifier_summary["results"][0]["skill_id"] == skill.skill_id
 
 
 @pytest.mark.asyncio
@@ -88,6 +123,39 @@ async def test_execution_history_returns_items_in_reverse_order():
         history = await execution.get_execution_history()
 
         assert [item["execution_id"] for item in history] == ["new", "old"]
+    finally:
+        execution._execution_history[:] = original
+
+
+@pytest.mark.asyncio
+async def test_execution_history_returns_full_experience_unit_for_plan():
+    original = list(execution._execution_history)
+    execution._execution_history.clear()
+    try:
+        skill = make_skill()
+        app = FakeAppState(
+            skills=[skill],
+            search_results=[SearchResult(skill=skill, score=0.9, match_reasons=["name match"])],
+            plan_steps=[PlanStep(
+                step_index=0,
+                skill_id=skill.skill_id,
+                skill_name=skill.name,
+                input_mapping={"field": "email"},
+            )],
+        )
+
+        result = await execution.execute_plan(ExecutePlanRequest(goal="fill login form"), app=app)
+        history = await execution.get_execution_history()
+        unit = await execution.get_execution_experience(result.plan_id)
+
+        assert history[0]["execution_id"] == result.plan_id
+        assert history[0]["experience_unit_id"] == unit.unit_id
+        assert history[0]["experience_source_type"] == "agent_execution"
+        assert unit.source_execution_id == result.plan_id
+        assert unit.source_type == "agent_execution"
+        assert unit.normalized_actions[0]["input_mapping"] == {"field": "email"}
+        assert unit.proposed_skill_name == "skill_from_fill_login_form"
+        assert unit.metadata["paper_backlog_task"] == "C-P1-2"
     finally:
         execution._execution_history[:] = original
 

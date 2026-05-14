@@ -49,10 +49,10 @@ const SKILL_TYPE_COLOR: Record<string, string> = {
 }
 
 const DEMO_TASKS = [
-  '在网页上完成一次登录操作，并记录可复用的执行步骤',
-  '从一段执行轨迹中提取可复用操作模式，并沉淀为 Skill',
-  '检查一个 Skill 的失败原因，并给出修复建议',
-  '根据已有 Skill 组合完成一个新的自动化任务',
+  'Complete a login flow on a web page and record reusable execution steps',
+  'Extract a reusable operation pattern from an execution trace and promote it into a Skill',
+  'Inspect why a Skill failed and propose a repair',
+  'Compose existing Skills to complete a new automation task',
 ]
 
 type Phase =
@@ -65,11 +65,11 @@ type Phase =
   | 'done'
 
 const PHASE_STEPS = [
-  { title: 'Skill 检索', description: '从 Skill Wiki 中召回相关能力', icon: <SearchOutlined /> },
-  { title: '计划生成', description: '把目标拆成可执行步骤', icon: <BulbOutlined /> },
-  { title: '执行', description: '按计划调用 Skill 并收集结果', icon: <ThunderboltOutlined /> },
-  { title: '经验记录', description: '把执行轨迹写入经验层', icon: <DatabaseOutlined /> },
-  { title: '演化学习', description: '更新质量信号并准备复用', icon: <StarOutlined /> },
+  { title: 'Skill Retrieval', description: 'Recall relevant capabilities from the Skill Wiki', icon: <SearchOutlined /> },
+  { title: 'Plan Generation', description: 'Decompose the goal into executable steps', icon: <BulbOutlined /> },
+  { title: 'Execution', description: 'Invoke Skills according to the plan and collect results', icon: <ThunderboltOutlined /> },
+  { title: 'Experience Recording', description: 'Write the execution trace into the experience layer', icon: <DatabaseOutlined /> },
+  { title: 'Evolution Learning', description: 'Update quality signals and prepare for reuse', icon: <StarOutlined /> },
 ]
 
 const phaseIndex: Record<Phase, number> = {
@@ -94,13 +94,13 @@ function getStatusColor(status: string) {
 }
 
 function SuggestedSkill({ suggested }: { suggested: Record<string, unknown> }) {
-  const name = String(suggested.name || suggested.skill_name || '未命名 Skill')
-  const description = String(suggested.description || suggested.summary || '后端返回了建议沉淀的新 Skill。')
+  const name = String(suggested.name || suggested.skill_name || 'Unnamed Skill')
+  const description = String(suggested.description || suggested.summary || 'The backend suggested a new Skill candidate to retain.')
   const type = String(suggested.skill_type || suggested.type || 'candidate')
 
   return (
     <Card
-      title={<span><BulbOutlined style={{ color: '#faad14', marginRight: 6 }} />建议沉淀的新 Skill</span>}
+      title={<span><BulbOutlined style={{ color: '#faad14', marginRight: 6 }} />Suggested Skill to Retain</span>}
       size="small"
       style={{ borderRadius: 8, marginTop: 12, borderLeft: '3px solid #faad14' }}
     >
@@ -154,7 +154,7 @@ export default function SelfEvolutionDemo() {
       await sleep(450)
       setPhase('done')
     } catch (err) {
-      setError(getApiErrorMessage(err, '执行自演化演示失败'))
+      setError(getApiErrorMessage(err, 'Self-evolution demo failed'))
       setPhase('idle')
     }
   }
@@ -190,7 +190,7 @@ export default function SelfEvolutionDemo() {
             Self-Evolution Loop Demo
           </h2>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            输入一个任务目标，观察 SkillOS 如何完成 Skill 检索、计划生成、执行、经验记录和演化学习。
+            Enter a task goal and watch SkillOS retrieve Skills, generate a plan, execute it, record experience, and update evolution signals.
           </Paragraph>
         </div>
       </motion.div>
@@ -199,14 +199,14 @@ export default function SelfEvolutionDemo() {
         <TextArea
           value={task}
           onChange={event => setTask(event.target.value)}
-          placeholder="描述你的任务目标，例如：从执行轨迹中提取可复用 Skill"
+          placeholder="Describe your task goal, for example: extract a reusable Skill from an execution trace"
           rows={2}
           disabled={isRunning}
           style={{ fontSize: 14, marginBottom: 10 }}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Space wrap>
-            <Text type="secondary" style={{ fontSize: 12 }}>示例：</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>Examples:</Text>
             {DEMO_TASKS.map(example => (
               <Tag
                 key={example}
@@ -220,7 +220,7 @@ export default function SelfEvolutionDemo() {
           <Space>
             {phase === 'done' && (
               <Button icon={<ReloadOutlined />} onClick={reset}>
-                重置
+                Reset
               </Button>
             )}
             <Button
@@ -231,7 +231,7 @@ export default function SelfEvolutionDemo() {
               disabled={!task.trim() || phase === 'done'}
               size="large"
             >
-              {phase === 'done' ? '已完成' : '启动演化闭环'}
+              {phase === 'done' ? 'Completed' : 'Start Evolution Loop'}
             </Button>
           </Space>
         </div>
@@ -277,7 +277,7 @@ export default function SelfEvolutionDemo() {
                 {retrieved.length > 0 && (
                   <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
                     <Card
-                      title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
+                      title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />Retrieved Skills ({retrieved.length})</span>}
                       variant="borderless"
                       size="small"
                       style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}
@@ -315,7 +315,7 @@ export default function SelfEvolutionDemo() {
                               </Space>
                             </div>
                           </div>
-                          <Tooltip title={`相关度 ${Math.round(skill.score * 100)}%`}>
+                          <Tooltip title={`Relevance ${Math.round(skill.score * 100)}%`}>
                             <Progress
                               type="circle"
                               percent={Math.round(skill.score * 100)}
@@ -332,13 +332,13 @@ export default function SelfEvolutionDemo() {
 
                 <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
                   <Card
-                    title={<span><ThunderboltOutlined style={{ color: '#722ed1', marginRight: 6 }} />执行步骤</span>}
+                    title={<span><ThunderboltOutlined style={{ color: '#722ed1', marginRight: 6 }} />Execution Steps</span>}
                     variant="borderless"
                     size="small"
                     style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
                   >
                     {result.steps.length === 0 ? (
-                      <Alert type="warning" showIcon title="未找到可执行的 Skill，请尝试更具体的任务描述。" />
+                      <Alert type="warning" showIcon title="No executable Skill was found. Try a more specific task description." />
                     ) : (
                       result.steps.slice(0, visibleSteps).map((step, index) => (
                         <motion.div
@@ -391,9 +391,9 @@ export default function SelfEvolutionDemo() {
                   >
                     <Row gutter={8}>
                       {[
-                        { label: '步骤', value: stepCount, color: '#1677ff' },
-                        { label: '成功', value: successCount, color: '#52c41a' },
-                        { label: '耗时', value: `${result.total_latency_ms.toFixed(0)}ms`, color: '#722ed1' },
+                        { label: 'Steps', value: stepCount, color: '#1677ff' },
+                        { label: 'Succeeded', value: successCount, color: '#52c41a' },
+                        { label: 'Latency', value: `${result.total_latency_ms.toFixed(0)}ms`, color: '#722ed1' },
                       ].map(({ label, value, color }) => (
                         <Col span={8} key={label} style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
@@ -403,11 +403,11 @@ export default function SelfEvolutionDemo() {
                     </Row>
                     <Divider style={{ margin: '12px 0' }} />
                     <Space wrap>
-                      <Tag color={getStatusColor(result.status)}>执行状态：{result.status}</Tag>
+                      <Tag color={getStatusColor(result.status)}>Execution status: {result.status}</Tag>
                       {experienceRecorded ? (
-                        <Tag color="green">经验已记录</Tag>
+                        <Tag color="green">Experience recorded</Tag>
                       ) : (
-                        <Tag>经验记录待确认</Tag>
+                        <Tag>Experience recording pending</Tag>
                       )}
                     </Space>
                   </Card>
@@ -417,7 +417,7 @@ export default function SelfEvolutionDemo() {
                   {(phase === 'recording' || phase === 'learning' || phase === 'done') && (
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
                       <Card
-                        title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />经验记录</span>}
+                        title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />Experience Recording</span>}
                         variant="borderless"
                         size="small"
                         style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #52c41a' }}
@@ -426,15 +426,15 @@ export default function SelfEvolutionDemo() {
                           items={[
                             {
                               color: 'green',
-                              children: <Text style={{ fontSize: 12 }}>执行轨迹已汇总：{result.steps.length} 个步骤</Text>,
+                              children: <Text style={{ fontSize: 12 }}>Execution trace summarized: {result.steps.length} steps</Text>,
                             },
                             {
                               color: experienceRecorded ? 'green' : 'gray',
-                              children: <Text style={{ fontSize: 12 }}>{experienceRecorded ? '经验单元已写入 Experience Store' : '后端暂未确认经验写入'}</Text>,
+                              children: <Text style={{ fontSize: 12 }}>{experienceRecorded ? 'Experience unit written to the Experience Store' : 'Backend has not confirmed experience recording yet'}</Text>,
                             },
                             {
                               color: 'blue',
-                              children: <Text style={{ fontSize: 12 }}>最终状态字段：{Object.keys(result.final_state || {}).length} 个</Text>,
+                              children: <Text style={{ fontSize: 12 }}>Final state fields: {Object.keys(result.final_state || {}).length}</Text>,
                             },
                           ]}
                         />
@@ -447,7 +447,7 @@ export default function SelfEvolutionDemo() {
                   {(phase === 'learning' || phase === 'done') && (
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
                       <Card
-                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />演化学习</span>}
+                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />Evolution Learning</span>}
                         variant="borderless"
                         size="small"
                         style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #faad14' }}
@@ -457,16 +457,16 @@ export default function SelfEvolutionDemo() {
                             {retrieved.slice(0, 3).map(skill => (
                               <div key={skill.skill_id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                                 <ArrowRightOutlined style={{ color: '#52c41a', fontSize: 10 }} />
-                                <Text style={{ fontSize: 12 }}><strong>{skill.name}</strong> 的复用信号已更新</Text>
+                                <Text style={{ fontSize: 12 }}>Reuse signals updated for <strong>{skill.name}</strong></Text>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <Text type="secondary" style={{ fontSize: 12 }}>本次没有召回可复用 Skill，后续可通过经验沉淀补齐能力。</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>No reusable Skill was retrieved this time. Future experience retention can fill this capability gap.</Text>
                         )}
                         <Divider style={{ margin: '8px 0' }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          本次执行结果可用于健康评估、版本演化和后续相似任务复用。
+                          This execution result can be used for health assessment, version evolution, and future reuse on similar tasks.
                         </Text>
                       </Card>
                     </motion.div>
@@ -483,14 +483,14 @@ export default function SelfEvolutionDemo() {
                       <Alert
                         type="success"
                         icon={<CheckCircleFilled />}
-                        title="自演化闭环完成"
+                        title="Self-Evolution Loop Completed"
                         description={(
                           <Space orientation="vertical" size={8}>
                             <Text style={{ fontSize: 12 }}>
-                              SkillOS 已完成本次任务的完整闭环：检索、规划、执行、记录和学习。
+                              SkillOS completed the full loop for this task: retrieval, planning, execution, recording, and learning.
                             </Text>
                             <Button size="small" icon={<HistoryOutlined />} onClick={() => navigate('/execution')}>
-                              查看执行历史
+                              View Execution History
                             </Button>
                           </Space>
                         )}
@@ -514,7 +514,7 @@ export default function SelfEvolutionDemo() {
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Self-Evolution Loop</div>
                   <Paragraph type="secondary" style={{ maxWidth: 520, margin: '0 auto', fontSize: 13 }}>
-                    通过“检索 Skill、执行任务、记录经验、反馈演化”的闭环，SkillOS 可以把每次任务结果转化为后续可复用的能力信号。
+                    Through the loop of retrieving Skills, executing tasks, recording experience, and feeding evolution signals back, SkillOS turns each task result into reusable capability evidence.
                   </Paragraph>
                 </div>
               )}

@@ -39,6 +39,15 @@ Self-Management Agents 是 SkillOS 的自我维护层。它不直接负责前端
 - 检查危险代码模式，例如 `subprocess`、`eval(`、`exec(`、`open(`。
 - 使用轻量加权评分，`audit_score` 保持在 `[0, 1]`。
 
+### Paper-Driven D Auditor Method
+
+The D-P0 auditor rules are based on local PDF review, not only the roadmap:
+
+- SkillX motivates hierarchical Skill checks: atomic Skills must map to executable code, prompt, or tool call contracts; functional Skills must expose composition or a workflow prompt; strategic Skills must keep explicit meta categories.
+- SKILLFOUNDRY motivates provenance and validation checks: retained Skills should carry scope, inputs/outputs, execution assumptions, provenance, and tests, and candidates should enter a repair/retest loop before becoming trusted library assets.
+- SkillsBench motivates deterministic verification: released or degraded Skills should have postconditions or `evaluation.verifier_specs` / test references so pass/fail is reproducible instead of relying on LLM judgment.
+- SkillClaw / Reflexion / ExpeL motivate human-review maintenance: recurring failure evidence becomes a maintenance proposal first; accepted changes should then flow through governance review instead of silent live mutation.
+
 ### Skill Maintainer Agent
 
 路径：`skillos/layers/skill_management/maintainer.py`
@@ -202,3 +211,28 @@ python -m pytest skillos\tests\test_governance_runtime_evolution.py -q
 python -m pytest skillos\tests\test_layers.py -q
 git diff --check
 ```
+
+## D-P1-1 Proposal Queue
+
+`GET /api/v1/evolution/proposals` lists queued `MaintenanceProposal` items for human review. `POST /api/v1/evolution/proposals/{id}/accept` and `POST /api/v1/evolution/proposals/{id}/reject` update proposal status only.
+
+Health checks and evolution cycles store generated proposals in an in-memory queue for the current service lifecycle. This supports page refresh visibility for E without mutating the live Skill or bypassing B-side review.
+
+When a proposal is accepted, the response also includes `next_action` pointing to `POST /api/v1/lifecycle/{skill_id}/propose-maintenance-change`. That keeps D responsible for evidence and queue state, while B remains responsible for snapshot, structured diff, and review-bundle creation.
+
+The queue is optionally persisted under `SkillStorage/metadata/maintenance/` as JSON. This keeps demo proposals and reflection memories visible across local API restarts when a storage directory is configured, while still preserving human review before any canonical Skill mutation.
+
+## D-P1-3 Reflection Memory
+
+`POST /api/v1/evolution/reflection-memory` stores a runtime reflection memory item with `skill_id`, `failure_signature`, evidence, verifier result, and trajectory summary. The first repeated failures remain memory only. When the same `(skill_id, failure_signature)` reaches the configured threshold, D creates one `MaintenanceProposal` with the memory ids, occurrence count, target signature, validation plan, and invariants to preserve.
+
+This follows the Reflexion/ExpeL pattern of keeping linguistic experience before changing behavior, and the SkillClaw pattern of aggregating recurring failure signals before proposing a library update. It deliberately stops at a proposal; accepted proposals still route to B governance for review bundle and diff creation.
+
+## Paper Method Boundary
+
+The D-side implementation follows the local SkillClaw, SKILLFOUNDRY, Reflexion, and ExpeL PDFs as an engineering boundary:
+
+- Evidence should preserve more than pass/fail. Failures, reflections, and health reports become auditable proposal evidence.
+- Proposal actions stay bounded to repair/review/split/merge/deprecate/no_action. D does not directly deploy an LLM-generated change.
+- Successful behavior is treated as an invariant to preserve, while failed behavior defines the target to fix.
+- Accepted proposals must move through validation and governance before any canonical Skill changes. In SkillOS this means B creates the review bundle and structured diff first.

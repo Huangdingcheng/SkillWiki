@@ -18,6 +18,7 @@ from skillos.models import (
     Skill,
     SkillEdge,
     SkillExecutionRecord,
+    SkillEvaluation,
     SkillGraphNode,
     SkillImplementation,
     SkillInterface,
@@ -191,6 +192,32 @@ class TestSkillModel:
         assert "success_rate" in node
         assert "usage_count" in node
 
+    def test_default_evaluation_contract(self):
+        skill = Skill(name="schema_v02_skill")
+        assert skill.evaluation.verifier_specs == []
+        assert skill.evaluation.test_case_refs == []
+        assert skill.evaluation.benchmark_task_ids == []
+
+    def test_skill_evaluation_normalizes_refs(self):
+        evaluation = SkillEvaluation(
+            verifier_specs=[{"type": "json_equals", "path": "output.success", "value": True}],
+            test_case_refs=["  case-1  ", ""],
+            benchmark_task_ids=[" task-1 ", "task-2"],
+            validation_summary="passes fixed demo verifier",
+        )
+        assert evaluation.test_case_refs == ["case-1"]
+        assert evaluation.benchmark_task_ids == ["task-1", "task-2"]
+        assert evaluation.verifier_specs[0]["type"] == "json_equals"
+
+    def test_skill_evaluation_rejects_blank_verifier_type(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            SkillEvaluation(verifier_specs=[{"type": "  "}])
+
+    def test_skill_evaluation_accepts_backlog_alias(self):
+        evaluation = SkillEvaluation.model_validate({"test_cases_refs": ["case-from-backlog"]})
+        assert evaluation.test_case_refs == ["case-from-backlog"]
+
 
 # ===========================================================================
 # SkillInterface Tests
@@ -231,6 +258,10 @@ class TestSkillImplementation:
     def test_sub_skill_implementation(self):
         impl = SkillImplementation(sub_skill_ids=["id1", "id2"])
         assert len(impl.sub_skill_ids) == 2
+
+    def test_tool_call_implementation(self):
+        impl = SkillImplementation(tool_calls=["browser.click"])
+        assert impl.tool_calls == ["browser.click"]
 
     def test_empty_implementation_raises(self):
         from pydantic import ValidationError

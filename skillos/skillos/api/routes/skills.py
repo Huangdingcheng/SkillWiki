@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ...models.skill_model import Skill, SkillState, SkillType
+from ...models.skill_model import Skill, SkillEvaluation, SkillState, SkillType
 from ..deps import AppState, get_app_state
 from ..schemas import (
     EvolutionStats,
@@ -31,10 +31,19 @@ def _to_summary(skill: Skill) -> SkillSummary:
         tags=skill.tags,
         version=skill.version,
         granularity_level=skill.granularity_level,
+        evaluation=skill.evaluation,
         metrics=skill.metrics,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
     )
+
+
+def _create_provenance(req: SkillCreateRequest):
+    from ...models.skill_model import SkillProvenance
+
+    if req.provenance is not None:
+        return req.provenance
+    return SkillProvenance(source_type="api", created_by_agent=req.author)
 
 
 async def _sync_graph_for_skill(app: AppState, skill: Skill) -> None:
@@ -115,16 +124,16 @@ async def create_skill(
     req: SkillCreateRequest,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
-    from ...models.skill_model import SkillProvenance
-
     skill = Skill(
         name=req.name,
         description=req.description,
         skill_type=req.skill_type,
+        state=req.state,
         tags=req.tags,
         interface=req.interface,
         implementation=req.implementation,
-        provenance=SkillProvenance(source_type="api", created_by_agent=req.author),
+        evaluation=req.evaluation or SkillEvaluation(),
+        provenance=_create_provenance(req),
     )
     try:
         created = await app.wiki.create(skill)
@@ -175,6 +184,8 @@ async def update_skill(
         updates["interface"] = req.interface
     if req.implementation is not None:
         updates["implementation"] = req.implementation
+    if req.evaluation is not None:
+        updates["evaluation"] = req.evaluation
 
     updated = await app.wiki.update(skill_id, **updates)
     if not updated:
@@ -211,7 +222,7 @@ async def search_skills(
     req: SkillSearchRequest,
     app: AppState = Depends(get_app_state),
 ) -> List[SkillSearchResult]:
-    from ...layers.skill_repository.indexing import SearchQuery
+    from ...layers.skill_repository.indexing import SearchQuery, normalize_search_mode
 
     query = SearchQuery(
         text=req.query,
@@ -221,6 +232,7 @@ async def search_skills(
         domain=getattr(req, "domain", None),
         min_success_rate=getattr(req, "min_success_rate", 0.0),
         include_deprecated=getattr(req, "include_deprecated", False),
+        mode=normalize_search_mode(getattr(req, "mode", "lexical")),
         max_results=req.limit,
     )
     results = await app.search.search(query)
@@ -235,6 +247,13 @@ async def search_skills(
             version=result.skill.version,
             score=result.score,
             match_reason=", ".join(result.match_reasons) if result.match_reasons else "",
+            search_mode=query.mode,
+            score_components=result.score_components,
+            explanation={
+                "lexical": result.score_components.get("lexical", 0.0),
+                "semantic": result.score_components.get("semantic", 0.0),
+                "health": result.score_components.get("health", 0.0),
+            },
         )
         for result in results
     ]

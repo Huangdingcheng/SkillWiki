@@ -8,10 +8,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...models.maintenance_model import MaintenanceProposal
 from ...models.skill_model import Skill, SkillState
 from ...utils.logger import get_logger
 from .monitor import HealthStatus, SkillMonitor, SystemHealthReport
-from .repair import RepairResult, SkillRepair
+from .repair import SkillRepair
 
 logger = get_logger(__name__)
 
@@ -51,6 +52,7 @@ class EvolutionReport:
     merged: List[Tuple[List[str], str]] = field(default_factory=list)  # (source_ids, new_id)
     split: List[Tuple[str, List[str]]] = field(default_factory=list)   # (source_id, new_ids)
     errors: List[str] = field(default_factory=list)
+    maintenance_proposals: List[MaintenanceProposal] = field(default_factory=list)
 
 
 class EvolutionEngine:
@@ -194,22 +196,47 @@ class EvolutionEngine:
         if not skill:
             return
         health = self._monitor.evaluate_skill(skill)
-        result = await self._repair.repair(skill, health)
+        proposal = MaintenanceProposal.from_health_report(
+            health,
+            metadata={"evolution_task_id": task.task_id, "task_reason": task.reason},
+        )
+        if proposal:
+            report.maintenance_proposals.append(proposal)
+            task.result = {
+                "proposal_id": proposal.proposal_id,
+                "recommended_action": proposal.recommended_action.value,
+                "requires_human_review": proposal.requires_human_review,
+            }
+            return
 
-        if result.should_deprecate:
-            await self._wiki.deprecate(skill.skill_id, result.root_cause)
-            report.deprecated.append(skill.skill_id)
-        elif result.success and result.repaired_skill:
-            await self._wiki.create(result.repaired_skill)
-            await self._graph.sync_skill(result.repaired_skill)
-            await self._graph.add_evolution(result.repaired_skill.skill_id, skill.skill_id)
-            report.repaired.append(result.repaired_skill.skill_id)
+        task.result = {
+            "recommended_action": "no_action",
+            "reason": "health report did not require maintenance",
+        }
 
     async def _do_deprecate(self, task: EvolutionTask, report: EvolutionReport) -> None:
         skill = await self._wiki.get(task.skill_ids[0])
         if not skill:
             return
-        await self._wiki.deprecate(skill.skill_id, task.reason)
+        replacement_id = None
+        if len(task.skill_ids) > 1:
+            replacement_id = task.skill_ids[1]
+        elif isinstance(task.result, dict):
+            replacement_id = task.result.get("replacement_skill_id")
+
+        deprecated = await self._wiki.deprecate(skill.skill_id, task.reason, replacement_id)
+        if hasattr(self._graph, "sync_skill"):
+            await self._graph.sync_skill(deprecated)
+        if replacement_id and hasattr(self._graph, "add_replacement"):
+            await self._graph.add_replacement(
+                replacement_id,
+                skill.skill_id,
+                reason=task.reason,
+            )
+        task.result = {
+            "replacement_skill_id": replacement_id,
+            "graph_edge_created": bool(replacement_id and hasattr(self._graph, "add_replacement")),
+        }
         report.deprecated.append(skill.skill_id)
 
     async def _do_merge(self, task: EvolutionTask, report: EvolutionReport) -> None:

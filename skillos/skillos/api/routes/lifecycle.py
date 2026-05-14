@@ -13,16 +13,21 @@ from ...layers.skill_governance import (
     GitVersionStoreError,
     diff_skill_snapshots,
     has_breaking_changes,
+    propose_skill_change,
     read_skill_snapshot_at_ref,
     release_skill_snapshot,
+    review_recommendation_for_diffs,
     restore_skill_snapshot,
     skill_snapshot_path,
     skill_to_snapshot,
     write_skill_snapshot,
 )
+from ...layers.skill_management import SkillAuditorAgent
 from ..deps import AppState, get_app_state
 from ..schemas import (
     DeprecateRequest,
+    MaintenanceReviewRequest,
+    MaintenanceReviewResponse,
     NewVersionRequest,
     OKResponse,
     ReleaseRequest,
@@ -35,13 +40,60 @@ from ..schemas import (
     SnapshotHistoryResponse,
     TransitionRequest,
 )
+from ...models.skill_model import Skill, SkillState
+from ...models.skill_model import EdgeType
 
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
+_AUDITED_TARGET_STATES = {SkillState.VERIFIED, SkillState.RELEASED, SkillState.DEGRADED}
 
 
 def _to_summary(skill):
     from .skills import _to_summary as ts
     return ts(skill)
+
+
+def _audit_skill_for_target_state(app: AppState, skill: Skill, target_state: SkillState) -> None:
+    if target_state not in _AUDITED_TARGET_STATES:
+        return
+
+    candidate = skill.model_copy(deep=True)
+    object.__setattr__(candidate, "state", target_state)
+    auditor = getattr(app, "auditor", None) or SkillAuditorAgent(getattr(app, "llm", None))
+    result = auditor.audit(candidate)
+    if result.passed:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "message": "Skill failed release audit",
+            "issues": result.issues,
+            "warnings": result.warnings,
+            "recommendations": result.recommendations,
+        },
+    )
+
+
+async def _record_replacement_edge(
+    app: AppState,
+    skill: Skill,
+    replacement_id: Optional[str],
+    reason: str,
+) -> None:
+    if not replacement_id:
+        return
+    graph = getattr(app, "graph", None)
+    if graph is None or not hasattr(graph, "add_replacement"):
+        return
+    try:
+        if hasattr(graph, "sync_skill"):
+            await graph.sync_skill(skill)
+            replacement = await app.wiki.get(replacement_id)
+            if replacement:
+                await graph.sync_skill(replacement)
+        await graph.add_replacement(replacement_id, skill.skill_id, reason=reason)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Graph replacement edge sync failed: {exc}") from exc
 
 
 @router.post("/{skill_id}/transition", response_model=SkillSummary)
@@ -51,6 +103,10 @@ async def transition_state(
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
     try:
+        skill = await app.wiki.get(skill_id)
+        if not skill:
+            raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
+        _audit_skill_for_target_state(app, skill, req.new_state)
         skill = await app.wiki.transition_state(skill_id, req.new_state, req.reason)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -64,11 +120,11 @@ async def release_skill(
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
     """发布 Skill。若当前为 Draft，自动推进到 Verified 再发布。"""
-    from ...models.skill_model import SkillState
     try:
         skill = await app.wiki.get(skill_id)
         if not skill:
             raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        _audit_skill_for_target_state(app, skill, SkillState.RELEASED)
         if skill.state == SkillState.DRAFT:
             await app.wiki.transition_state(skill_id, SkillState.VERIFIED)
         skill = await app.wiki.release(skill_id)
@@ -85,6 +141,7 @@ async def deprecate_skill(
 ) -> SkillSummary:
     try:
         skill = await app.wiki.deprecate(skill_id, req.reason, req.replacement_id)
+        await _record_replacement_edge(app, skill, req.replacement_id, req.reason)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _to_summary(skill)
@@ -279,10 +336,11 @@ async def commit_skill_snapshot_endpoint(
     skill = await _get_skill_or_404(skill_id, app)
     repo_path = _governance_repo_path()
     store = GitVersionStore(repo_path)
-    snapshot_path = write_skill_snapshot(repo_path, skill)
     message = req.message or f"skill({skill.name}): snapshot v{skill.version}"
     try:
-        commit = store.commit_paths([snapshot_path], message, author_name=req.author)
+        with store.lock():
+            snapshot_path = write_skill_snapshot(repo_path, skill)
+            commit = store.commit_paths([snapshot_path], message, author_name=req.author)
     except (GitVersionStoreError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return SnapshotCommitResponse(
@@ -325,35 +383,63 @@ async def get_skill_snapshot_history(
     )
 
 
+@router.get("/repository/status", response_model=Dict[str, Any])
+async def get_governance_repository_status() -> Dict[str, Any]:
+    repo_path = _governance_repo_path()
+    store = GitVersionStore(repo_path)
+    try:
+        return store.repository_status()
+    except GitVersionStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/{skill_id}/snapshot/diff", response_model=SnapshotDiffResponse)
 async def get_skill_snapshot_diff(
     skill_id: str,
     from_ref: str,
     to_ref: str = "HEAD",
+    from_version: Optional[str] = None,
+    to_version: Optional[str] = None,
     app: AppState = Depends(get_app_state),
 ) -> SnapshotDiffResponse:
     skill = await _get_skill_or_404(skill_id, app)
     repo_path = _governance_repo_path()
     store = GitVersionStore(repo_path)
-    snapshot_path = skill_snapshot_path(skill)
+    from_snapshot_path = _skill_snapshot_path_for_version(skill, from_version)
+    to_snapshot_path = _skill_snapshot_path_for_version(skill, to_version)
     try:
-        raw_diff = store.diff_between(from_ref, to_ref, snapshot_path)
-        old_snapshot = read_skill_snapshot_at_ref(repo_path, from_ref, snapshot_path, store)
+        if from_snapshot_path == to_snapshot_path:
+            raw_diff = store.diff_between(from_ref, to_ref, to_snapshot_path)
+        else:
+            raw_diff = store.diff_between_paths(
+                from_ref,
+                to_ref,
+                [from_snapshot_path, to_snapshot_path],
+            )
+        old_snapshot = read_skill_snapshot_at_ref(repo_path, from_ref, from_snapshot_path, store)
         try:
-            new_snapshot = read_skill_snapshot_at_ref(repo_path, to_ref, snapshot_path, store)
+            new_snapshot = read_skill_snapshot_at_ref(repo_path, to_ref, to_snapshot_path, store)
         except GitVersionStoreError:
-            new_snapshot = skill_to_snapshot(skill)
+            if to_snapshot_path == skill_snapshot_path(skill):
+                new_snapshot = skill_to_snapshot(skill)
+            else:
+                raise
         diffs = diff_skill_snapshots(old_snapshot, new_snapshot)
     except (GitVersionStoreError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+    breaking = has_breaking_changes(diffs)
     return SnapshotDiffResponse(
         skill_id=skill.skill_id,
-        snapshot_path=snapshot_path,
+        snapshot_path=to_snapshot_path,
+        from_snapshot_path=from_snapshot_path,
+        to_snapshot_path=to_snapshot_path,
         from_ref=from_ref,
         to_ref=to_ref,
         raw_diff=raw_diff,
         diffs=[item.to_dict() for item in diffs],
-        has_breaking_changes=has_breaking_changes(diffs),
+        has_breaking_changes=breaking,
+        review_recommendation=review_recommendation_for_diffs(diffs),
+        impacted_skills=await _build_version_impact_list(skill.skill_id, app) if breaking else [],
     )
 
 
@@ -383,6 +469,47 @@ async def rollback_skill_snapshot(
         return restore_skill_snapshot(repo_path, skill, req.source_ref).to_dict()
     except (GitVersionStoreError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{skill_id}/propose-maintenance-change", response_model=MaintenanceReviewResponse)
+async def propose_maintenance_change(
+    skill_id: str,
+    req: MaintenanceReviewRequest,
+    app: AppState = Depends(get_app_state),
+) -> MaintenanceReviewResponse:
+    skill = await _get_skill_or_404(skill_id, app)
+    try:
+        patched_skill = _build_patched_skill(skill, req.patched_skill)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    repo_path = _governance_repo_path()
+    store = GitVersionStore(repo_path)
+    try:
+        bundle = propose_skill_change(
+            repo_path,
+            skill,
+            patched_skill,
+            store,
+            author_name=req.author,
+        )
+    except (GitVersionStoreError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return MaintenanceReviewResponse(
+        skill_id=skill.skill_id,
+        proposal_id=req.proposal_id,
+        branch_name=bundle.branch_name,
+        base_commit=bundle.base_commit,
+        head_commit=bundle.head_commit,
+        snapshot_path=bundle.snapshot_path,
+        structured_diff=[diff.to_dict() for diff in bundle.diffs],
+        has_breaking_changes=bundle.has_breaking_changes,
+        review_status=bundle.suggested_review_status,
+        impacted_skills=await _build_version_impact_list(skill.skill_id, app) if bundle.has_breaking_changes else [],
+        reason=req.reason,
+        author=req.author,
+    )
 
 
 def _format_diff(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -451,3 +578,78 @@ def _governance_repo_path() -> Path:
     if configured:
         return Path(configured)
     return Path(__file__).resolve().parents[4]
+
+
+async def _build_version_impact_list(skill_id: str, app: AppState) -> List[Dict[str, Any]]:
+    graph = getattr(app, "graph", None)
+    if graph is None:
+        return []
+
+    impact_edges = await _incoming_dependency_edges(graph, skill_id)
+    impacts: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for edge in impact_edges:
+        impacted_id = getattr(edge, "source_id", "")
+        if not impacted_id or impacted_id in seen:
+            continue
+        seen.add(impacted_id)
+        impacted_skill = await app.wiki.get(impacted_id)
+        impacts.append({
+            "skill_id": impacted_id,
+            "skill_name": impacted_skill.name if impacted_skill else "",
+            "skill_type": impacted_skill.skill_type.value if impacted_skill else "",
+            "state": impacted_skill.state.value if impacted_skill else "",
+            "via_edge_type": edge.edge_type.value,
+            "changed_skill_id": skill_id,
+            "method": "hin_meta_path_projection",
+            "paper_basis": ["HIN Survey meta-path projection", "SkillX layered skill dependency"],
+        })
+    return impacts
+
+
+async def _incoming_dependency_edges(graph: Any, skill_id: str) -> List[Any]:
+    edge_types = {EdgeType.DEPENDS_ON, EdgeType.COMPOSES_WITH}
+    edges: List[Any] = []
+
+    getter = getattr(graph, "get_edges", None)
+    if callable(getter):
+        for edge_type in edge_types:
+            try:
+                edges.extend(await getter(skill_id, direction="in", edge_type=edge_type))
+            except TypeError:
+                break
+
+    if not edges and hasattr(graph, "_edges"):
+        edges = [
+            edge
+            for edge in getattr(graph, "_edges", [])
+            if edge.target_id == skill_id and edge.edge_type in edge_types
+        ]
+    return edges
+
+
+def _skill_snapshot_path_for_version(skill, version: Optional[str]) -> str:
+    if not version:
+        return skill_snapshot_path(skill)
+    return f"skills/{skill.skill_id}/{version}.json"
+
+
+def _build_patched_skill(skill: Skill, patch: Dict[str, Any]) -> Skill:
+    if not isinstance(patch, dict):
+        raise ValueError("patched_skill must be an object")
+    data = skill.model_dump(mode="json")
+    _deep_update(data, patch)
+    if data.get("skill_id") != skill.skill_id:
+        raise ValueError("patched_skill.skill_id must match the path skill_id")
+    return Skill.model_validate(data)
+
+
+def _deep_update(target: Dict[str, Any], patch: Dict[str, Any]) -> None:
+    for key, value in patch.items():
+        if (
+            isinstance(value, dict)
+            and isinstance(target.get(key), dict)
+        ):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value

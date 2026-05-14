@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Card, Input, Button, Tag, Alert, Spin, Divider,
-  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip, Table, Empty,
+  Card, Input, Button, Tag, Alert, Spin,
+  Typography, Space, Statistic, Row, Col, Progress, Tooltip, Table, Empty,
 } from 'antd'
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
@@ -97,14 +97,15 @@ export default function AgentExecution() {
     try {
       setHistory(await executionApi.history())
     } catch (e: unknown) {
-      setHistoryError(getApiErrorMessage(e, '执行历史加载失败'))
+      setHistoryError(getApiErrorMessage(e, 'Failed to load execution history'))
     } finally {
       setHistoryLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void loadHistory()
+    const timeoutId = window.setTimeout(() => { void loadHistory() }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [loadHistory])
 
   const handleExecute = async () => {
@@ -117,7 +118,7 @@ export default function AgentExecution() {
       setResult(res)
       void loadHistory()
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e, '执行失败'))
+      setError(getApiErrorMessage(e, 'Execution failed'))
     } finally {
       setLoading(false)
     }
@@ -131,20 +132,20 @@ export default function AgentExecution() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Agent Execution</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          输入任务目标，SkillOS 将自动检索相关 Skill、生成执行计划并运行。
+          Enter a task goal. SkillOS will retrieve relevant Skills, build an execution plan, and run it.
         </p>
 
         <Card variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
           <TextArea
             value={goal}
             onChange={e => setGoal(e.target.value)}
-            placeholder="描述你的任务目标，例如：在网页上找到登录按钮并点击，然后填写用户名和密码..."
+            placeholder="Describe your task goal, for example: find the login button on a page, click it, then fill in the username and password..."
             rows={3}
             style={{ marginBottom: 12, fontSize: 14 }}
           />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              SkillOS 将自动分解任务、检索 Skill 并生成执行计划
+              SkillOS will decompose the task, retrieve Skills, and generate an execution plan.
             </Text>
             <Button
               type="primary"
@@ -154,18 +155,18 @@ export default function AgentExecution() {
               disabled={!goal.trim()}
               size="large"
             >
-              执行
+              Execute
             </Button>
           </div>
         </Card>
 
-        {/* 示例任务 */}
+        {/* Example tasks */}
         <div style={{ marginBottom: 24 }}>
-          <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>示例：</Text>
+          <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>Examples:</Text>
           {[
-            '点击页面上的提交按钮',
-            '填写登录表单并提交',
-            '在搜索框中输入关键词并搜索',
+            'Click the submit button on the page',
+            'Fill and submit the login form',
+            'Type a keyword into the search box and search',
           ].map(ex => (
             <Tag
               key={ex}
@@ -179,13 +180,13 @@ export default function AgentExecution() {
       </motion.div>
 
       <Card
-        title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />最近执行历史</span>}
+        title={<span><DatabaseOutlined style={{ color: '#1677ff', marginRight: 6 }} />Recent Execution History</span>}
         variant="borderless"
         size="small"
         style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
         extra={
           <Button size="small" icon={<ReloadOutlined />} loading={historyLoading} onClick={loadHistory}>
-            刷新
+            Refresh
           </Button>
         }
       >
@@ -193,7 +194,7 @@ export default function AgentExecution() {
           <Alert type="warning" showIcon title={historyError} style={{ marginBottom: 12 }} />
         )}
         {!historyLoading && history.length === 0 ? (
-          <Empty description="暂无执行历史，完成一次任务后会自动显示在这里" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="No execution history yet. Completed tasks will appear here automatically." image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <Table
             rowKey="execution_id"
@@ -243,21 +244,21 @@ export default function AgentExecution() {
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin size="large" description="正在规划并执行..." />
+          <Spin size="large" description="Planning and executing..." />
         </div>
       )}
 
       {error && (
-        <Alert type="error" title="执行失败" description={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert type="error" title="Execution Failed" description={error} showIcon style={{ marginBottom: 16 }} />
       )}
 
       <AnimatePresence>
         {result && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          {/* 检索到的 Skill */}
+          {/* Retrieved Skills */}
             {retrieved.length > 0 && (
               <Card
-                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
+                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />Retrieved Skills ({retrieved.length})</span>}
                 variant="borderless"
                 size="small"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
@@ -289,7 +290,7 @@ export default function AgentExecution() {
               </Card>
             )}
 
-            {/* 执行摘要 */}
+            {/* Execution summary */}
             <Card
               variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
@@ -297,20 +298,20 @@ export default function AgentExecution() {
               <Row gutter={16}>
                 <Col span={6}>
                   <Statistic
-                    title="状态"
+                    title="Status"
                     value={result.status}
                     styles={{ content: { color: result.status === 'success' ? '#52c41a' : result.status === 'failed' ? '#ff4d4f' : '#faad14' } }}
                   />
                 </Col>
                 <Col span={6}>
-                  <Statistic title="总步骤" value={result.steps.length} />
+                  <Statistic title="Total Steps" value={result.steps.length} />
                 </Col>
                 <Col span={6}>
-                  <Statistic title="成功" value={successCount} styles={{ content: { color: '#52c41a' } }} />
+                  <Statistic title="Successful" value={successCount} styles={{ content: { color: '#52c41a' } }} />
                 </Col>
                 <Col span={6}>
                   <Statistic
-                    title="总耗时"
+                    title="Total Latency"
                     value={result.total_latency_ms.toFixed(0)}
                     suffix="ms"
                     styles={{ content: { color: '#1677ff' } }}
@@ -319,23 +320,23 @@ export default function AgentExecution() {
               </Row>
             </Card>
 
-            {/* 执行步骤 */}
+            {/* Execution steps */}
             <Card
-              title={<><ThunderboltOutlined /> 执行步骤</>}
+              title={<><ThunderboltOutlined /> Execution Steps</>}
               variant="borderless"
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
             >
               {result.steps.length === 0 ? (
-                <Alert type="warning" title="未找到可执行的 Skill，请尝试更具体的任务描述" />
+                <Alert type="warning" title="No executable Skill was found. Try a more specific task description." />
               ) : (
                 result.steps.map((step, i) => <StepCard key={step.step_id} step={step} index={i} />)
               )}
             </Card>
 
-            {/* 最终状态 */}
+            {/* Final state */}
             {Object.keys(result.final_state).length > 0 && (
               <Card
-                title="最终状态"
+                title="Final State"
                 variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >
@@ -344,7 +345,7 @@ export default function AgentExecution() {
                 </pre>
               </Card>
             )}
-            {/* 经验记录反馈 */}
+            {/* Experience recording feedback */}
             {result.experience_recorded && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <Card
@@ -355,7 +356,7 @@ export default function AgentExecution() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <DatabaseOutlined style={{ color: '#52c41a', fontSize: 16 }} />
                     <Text style={{ fontSize: 13 }}>
-                      <strong>经验已记录</strong> — 本次执行轨迹已写入 Experience Store，将用于 Skill 质量评估与演化决策。
+                      <strong>Experience recorded</strong> - this execution trace was written to the Experience Store for Skill quality assessment and evolution decisions.
                     </Text>
                   </div>
                 </Card>

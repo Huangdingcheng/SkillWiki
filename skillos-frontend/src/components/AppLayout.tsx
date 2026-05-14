@@ -13,6 +13,7 @@ import {
   BulbFilled,
   WifiOutlined,
   RocketOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -27,6 +28,7 @@ const menuItems = [
     label: 'Overview',
     children: [
       { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+      { key: '/evaluation', icon: <BarChartOutlined />, label: 'Evaluation' },
     ],
   },
   {
@@ -136,12 +138,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             Skill-Centric Operating System for Self-Evolving Agents
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Tooltip title={`${unreadEvents} 个实时事件`}>
+            <Tooltip title={`${unreadEvents} live events`}>
               <Badge count={Math.min(unreadEvents, 99)} size="small">
                 <WifiOutlined style={{ fontSize: 18, color: '#52c41a', cursor: 'pointer' }} />
               </Badge>
             </Tooltip>
-            <Tooltip title={darkMode ? '切换亮色' : '切换暗色'}>
+            <Tooltip title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
               <Switch
                 checked={darkMode}
                 onChange={toggleDark}

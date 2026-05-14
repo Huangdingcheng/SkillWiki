@@ -13,6 +13,7 @@ from .skill_snapshot import (
     SkillSnapshotDiff,
     diff_skill_snapshots,
     has_breaking_changes,
+    review_recommendation_for_diffs,
     skill_snapshot_path,
     skill_to_snapshot,
     write_skill_snapshot,
@@ -62,6 +63,7 @@ def propose_skill_change(
     old_skill: Skill,
     new_skill: Skill,
     store: Optional[GitVersionStore] = None,
+    author_name: str = "SkillOS",
 ) -> SkillChangeReviewBundle:
     """Create a Git branch and snapshot commit for a proposed Skill change."""
     version_store = store or GitVersionStore(repo_path)
@@ -88,14 +90,18 @@ def propose_skill_change(
     if version_store.branch_exists(branch_name):
         raise GitVersionStoreError(f"Git branch already exists: {branch_name}")
 
-    try:
-        version_store.create_branch(branch_name, base_commit)
-        version_store.checkout(branch_name)
-        written_path = write_skill_snapshot(repo_path, new_skill)
-        head_commit = version_store.commit_paths([written_path], commit_message)
-    except Exception:
-        version_store.checkout(base_branch)
-        raise
+    with version_store.lock():
+        try:
+            version_store.create_branch(branch_name, base_commit)
+            version_store.checkout(branch_name)
+            written_path = write_skill_snapshot(repo_path, new_skill)
+            head_commit = version_store.commit_paths(
+                [written_path],
+                commit_message,
+                author_name=author_name,
+            )
+        finally:
+            version_store.checkout(base_branch)
 
     return SkillChangeReviewBundle(
         branch_name=branch_name,
@@ -105,9 +111,7 @@ def propose_skill_change(
         commit_message=commit_message,
         diffs=diffs,
         has_breaking_changes=breaking,
-        suggested_review_status=(
-            "breaking_review_required" if breaking else "review_required"
-        ),
+        suggested_review_status=review_recommendation_for_diffs(diffs),
     )
 
 

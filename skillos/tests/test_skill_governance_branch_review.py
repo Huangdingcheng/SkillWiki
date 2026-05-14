@@ -83,12 +83,10 @@ def test_workflow_creates_review_branch_and_snapshot_commit(git_repo: Path) -> N
     assert bundle.commit_message == "skill(search_wiki): propose v1.0.1"
     assert bundle.suggested_review_status == "review_required"
     assert not bundle.has_breaking_changes
-    assert store.current_branch() == bundle.branch_name
+    assert store.current_branch() == base_branch
 
-    history = store.commit_history(skill_snapshot_path(new_skill))
-    assert history[0].subject == "skill(search_wiki): propose v1.0.1"
-    assert (git_repo / bundle.snapshot_path).exists()
-    store.checkout(base_branch)
+    review_snapshot = store.read_file_at_ref(bundle.head_commit, skill_snapshot_path(new_skill))
+    assert "Search wiki entries with filters." in review_snapshot
 
 
 def test_breaking_change_requires_breaking_review(git_repo: Path) -> None:

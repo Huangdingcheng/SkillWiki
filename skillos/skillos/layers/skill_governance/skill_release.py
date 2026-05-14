@@ -108,15 +108,17 @@ def restore_skill_snapshot(
     snapshot_path = skill_snapshot_path(current_skill)
     snapshot = read_skill_snapshot_at_ref(repo_path, source_ref, snapshot_path, version_store)
 
-    target = Path(repo_path) / snapshot_path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    with version_store.lock():
+        version_store.ensure_paths_clean([snapshot_path])
+        target = Path(repo_path) / snapshot_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
-    commit_message = f"skill({current_skill.name}): restore from {source_ref}"
-    restore_commit = version_store.commit_paths([snapshot_path], commit_message)
+        commit_message = f"skill({current_skill.name}): restore from {source_ref}"
+        restore_commit = version_store.commit_paths([snapshot_path], commit_message)
 
     return SkillRollbackRecord(
         source_ref=source_ref,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -199,6 +200,12 @@ class SkillPlanner:
         available_skills: List[Skill],
         current_state: Optional[Dict[str, Any]] = None,
         task_id: Optional[str] = None,
+        *,
+        force_fallback: bool = False,
+        force_llm: bool = False,
+        llm_extra: Optional[Dict[str, Any]] = None,
+        fallback_on_llm_error: bool = True,
+        fallback_on_invalid_response: bool = True,
     ) -> ExecutionPlan:
         """为任务生成执行计划。"""
         plan = ExecutionPlan(
@@ -210,6 +217,15 @@ class SkillPlanner:
             logger.warning("无可用 Skill，无法生成执行计划")
             return plan
 
+        if force_fallback or (not force_llm and self._should_use_fallback_only()):
+            plan.metadata["source"] = "local_demo_fallback"
+            return self._fallback_plan(
+                plan,
+                available_skills,
+                current_state=current_state,
+                prefer_offline=True,
+            )
+
         skills_info = self._format_skills(available_skills)
         prompt = _PLAN_PROMPT.format(
             task_description=task_description,
@@ -217,32 +233,68 @@ class SkillPlanner:
             available_skills=skills_info,
         )
 
+        chat_kwargs = {"extra": llm_extra} if llm_extra is not None else {}
         try:
             response = self._llm.chat([
                 Message.system(
                     "You are the SkillOS Planner Agent. Return strict JSON only."
                 ),
                 Message.user(prompt),
-            ])
+            ], **chat_kwargs)
         except Exception as exc:
+            if not fallback_on_llm_error:
+                raise
             logger.warning("Planner LLM failed; using fallback plan: %s", exc)
-            return self._fallback_plan(plan, available_skills)
+            return self._fallback_plan(plan, available_skills, current_state=current_state)
 
+        plan.metadata["llm_model"] = getattr(response, "model", None)
+        plan.metadata["llm_usage"] = getattr(response, "usage", {}) or {}
+        plan.metadata["llm_finish_reason"] = getattr(response, "finish_reason", None)
         data = self._extract_json(response.content)
         if not data or "steps" not in data:
+            if not fallback_on_invalid_response:
+                plan.metadata["source"] = "llm"
+                plan.metadata["invalid_response"] = True
+                plan.metadata["failure_reason"] = "Planner LLM returned invalid JSON."
+                return plan
             logger.warning("规划器 LLM 返回无效响应，使用顺序执行所有 Skill")
-            return self._fallback_plan(plan, available_skills)
+            return self._fallback_plan(plan, available_skills, current_state=current_state)
 
         plan.steps = _normalize_plan_steps(data["steps"], available_skills)
+        repairs = _repair_required_input_mappings(
+            plan.steps,
+            available_skills,
+            current_state or {},
+            task_description,
+        )
+        if repairs:
+            plan.metadata["input_mapping_repairs"] = repairs
 
         plan.metadata["rationale"] = data.get("plan_rationale", "")
+        plan.metadata["source"] = "llm"
         logger.info(f"执行计划生成: {len(plan.steps)} 步骤, 任务={task_description[:50]}")
         return plan
 
-    def _fallback_plan(self, plan: ExecutionPlan, skills: List[Skill]) -> ExecutionPlan:
+    def _fallback_plan(
+        self,
+        plan: ExecutionPlan,
+        skills: List[Skill],
+        *,
+        current_state: Optional[Dict[str, Any]] = None,
+        prefer_offline: bool = False,
+    ) -> ExecutionPlan:
         """降级方案：顺序执行所有 Skill。"""
+        selected_skills = skills
+        if prefer_offline:
+            offline_skills = [
+                skill for skill in skills
+                if skill.implementation
+                and (skill.implementation.code or skill.implementation.sub_skill_ids)
+            ]
+            selected_skills = offline_skills or skills
+
         prev_step_id: Optional[str] = None
-        for i, skill in enumerate(skills[:5]):
+        for i, skill in enumerate(selected_skills[:5]):
             step = PlanStep(
                 step_index=i,
                 skill_id=skill.skill_id,
@@ -252,9 +304,26 @@ class SkillPlanner:
             )
             plan.steps.append(step)
             prev_step_id = step.step_id
+        repairs = _repair_required_input_mappings(
+            plan.steps,
+            skills,
+            current_state or {},
+            plan.task_description,
+        )
+        if repairs:
+            plan.metadata["input_mapping_repairs"] = repairs
         plan.metadata["rationale"] = "Fallback sequential plan generated from top retrieved skills."
         plan.metadata["source"] = "fallback"
         return plan
+
+    def _should_use_fallback_only(self) -> bool:
+        """Skip LLM planning for local demo keys so preview runs are immediate."""
+        if os.getenv("SKILLOS_FORCE_PLANNER_FALLBACK", "").lower() in {"1", "true", "yes"}:
+            return True
+
+        cfg = getattr(self._llm, "_cfg", None)
+        api_key = str(getattr(cfg, "api_key", "") or "").strip().lower()
+        return api_key in {"demo", "dummy", "test", "test_key", "your_api_key_here"}
 
     def _format_skills(self, skills: List[Skill]) -> str:
         lines = []
@@ -325,3 +394,92 @@ def _normalize_plan_steps(raw_steps: Any, available_skills: List[Skill]) -> List
         normalized.append(step)
 
     return normalized
+
+
+_MISSING = object()
+
+
+def _repair_required_input_mappings(
+    steps: List[PlanStep],
+    available_skills: List[Skill],
+    current_state: Dict[str, Any],
+    task_description: str,
+) -> List[Dict[str, Any]]:
+    """Fill missing required inputs from task state or earlier step mappings."""
+    skill_map = {skill.skill_id: skill for skill in available_skills}
+    task_input = current_state.get("input", {})
+    if not isinstance(task_input, dict):
+        task_input = {}
+
+    repairs: List[Dict[str, Any]] = []
+    for index, step in enumerate(steps):
+        skill = skill_map.get(step.skill_id)
+        if not skill:
+            continue
+        for input_name in _required_input_names(skill):
+            if _has_value(step.input_mapping.get(input_name)):
+                continue
+            value = _infer_input_value(
+                input_name,
+                previous_steps=steps[:index],
+                task_input=task_input,
+                current_state=current_state,
+                task_description=task_description,
+            )
+            if value is _MISSING:
+                continue
+            step.input_mapping[input_name] = value
+            repairs.append({
+                "step_index": step.step_index,
+                "skill_id": step.skill_id,
+                "input": input_name,
+                "source": "planner_input_repair",
+            })
+    return repairs
+
+
+def _required_input_names(skill: Skill) -> List[str]:
+    schema = getattr(getattr(skill, "interface", None), "input_schema", {}) or {}
+    required = schema.get("required", [])
+    if not isinstance(required, list):
+        return []
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        properties = {}
+    return [
+        str(name)
+        for name in required
+        if isinstance(name, str)
+        and (not properties or name in properties)
+    ]
+
+
+def _infer_input_value(
+    input_name: str,
+    *,
+    previous_steps: List[PlanStep],
+    task_input: Dict[str, Any],
+    current_state: Dict[str, Any],
+    task_description: str,
+) -> Any:
+    if input_name in task_input and _has_value(task_input.get(input_name)):
+        return task_input[input_name]
+    if input_name in current_state and _has_value(current_state.get(input_name)):
+        return current_state[input_name]
+
+    for prev_step in reversed(previous_steps):
+        if input_name in prev_step.input_mapping and _has_value(prev_step.input_mapping.get(input_name)):
+            return prev_step.input_mapping[input_name]
+
+    if input_name == "description":
+        raw_context = current_state.get("raw_context")
+        if _has_value(raw_context):
+            return str(raw_context)
+        if _has_value(task_description):
+            return task_description
+
+    return _MISSING
+
+
+def _has_value(value: Any) -> bool:
+    return value is not None and value != "" and value != [] and value != {}

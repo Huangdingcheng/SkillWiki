@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from ...models.maintenance_model import (
+    MaintenanceProposal,
+    MaintenanceRecommendedAction,
+    MaintenanceTrigger,
+)
 from ...models.skill_model import (
     MetaSkillCategory,
     Skill,
@@ -37,6 +42,7 @@ class MaintenanceResult:
     success: bool
     updated_skill: Optional[Skill] = None
     new_skills: List[Skill] = field(default_factory=list)
+    proposal: Optional[MaintenanceProposal] = None
     reason: str = ""
     details: Dict[str, Any] = field(default_factory=dict)
 
@@ -153,6 +159,50 @@ class SkillMaintainerAgent:
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm = llm_client
 
+    def propose_repair(
+        self,
+        skill: Skill,
+        failure_info: str = "",
+        audit_issues: Optional[List[str]] = None,
+        *,
+        confidence: float = 0.7,
+    ) -> MaintenanceProposal:
+        """Create a human-review repair proposal without mutating the Skill."""
+        evidence: List[str] = []
+        if failure_info.strip():
+            evidence.append(failure_info.strip())
+        evidence.extend(str(issue).strip() for issue in (audit_issues or []) if str(issue).strip())
+        trigger = MaintenanceTrigger.AUDIT_FAILED if audit_issues else MaintenanceTrigger.RUNTIME_FAILURE
+        return MaintenanceProposal(
+            skill_id=skill.skill_id,
+            trigger=trigger,
+            recommended_action=MaintenanceRecommendedAction.REPAIR,
+            evidence=evidence or ["Maintainer received a repair request."],
+            root_cause=evidence[0] if evidence else "Maintainer received a repair request.",
+            patch_hint="Inspect the failure and prepare a minimal prompt/code repair.",
+            feedback_sources=[
+                source
+                for source, enabled in (
+                    ("runtime_failure", bool(failure_info.strip())),
+                    ("skill_audit", bool(audit_issues)),
+                )
+                if enabled
+            ] or ["skill_maintainer"],
+            targets_to_fix=evidence or ["Maintainer received a repair request."],
+            invariants_to_preserve=[
+                "Preserve the current Skill interface unless the reviewer explicitly approves a breaking change.",
+                "Preserve successful behavior covered by existing verifier specs or benchmark tasks.",
+            ],
+            validation_plan=[
+                "Apply the candidate repair in a review branch, not directly to the live Skill.",
+                "Rerun the failing verifier, audit, or runtime case before release.",
+            ],
+            confidence=confidence,
+            requires_human_review=True,
+            source="skill_maintainer",
+            metadata={"skill_name": skill.name},
+        )
+
     def repair(
         self,
         skill: Skill,
@@ -180,6 +230,7 @@ class SkillMaintainerAgent:
                     action=MaintenanceAction.REPAIR,
                     skill_id=skill.skill_id,
                     success=False,
+                    proposal=self.propose_repair(skill, failure_info, audit_issues),
                     reason="repair response was not valid JSON",
                 )
 
@@ -191,6 +242,7 @@ class SkillMaintainerAgent:
                     action=MaintenanceAction.REPAIR,
                     skill_id=skill.skill_id,
                     success=False,
+                    proposal=self.propose_repair(skill, failure_info, audit_issues, confidence=confidence),
                     reason="repair response did not include repaired_prompt_template or repaired_code",
                     details={"confidence": confidence},
                 )
@@ -211,9 +263,18 @@ class SkillMaintainerAgent:
                 action=MaintenanceAction.REPAIR,
                 skill_id=skill.skill_id,
                 success=True,
-                updated_skill=updated,
+                proposal=self.propose_repair(
+                    skill,
+                    failure_info,
+                    audit_issues,
+                    confidence=confidence,
+                ),
                 reason=str(data.get("repair_notes") or "LLM repair"),
-                details={"confidence": confidence},
+                details={
+                    "confidence": confidence,
+                    "candidate_updated_skill": updated.model_dump(mode="json"),
+                    "requires_human_review": True,
+                },
             )
         except Exception as exc:
             logger.warning("Maintainer repair LLM call failed: %s", exc)
@@ -222,6 +283,7 @@ class SkillMaintainerAgent:
             action=MaintenanceAction.REPAIR,
             skill_id=skill.skill_id,
             success=False,
+            proposal=self.propose_repair(skill, failure_info, audit_issues, confidence=0.5),
             reason=f"Repair failed: {failure_info}",
         )
 

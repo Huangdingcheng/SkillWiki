@@ -34,6 +34,16 @@
 
 错误处理通过统一 helper 解析 FastAPI `detail`、后端 `error`、Axios/network error 和 fallback 文案。E 主线页面在后端不可用时应显示错误提示，不应白屏。
 
+### 5.2.1 Maintenance Proposal Review UI
+
+E-P1-2 connects the frontend to the D-side maintenance proposal queue while keeping the B-side governance boundary explicit.
+
+- `evolutionApi.proposals()`, `acceptProposal()`, and `rejectProposal()` consume `GET /evolution/proposals` and the proposal status transition endpoints.
+- `/evolution` now shows a `Maintenance Proposal Queue` with proposal evidence, root cause, validation plan hints, status, confidence, and accept/reject actions.
+- Accepting a proposal redirects to `/versions?skill_id=...&proposal_id=...`; it does not patch, release, or otherwise mutate the live Skill.
+- `/versions` reads `skill_id` and `proposal_id` query parameters, selects the target Skill, and shows a governance alert that the next step is B-side maintenance review.
+- `lifecycleApi.proposeMaintenanceChange()` is available for the real B review bundle endpoint, but it requires a reviewed `patched_skill` payload and should not be called from a queue accept alone.
+
 ## 5.3 Experience Pipeline
 
 当前 pipeline 位于 `skillos/skillos/layers/input_knowledge/`，主流程是：
@@ -162,3 +172,85 @@ npm run build
 - `parse-and-create` 成功后能跳转 `/wiki?skill_id=...`。
 - `/demo`、`/execution`、`/wiki`、`/graph`、`/evolution` 无白屏。
 - 后端不可用时页面显示错误兜底，不崩溃。
+
+## 5.7 E-P0-2 Evaluation Dashboard Contract
+
+`/evaluation` is the paper-demo evidence view. It is read-only and does not rerun
+benchmarks, mutate Skills, call an LLM judge, or promote/release any Skill.
+
+Backend endpoint:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/evaluation/dashboard` | Aggregate local latest benchmark artifacts for the UI |
+
+The endpoint reads local files under `skillos/benchmarks/results/` when present:
+
+- `latest_summary.json` for the 12-task no-skill / raw-prompt / with-skill comparison.
+- `demo_benchmark_latest.json` for per-task domain, latency, verifier, and failure details.
+- `search_eval_latest.json` for lexical vs hybrid retrieval evidence.
+- `llm_eval_latest.json` for planner-selection evidence.
+
+If an artifact is missing or invalid, the endpoint returns `available: false` plus
+a warning instead of raising a 500. The frontend must show an empty state for that
+panel.
+
+UI boundaries:
+
+- Use wording such as "demo benchmark", "observed delta", and "latest artifact".
+- Do not claim that the page reproduces SkillsBench, API-Bank, WebArena, or
+  WebXSkill.
+- `llm` rows marked `skipped` because of `missing_api_key` are incomplete runs,
+  not model-quality failures.
+
+## 5.8 E-P0-3 Heterogeneous Graph View Contract
+
+`/graph` is the paper-demo evidence view for graph organization. It exposes three
+viewer modes through one page, without changing graph data from the frontend:
+
+| View | Frontend value | Backend source |
+| --- | --- | --- |
+| Skill-only | `skill_only` | `GET /api/v1/graph/view?view=skill_only` |
+| Provenance | `provenance` | `GET /api/v1/graph/view?view=provenance` |
+| Version impact | `version_impact` | `GET /api/v1/graph/view?view=version_impact` |
+
+The unified view response contains `view`, `source_endpoint`, `nodes`, `edges`,
+`stats`, `metadata`, and optional `validation_evidence`. The page should render
+typed nodes and edges from that response instead of inferring paper semantics in
+React.
+
+Frontend contract:
+
+- `graphApi.view(view)` consumes `GET /api/v1/graph/view?view=skill_only|provenance|version_impact`.
+- The page keeps the existing G6 canvas, edge filtering, node detail panel, layout controls, zoom, and fit-view controls.
+- Wiki navigation and subgraph expansion are enabled only for `kind="skill"` nodes.
+- The legend changes by view: Skill-only uses Skill type colors; provenance/projected views use node-kind colors.
+- In P0, trajectory evidence is represented as a `Source` node with metadata such as `source_type=browser_trajectory`; a separate `Trajectory` node kind is a later schema expansion.
+
+Paper-method mapping:
+
+- SKILLFOUNDRY motivates provenance over heterogeneous scientific resources:
+  Source/Trajectory -> Skill -> Execution -> Validation -> Version.
+- HIN motivates explicit typed nodes, typed edges, and meta-path semantics.
+- GraphRAG motivates using graph organization and relationship metadata for
+  evidence inspection, not only flat search results.
+
+UI boundaries:
+
+- `Skill-only` must keep legacy Skill graph browsing and subgraph expansion
+  usable.
+- `Provenance` must make node kind visible in the legend, especially source,
+  skill, execution, validation, and version nodes.
+- `Version impact` must show projection/meta-path metadata and confidence or
+  evidence fields when returned by the backend.
+- The frontend must not mutate graph state, synthesize missing evidence, add a new graph database, generate maintenance proposals, infer hidden causal impact, or claim a full paper benchmark from this demo view.
+
+Method boundaries:
+
+- The `Version impact` label means "projected version/shared-source/validation relationships from existing heterogeneous meta-paths", not a full counterfactual impact analysis.
+
+Paper grounding and URLs read from local PDFs:
+
+- SKILLFOUNDRY: heterogeneous resources should compile into structured skill cards with scope, dependencies, inputs, outputs, provenance, examples, and tests. URLs observed in the PDF include `https://arxiv.org/abs/2604.03964v1`, `https://github.com/ma-compbio-lab/SkillFoundry`, `https://ma-compbio-lab.github.io/SkillFoundry/`, and `https://openreview.net/forum?id=kZHSvETWdi`.
+- Heterogeneous Information Network Survey: heterogeneous networks distinguish object types and relation types; meta-paths encode different semantics and can project heterogeneous networks into homogeneous analysis views. URLs observed in the PDF include `http://aminer.org/`, `http://dblp.uni-trier.de/`, `http://pminer.org/home.do?m=home`, `http://www.douban.com/`, and `http://www.uspto.gov/patents/`.
+- GraphRAG: graph indexes organize entities, relationships, covariates/claims, and communities to support explanation-oriented retrieval and summarization. URLs observed in the PDF include `https://github.com/microsoft/graphrag`, `https://neo4j.com/developer-blog/graphrag-ecosystem-tools/`, `https://langchain-graphrag.readthedocs.io/en/latest/`, and `https://www.nebula-graph.io/posts/graph-RAG`.

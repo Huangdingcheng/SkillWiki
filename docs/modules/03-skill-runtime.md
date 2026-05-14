@@ -376,3 +376,145 @@ git diff --check
 ---
 
 *更新此文档时请同步更新 `architecture.md` 中的 Task Execution Flow 部分（联系负责人）*
+## Phase 5: Paper-Driven Benchmark And Deterministic Verifier
+
+This phase lands the C-side P0 evidence requested by
+`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
+It keeps the runtime execution contract stable and adds repeatable evaluation artifacts.
+
+- `VerifierAgent.verify()` can now consume `verifier_specs` directly. When specs are present, it uses deterministic rules before any LLM call.
+- `evaluate_verifier_specs()` supports `json_equals`, `json_exists`, `contains`, and `boolean_success` with a small dotted-path resolver such as `output.success` and `output.steps[0]`.
+- Deterministic verifier output is represented as a normal `VerificationResult` with `details.verifier = "deterministic"` and per-spec result details.
+- `benchmarks/skillos_demo_tasks.json` defines the SkillsBench-style 12-task fixture across web, API, document, script, runtime, governance, and graph tasks.
+- `benchmarks/run_demo_benchmark.py` runs `no_skill`, `raw_prompt`, and `with_skill` modes offline, then writes a JSON result payload with `status`, `success`, `latency_ms`, `steps`, `skills_used`, `verifier_passed`, and `failure_reason`.
+- `benchmarks/summarize_results.py` produces `latest_summary.json` and `latest_summary.md` for the E evaluation page to consume later.
+- C remains producer-only for repair evidence: benchmark failures and verifier issues are reported, but no D maintainer action or B Git change is triggered automatically.
+
+Verification commands:
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime benchmarks
+python -m pytest tests\test_skill_runtime_phase4.py -q --no-cov
+python benchmarks\run_demo_benchmark.py
+git diff --check
+```
+
+---
+
+## Phase 6: Real LLM Planner Evaluation
+
+This phase implements the C-P1-1 planner evaluation slice without changing the
+existing execution API contract.
+
+- `SkillPlanner.plan()` still defaults to the previous behavior, but now accepts
+  strict evaluation controls: `force_fallback`, `force_llm`, `llm_extra`,
+  `fallback_on_llm_error`, and `fallback_on_invalid_response`.
+- Strict LLM evaluation can propagate `LLMAuthError`, `LLMRateLimitError`,
+  `LLMTimeoutError`, and `LLMServerError` instead of silently folding them into
+  fallback. This keeps API failures out of functional planner failure rates.
+- Successful LLM plans now record `metadata.source = "llm"` plus model, usage,
+  and finish reason metadata when the LLM client provides it.
+- `benchmarks/run_llm_planner_eval.py` reuses `skillos_demo_tasks.json` and
+  compares `fallback` vs `llm` planner selection over the same task fixture.
+- The runner supports fixed `--api-url`, `--api-key`, `--model`,
+  `--temperature`, `--seed`, `--timeout`, `--retry-count`, `--max-tokens`,
+  `--context`, and `--distractor-count` options. It also reads team keys from
+  `SKILLOS_TEAM_API_KEY`, `LLM_API_KEY`, or `SKILLOS_API_KEY`.
+- Results are written to `benchmarks/results/llm_eval_results_<timestamp>.json`
+  and `llm_eval_latest.json`. The result JSON records `api_failure`,
+  `api_error_type`, `functional_failure`, selected skill IDs, expected skill
+  IDs, planner source, model metadata, and success rates excluding API failures.
+- API keys are never written into result JSON; results only record whether a
+  key was provided.
+
+Verification commands:
+
+```powershell
+python -m compileall -q skillos\layers\skill_runtime benchmarks tests\test_llm_planner_eval.py
+python -m pytest tests\test_llm_planner_eval.py tests\test_skill_runtime_phase2.py -q --no-cov
+python benchmarks\run_llm_planner_eval.py --task-limit 2
+python -m benchmarks.run_llm_planner_eval --task-limit 2 --mode fallback
+```
+
+Current limitation: a latest result with `api_key_provided=false` and
+`missing_api_key` rows is only evidence that the harness separates API failures
+from functional planner failures. It is not a real LLM quality result.
+
+---
+
+## Phase 7: Execution History As Experience
+
+This phase implements the C-P1-2 slice from
+`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
+The paper method used here is XSkill's split between action-level experiences
+and task-level skills. Trace2Skill is used only as the boundary: a local
+execution trace can become material for a candidate Skill, but it is not treated
+as a trusted Skill until human review.
+
+- `/api/v1/execution/skill` and `/api/v1/execution/plan` now return
+  `ExecutionResult.experience_unit` when an execution is recorded.
+- `ExecutionExperienceUnit.source_type` is `agent_execution`; it includes
+  `source_execution_id`, `raw_content`, `extracted_actions`,
+  `normalized_actions`, a proposed Skill name/description/type, confidence,
+  keywords, and method metadata.
+- `normalized_actions` preserve each executed skill, status, input mapping,
+  output, and error so the record is an action-level experience instead of a
+  task-level Skill.
+- `/api/v1/execution/history` includes `experience_unit_id` and
+  `experience_source_type` for each recent item.
+- `/api/v1/execution/history/{execution_id}/experience` returns the full
+  `ExecutionExperienceUnit` for a recent in-memory execution.
+- `/api/v1/ingest/audit-candidate` and `/api/v1/ingest/create-candidate`
+  accept `source_type=agent_execution`, allowing a reviewer to turn a runtime
+  experience into an S1 Candidate Skill with provenance pointing back to the
+  execution unit.
+- The current store remains an in-memory demo history. It is valid for the
+  paper-demo loop, but it should not be described as a durable long-term
+  experience memory until a storage-backed design is added.
+
+Verification commands:
+
+```powershell
+python -m compileall -q skillos\api\routes\execution.py skillos\api\routes\ingest.py skillos\api\schemas.py
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_ingest_candidate_review.py -q --no-cov
+git diff --check
+```
+
+---
+
+## Phase 8: Parameterized Web Skills
+
+This phase completes C-P1-3 from
+`demo-paper-roadmap-20260509/paper-driven-coding-pack/C_RUNTIME_PAPER_DRIVEN_BACKLOG.md`.
+The selected paper method is WebXSkill's executable, parameterized action
+program: a reusable web skill binds arguments such as selector, text, URL, and
+form data, then executes a fixed action sequence. SkillWeaver was reviewed as a
+related API-style skill framework, but this implementation intentionally uses
+only the smaller WebXSkill method.
+
+- Web benchmark `with_skill` mode no longer passes the web tasks by copying
+  `expected_output` directly.
+- For web tasks, `benchmarks/run_demo_benchmark.py` now creates benchmark-local
+  fake action programs for `fill_form`, `click_element`, `type_text`,
+  `extract_selector`, and `submit_form`.
+- The fake programs read `input_data` parameters and emit `input_mapping`,
+  `action_program`, `parameters_used`, step guidance, fake `final_state`, and
+  `paper_method = "WebXSkill parameterized action program"`.
+- The implementation remains benchmark-local. It does not add a real browser,
+  DOM driver, or new Skill model field.
+- Non-web benchmark tasks keep the previous controlled fixture behavior so the
+  C-P0 benchmark remains stable.
+- Regression tests prove that changed web parameters change outputs and that
+  missing required form parameters fail deterministic verification.
+
+Verification commands:
+
+```powershell
+python -m pytest tests\test_demo_benchmark_parameterized_web.py -q --no-cov
+python -m benchmarks.run_demo_benchmark
+python -m pytest tests\test_skill_runtime_phase1.py tests\test_skill_runtime_phase4.py tests\test_skill_runtime_verifier_specs.py tests\test_llm_planner_eval.py tests\test_demo_benchmark_parameterized_web.py -q --no-cov
+python -m compileall -q skillos benchmarks
+git diff --check
+```
+
+---

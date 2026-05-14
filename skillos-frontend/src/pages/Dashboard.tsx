@@ -74,7 +74,7 @@ export default function Dashboard() {
       setError(null)
       setLastUpdated(new Date().toLocaleTimeString())
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e, 'Dashboard 数据加载失败'))
+      setError(getApiErrorMessage(e, 'Failed to load dashboard data'))
     } finally {
       if (initial) setLoading(false)
       else setRefreshing(false)
@@ -82,11 +82,14 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    void loadDashboardData(true)
+    const timeoutId = window.setTimeout(() => { void loadDashboardData(true) }, 0)
     const timer = window.setInterval(() => {
       void loadDashboardData(false)
     }, 15_000)
-    return () => window.clearInterval(timer)
+    return () => {
+      window.clearTimeout(timeoutId)
+      window.clearInterval(timer)
+    }
   }, [loadDashboardData])
 
   const refreshSignal = useMemo(() => {
@@ -95,7 +98,9 @@ export default function Dashboard() {
   }, [wsEvents])
 
   useEffect(() => {
-    if (refreshSignal) void loadDashboardData(false)
+    if (!refreshSignal) return
+    const timeoutId = window.setTimeout(() => { void loadDashboardData(false) }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [loadDashboardData, refreshSignal])
 
   const feedEvents = useMemo(
@@ -110,9 +115,9 @@ export default function Dashboard() {
         <Alert
           type="error"
           showIcon
-          title="Dashboard 数据加载失败"
-          description={error || '请检查后端服务是否可用'}
-          action={<Button size="small" onClick={() => loadDashboardData(true)}>重试</Button>}
+          title="Failed to Load Dashboard Data"
+          description={error || 'Please check whether the backend service is available.'}
+          action={<Button size="small" onClick={() => loadDashboardData(true)}>Retry</Button>}
         />
       </div>
     )
@@ -139,7 +144,7 @@ export default function Dashboard() {
         </motion.h2>
         <Space>
           <span style={{ color: '#999', fontSize: 12 }}>
-            最后更新：{lastUpdated || '尚未刷新'}
+            Last updated: {lastUpdated || 'Not refreshed yet'}
           </span>
           <Button
             size="small"
@@ -147,7 +152,7 @@ export default function Dashboard() {
             loading={refreshing}
             onClick={() => loadDashboardData(false)}
           >
-            刷新
+            Refresh
           </Button>
         </Space>
       </div>
@@ -157,14 +162,14 @@ export default function Dashboard() {
           type="warning"
           showIcon
           closable
-          title="最近一次刷新失败"
+          title="Latest Refresh Failed"
           description={error}
           style={{ marginBottom: 16 }}
           onClose={() => setError(null)}
         />
       )}
 
-      {/* 核心指标 */}
+      {/* Core metrics */}
       <Row gutter={[16, 16]}>
         {[
           { title: 'Total Skills', value: stats.total_skills, icon: <RocketOutlined />, color: '#1677ff', i: 0 },
@@ -188,7 +193,7 @@ export default function Dashboard() {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        {/* 类型分布 */}
+        {/* Type distribution */}
         <Col xs={24} md={8}>
           <motion.div custom={4} initial="hidden" animate="visible" variants={cardVariants}>
             <Card title="Skill Types" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -212,7 +217,7 @@ export default function Dashboard() {
           </motion.div>
         </Col>
 
-        {/* 状态分布 */}
+        {/* State distribution */}
         <Col xs={24} md={8}>
           <motion.div custom={5} initial="hidden" animate="visible" variants={cardVariants}>
             <Card title="State Distribution" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -226,7 +231,7 @@ export default function Dashboard() {
           </motion.div>
         </Col>
 
-        {/* 健康度 */}
+        {/* Health score */}
         <Col xs={24} md={8}>
           <motion.div custom={6} initial="hidden" animate="visible" variants={cardVariants}>
             <Card title="System Health" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -249,7 +254,7 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      {/* 健康报告表格 */}
+      {/* Health report table */}
       <motion.div custom={7} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
         <Card title="Skill Health Overview" variant="borderless" style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           <Table
@@ -295,7 +300,7 @@ export default function Dashboard() {
         </Card>
       </motion.div>
 
-      {/* 演化指标面板 */}
+      {/* Evolution metrics panel */}
       {evoStats && (
         <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
           <Card
@@ -379,20 +384,20 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* Agent 动态 Feed */}
+      {/* Agent activity feed */}
       <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
         <Card
-          title={<span><WifiOutlined style={{ color: '#52c41a', marginRight: 6 }} />Agent 实时动态</span>}
+          title={<span><WifiOutlined style={{ color: '#52c41a', marginRight: 6 }} />Live Agent Activity</span>}
           variant="borderless"
           style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           extra={
             <Button size="small" icon={<ClearOutlined />} onClick={clearWsEvents}>
-              清空
+              Clear
             </Button>
           }
         >
           {feedEvents.length === 0 ? (
-            <Empty description="暂无事件，执行 Agent 任务后将在此显示实时动态" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty description="No events yet. Live activity will appear here after Agent tasks run." image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
             <div style={{ maxHeight: 320, overflowY: 'auto' }}>
               <Timeline
