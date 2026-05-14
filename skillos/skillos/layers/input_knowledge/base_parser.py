@@ -1,4 +1,4 @@
-"""输入知识层基础类 — 定义解析器接口和公共数据结构。"""
+"""Shared parser abstractions for the SkillOS input knowledge layer."""
 
 from __future__ import annotations
 
@@ -7,15 +7,13 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ...models.experience_model import ExperienceUnit
-from ...utils.llm_client import LLMClient
-from ...utils.logger import get_logger
-
-logger = get_logger(__name__)
+from ...utils.llm_client import LLMClient, Message
 
 
 @dataclass
 class ParseResult:
-    """解析结果容器。"""
+    """Container returned by input parsers."""
+
     experience_units: List[ExperienceUnit] = field(default_factory=list)
     raw_input: str = ""
     parse_model: str = ""
@@ -33,27 +31,23 @@ class ParseResult:
 
 
 class BaseParser(ABC):
-    """所有输入解析器的抽象基类。"""
+    """Base class for parsers that turn raw inputs into ExperienceUnit objects."""
 
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm = llm_client
 
     @abstractmethod
     async def parse(self, raw_input: str, **kwargs: Any) -> ParseResult:
-        """解析原始输入，返回 ExperienceUnit 列表。"""
+        """Parse raw input and return extracted experience units."""
 
     def _build_system_prompt(self) -> str:
-        """子类可覆盖，提供特定的系统提示词。"""
         return (
-            "你是 SkillOS 的知识提取专家。"
-            "你的任务是从原始输入中提取结构化的操作经验，"
-            "识别可复用的操作模式，为后续 Skill 生成做准备。"
-            "请严格按照 JSON 格式输出，不要添加额外解释。"
+            "You are a SkillOS knowledge extraction specialist. "
+            "Extract reusable operational experience from raw input so it can become Skill candidates. "
+            "Return valid JSON only, with no markdown fence or extra explanation."
         )
 
     async def _call_llm(self, user_prompt: str, system_prompt: Optional[str] = None) -> str:
-        """调用 LLM，返回响应文本。"""
-        from ...utils.llm_client import Message
         messages = [Message.user(user_prompt)]
         if system_prompt:
             messages.insert(0, Message.system(system_prompt))

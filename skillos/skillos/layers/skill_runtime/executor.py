@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import uuid
 from datetime import datetime
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Union
 
 from ...models.experience_model import ExecutionStatus, SkillExecutionRecord
 from ...models.skill_model import Skill
@@ -17,7 +18,7 @@ from .state_tracker import StateTracker
 logger = get_logger(__name__)
 
 # 执行事件类型（用于 WebSocket 实时推送）
-ExecutionEventCallback = Callable[[str, Dict[str, Any]], None]
+ExecutionEventCallback = Callable[[str, Dict[str, Any]], Union[None, Awaitable[None]]]
 
 
 class SkillExecutor:
@@ -54,7 +55,9 @@ class SkillExecutor:
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         for cb in self._event_callbacks:
             try:
-                cb(event_type, data)
+                result = cb(event_type, data)
+                if inspect.isawaitable(result):
+                    asyncio.create_task(result)
             except Exception:
                 pass
 
@@ -79,14 +82,19 @@ class SkillExecutor:
 
         self._emit("plan_started", {
             "plan_id": plan.plan_id,
+            "goal": plan.task_description,
+            "step_count": plan.total_steps,
             "task": plan.task_description,
             "total_steps": plan.total_steps,
         })
 
-        while not plan.is_complete and not plan.has_failures:
-            ready_steps = plan.get_ready_steps()
+        while _has_pending_steps(plan):
+            skipped = self._skip_blocked_steps(plan)
+            ready_steps = _ready_steps(plan)
             if not ready_steps:
-                break
+                if not skipped:
+                    break
+                continue
 
             # 并行执行无依赖的步骤
             if len(ready_steps) > 1:
@@ -99,6 +107,10 @@ class SkillExecutor:
                     if isinstance(result, Exception):
                         step.status = StepStatus.FAILED
                         step.error = str(result)
+                        if not step.started_at:
+                            step.started_at = datetime.utcnow()
+                        step.completed_at = datetime.utcnow()
+                        self._emit_step_failed(plan.plan_id, step, step.error)
                     else:
                         record = result
                         if record:
@@ -109,14 +121,66 @@ class SkillExecutor:
                     execution_records.append(record)
 
         final_state = tracker.current
+        total_latency_ms = sum((step.latency_ms or 0.0) for step in plan.steps)
+        status = _plan_status(plan)
         self._emit("plan_completed", {
             "plan_id": plan.plan_id,
+            "status": status,
+            "total_latency_ms": total_latency_ms,
             "success": plan.is_complete and not plan.has_failures,
             "summary": plan.to_summary(),
             "final_state": final_state,
         })
 
         return final_state
+
+    def _skip_blocked_steps(self, plan: ExecutionPlan) -> bool:
+        skipped_any = False
+        blocked_step_ids = {
+            step.step_id
+            for step in plan.steps
+            if step.status in (StepStatus.FAILED, StepStatus.SKIPPED)
+        }
+        if not blocked_step_ids:
+            return False
+
+        for step in plan.steps:
+            if step.status != StepStatus.PENDING:
+                continue
+            failed_dependency = next(
+                (dep for dep in step.depends_on if dep in blocked_step_ids),
+                None,
+            )
+            if not failed_dependency:
+                continue
+
+            now = datetime.utcnow()
+            step.status = StepStatus.SKIPPED
+            step.started_at = now
+            step.completed_at = now
+            step.error = f"Skipped because dependency failed: {failed_dependency}"
+            self._emit("step_skipped", {
+                "plan_id": plan.plan_id,
+                "step_id": step.step_id,
+                "step_index": step.step_index,
+                "skill_id": step.skill_id,
+                "skill_name": step.skill_name or step.skill_id,
+                "reason": step.error,
+                "failed_dependency": failed_dependency,
+            })
+            skipped_any = True
+        return skipped_any
+
+    def _emit_step_failed(self, plan_id: str, step: PlanStep, error: str) -> None:
+        self._emit("step_failed", {
+            "plan_id": plan_id,
+            "step_id": step.step_id,
+            "step_index": step.step_index,
+            "skill_id": step.skill_id,
+            "skill_name": step.skill_name or step.skill_id,
+            "error": error,
+            "latency_ms": step.latency_ms,
+        })
 
     async def _execute_step(
         self,
@@ -127,14 +191,17 @@ class SkillExecutor:
         """执行单个步骤（含重试）。"""
         skill = skill_map.get(step.skill_id)
         if not skill:
+            step.started_at = datetime.utcnow()
             step.status = StepStatus.FAILED
-            step.error = f"Skill 不存在: {step.skill_id}"
-            self._emit("step_failed", {"step_id": step.step_id, "error": step.error})
+            step.error = f"Skill not found: {step.skill_id}"
+            step.completed_at = datetime.utcnow()
+            self._emit_step_failed(tracker._task_id, step, step.error)
             return None
 
         step.status = StepStatus.RUNNING
         step.started_at = datetime.utcnow()
         self._emit("step_started", {
+            "plan_id": tracker._task_id,
             "step_id": step.step_id,
             "step_index": step.step_index,
             "skill_name": skill.name,
@@ -171,7 +238,10 @@ class SkillExecutor:
 
                 record.complete(output, tracker.current)
                 self._emit("step_completed", {
+                    "plan_id": tracker._task_id,
                     "step_id": step.step_id,
+                    "step_index": step.step_index,
+                    "skill_id": skill.skill_id,
                     "skill_name": skill.name,
                     "output": output,
                     "latency_ms": step.latency_ms,
@@ -179,7 +249,7 @@ class SkillExecutor:
                 return record
 
             except asyncio.TimeoutError:
-                error = f"步骤超时 ({self._step_timeout}s)"
+                error = f"Step timed out ({self._step_timeout}s)"
                 if attempt < self._max_retries:
                     logger.warning(f"步骤超时，重试 {attempt + 1}/{self._max_retries}: {skill.name}")
                     continue
@@ -188,7 +258,7 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
-                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
             except Exception as e:
@@ -202,7 +272,7 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, type(e).__name__)
-                self._emit("step_failed", {"step_id": step.step_id, "error": error})
+                self._emit_step_failed(tracker._task_id, step, error)
                 return record
 
         return record
@@ -302,6 +372,8 @@ class SkillExecutor:
 
         for sub_id in impl.sub_skill_ids:
             sub_skill = await self._registry.get(sub_id)
+            if not sub_skill and hasattr(self._registry, "get_by_name"):
+                sub_skill = await self._registry.get_by_name(sub_id)
             if not sub_skill:
                 logger.warning(f"子 Skill 不存在，跳过: {sub_id}")
                 continue
@@ -339,3 +411,28 @@ class SkillExecutor:
         except Exception as e:
             record.fail(str(e), type(e).__name__)
         return record
+
+
+def _plan_status(plan: ExecutionPlan) -> str:
+    if not plan.steps:
+        return "failed"
+    if plan.is_complete and not plan.has_failures:
+        return "success"
+    success_count = sum(1 for step in plan.steps if step.status == StepStatus.SUCCESS)
+    return "partial" if success_count else "failed"
+
+
+def _has_pending_steps(plan: ExecutionPlan) -> bool:
+    return any(step.status == StepStatus.PENDING for step in plan.steps)
+
+
+def _ready_steps(plan: ExecutionPlan) -> List[PlanStep]:
+    successful_ids = {
+        step.step_id for step in plan.steps if step.status == StepStatus.SUCCESS
+    }
+    return [
+        step
+        for step in plan.steps
+        if step.status == StepStatus.PENDING
+        and all(dep in successful_ids for dep in step.depends_on)
+    ]

@@ -1,4 +1,4 @@
-"""Skill CRUD + 搜索路由。"""
+"""Skill CRUD and search routes."""
 
 from __future__ import annotations
 
@@ -6,17 +6,16 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ...models.skill_model import Skill, SkillState, SkillType
+from ...models.skill_model import Skill, SkillEvaluation, SkillState, SkillType
 from ..deps import AppState, get_app_state
 from ..schemas import (
+    EvolutionStats,
     OKResponse,
     SkillCreateRequest,
-    SkillListRequest,
     SkillSearchRequest,
     SkillSearchResult,
     SkillSummary,
     SkillUpdateRequest,
-    EvolutionStats,
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -32,22 +31,44 @@ def _to_summary(skill: Skill) -> SkillSummary:
         tags=skill.tags,
         version=skill.version,
         granularity_level=skill.granularity_level,
+        evaluation=skill.evaluation,
         metrics=skill.metrics,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
     )
 
 
+def _create_provenance(req: SkillCreateRequest):
+    from ...models.skill_model import SkillProvenance
+
+    if req.provenance is not None:
+        return req.provenance
+    return SkillProvenance(source_type="api", created_by_agent=req.author)
+
+
+async def _sync_graph_for_skill(app: AppState, skill: Skill) -> None:
+    graph = getattr(app, "graph", None)
+    if graph is None:
+        return
+    try:
+        await graph.sync_skill(skill)
+        if hasattr(graph, "sync_auto_edges"):
+            skills = await app.wiki.list(limit=10000)
+            await graph.sync_auto_edges(skill, [item.skill_id for item in skills])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
+
+
 @router.get("", response_model=List[SkillSummary])
 async def list_skills(
     state: Optional[SkillState] = Query(None),
     skill_type: Optional[SkillType] = Query(None),
-    tags: Optional[str] = Query(None, description="逗号分隔的标签"),
+    tags: Optional[str] = Query(None, description="Comma-separated tags"),
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     app: AppState = Depends(get_app_state),
 ) -> List[SkillSummary]:
-    tag_list = [t.strip() for t in tags.split(",")] if tags else None
+    tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()] if tags else None
     skills = await app.wiki.list(
         state=state,
         skill_type=skill_type,
@@ -55,7 +76,7 @@ async def list_skills(
         limit=limit,
         offset=offset,
     )
-    return [_to_summary(s) for s in skills]
+    return [_to_summary(skill) for skill in skills]
 
 
 @router.get("/evolution-stats", response_model=EvolutionStats)
@@ -64,35 +85,35 @@ async def get_evolution_stats(
 ) -> EvolutionStats:
     skills = await app.wiki.list()
     total = len(skills)
-    auto_gen = sum(1 for s in skills if s.provenance and s.provenance.source_type in ("ingest", "auto", "trajectory"))
-    manual = total - auto_gen
-    total_exec = sum(s.metrics.total_executions for s in skills)
-    avg_reuse = total_exec / total if total else 0.0
-    rated = [s for s in skills if s.metrics.total_executions >= 5]
-    avg_sr = sum(s.metrics.success_rate for s in rated) / len(rated) if rated else 1.0
-    multi_version = sum(1 for s in skills if s.version != "1.0.0")
+    auto_gen = sum(
+        1 for skill in skills
+        if skill.provenance and skill.provenance.source_type in ("ingest", "auto", "trajectory")
+    )
+    total_exec = sum(skill.metrics.total_executions for skill in skills)
+    rated = [skill for skill in skills if skill.metrics.total_executions >= 5]
+    avg_sr = sum(skill.metrics.success_rate for skill in rated) / len(rated) if rated else 1.0
     by_cat: dict = {}
-    for s in skills:
-        cat = s.meta_category.value if s.meta_category else s.skill_type.value
+    for skill in skills:
+        cat = skill.meta_category.value if skill.meta_category else skill.skill_type.value
         by_cat[cat] = by_cat.get(cat, 0) + 1
-    recent = sorted(skills, key=lambda s: s.updated_at, reverse=True)[:8]
+    recent = sorted(skills, key=lambda skill: skill.updated_at, reverse=True)[:8]
     activity = [
         {
-            "skill_id": s.skill_id,
-            "name": s.name,
-            "event": "updated" if s.version != "1.0.0" else "created",
-            "state": s.state.value,
-            "time": s.updated_at.isoformat(),
+            "skill_id": skill.skill_id,
+            "name": skill.name,
+            "event": "updated" if skill.version != "1.0.0" else "created",
+            "state": skill.state.value,
+            "time": skill.updated_at.isoformat(),
         }
-        for s in recent
+        for skill in recent
     ]
     return EvolutionStats(
         total_skills=total,
         auto_generated=auto_gen,
-        manual=manual,
-        avg_reuse_rate=round(avg_reuse, 2),
+        manual=total - auto_gen,
+        avg_reuse_rate=round(total_exec / total, 2) if total else 0.0,
         avg_success_rate=round(avg_sr, 3),
-        version_improved_count=multi_version,
+        version_improved_count=sum(1 for skill in skills if skill.version != "1.0.0"),
         skills_by_category=by_cat,
         recent_activity=activity,
     )
@@ -103,17 +124,22 @@ async def create_skill(
     req: SkillCreateRequest,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
-    from ...models.skill_model import SkillProvenance
     skill = Skill(
         name=req.name,
         description=req.description,
         skill_type=req.skill_type,
+        state=req.state,
         tags=req.tags,
         interface=req.interface,
         implementation=req.implementation,
-        provenance=SkillProvenance(source_type="api", author=req.author),
+        evaluation=req.evaluation or SkillEvaluation(),
+        provenance=_create_provenance(req),
     )
-    created = await app.wiki.create(skill)
+    try:
+        created = await app.wiki.create(skill)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _sync_graph_for_skill(app, created)
     return _to_summary(created)
 
 
@@ -124,7 +150,7 @@ async def get_skill(
 ) -> SkillSummary:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     return _to_summary(skill)
 
 
@@ -135,7 +161,7 @@ async def get_skill_full(
 ) -> Skill:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     return skill
 
 
@@ -147,7 +173,7 @@ async def update_skill(
 ) -> SkillSummary:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
 
     updates: dict = {}
     if req.description is not None:
@@ -155,14 +181,18 @@ async def update_skill(
     if req.tags is not None:
         updates["tags"] = req.tags
     if req.interface is not None:
-        updates["interface"] = req.interface.model_dump()
+        updates["interface"] = req.interface
     if req.implementation is not None:
-        updates["implementation"] = req.implementation.model_dump()
+        updates["implementation"] = req.implementation
+    if req.evaluation is not None:
+        updates["evaluation"] = req.evaluation
 
-    updated = await app.wiki.db.update(skill_id, updates)
+    updated = await app.wiki.update(skill_id, **updates)
     if not updated:
-        raise HTTPException(status_code=500, detail="更新失败")
-    await app.wiki.cache.invalidate(skill_id)
+        raise HTTPException(status_code=500, detail="Skill update failed")
+    await _sync_graph_for_skill(app, updated)
+    if hasattr(app.wiki, "invalidate"):
+        await app.wiki.invalidate(skill_id)
     return _to_summary(updated)
 
 
@@ -173,11 +203,18 @@ async def delete_skill(
 ) -> OKResponse:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
-    deleted = await app.wiki.db.delete(skill_id)
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
+    deleted = await app.wiki.delete(skill_id)
     if deleted:
-        await app.wiki.cache.invalidate(skill_id)
-    return OKResponse(message=f"Skill {skill_id} 已删除")
+        graph = getattr(app, "graph", None)
+        if graph is not None:
+            try:
+                await graph.remove_skill(skill_id)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Graph remove failed: {exc}") from exc
+        if hasattr(app.wiki, "invalidate"):
+            await app.wiki.invalidate(skill_id)
+    return OKResponse(message=f"Skill {skill_id} deleted")
 
 
 @router.post("/search", response_model=List[SkillSearchResult])
@@ -185,28 +222,40 @@ async def search_skills(
     req: SkillSearchRequest,
     app: AppState = Depends(get_app_state),
 ) -> List[SkillSearchResult]:
-    from ...layers.skill_repository.indexing import SearchQuery
+    from ...layers.skill_repository.indexing import SearchQuery, normalize_search_mode
+
     query = SearchQuery(
         text=req.query,
         tags=req.tags or [],
         skill_type=req.skill_type,
         state=req.state,
+        domain=getattr(req, "domain", None),
+        min_success_rate=getattr(req, "min_success_rate", 0.0),
+        include_deprecated=getattr(req, "include_deprecated", False),
+        mode=normalize_search_mode(getattr(req, "mode", "lexical")),
         max_results=req.limit,
     )
     results = await app.search.search(query)
     return [
         SkillSearchResult(
-            skill_id=r.skill.skill_id,
-            name=r.skill.name,
-            description=r.skill.description,
-            skill_type=r.skill.skill_type,
-            state=r.skill.state,
-            tags=r.skill.tags,
-            version=r.skill.version,
-            score=r.score,
-            match_reason=", ".join(r.match_reasons) if r.match_reasons else "",
+            skill_id=result.skill.skill_id,
+            name=result.skill.name,
+            description=result.skill.description,
+            skill_type=result.skill.skill_type,
+            state=result.skill.state,
+            tags=result.skill.tags,
+            version=result.skill.version,
+            score=result.score,
+            match_reason=", ".join(result.match_reasons) if result.match_reasons else "",
+            search_mode=query.mode,
+            score_components=result.score_components,
+            explanation={
+                "lexical": result.score_components.get("lexical", 0.0),
+                "semantic": result.score_components.get("semantic", 0.0),
+                "health": result.score_components.get("health", 0.0),
+            },
         )
-        for r in results
+        for result in results
     ]
 
 
@@ -217,6 +266,6 @@ async def get_version_history(
 ) -> List[SkillSummary]:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     history = await app.wiki.get_version_history(skill.name)
-    return [_to_summary(s) for s in history]
+    return [_to_summary(item) for item in history]

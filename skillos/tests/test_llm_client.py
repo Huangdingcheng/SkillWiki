@@ -17,6 +17,7 @@ from skillos.utils.llm_client import (
     Message,
     LLMResponse,
     create_client,
+    _resolve_chat_completions_url,
 )
 
 
@@ -217,3 +218,25 @@ class TestLLMClient:
             client.chat([Message.user("hi")], model="gpt-5.4-turbo")
 
         assert captured_payload["model"] == "gpt-5.4-turbo"
+
+    def test_default_openai_compatible_chat_endpoint(self):
+        assert (
+            _resolve_chat_completions_url("https://yunwu.ai")
+            == "https://yunwu.ai/v1/chat/completions"
+        )
+
+    def test_deepseek_base_url_uses_deepseek_chat_endpoint(self):
+        assert (
+            _resolve_chat_completions_url("https://api.deepseek.com")
+            == "https://api.deepseek.com/chat/completions"
+        )
+
+    def test_v1_and_full_chat_endpoint_are_not_double_appended(self):
+        assert (
+            _resolve_chat_completions_url("https://api.deepseek.com/v1")
+            == "https://api.deepseek.com/v1/chat/completions"
+        )
+        assert (
+            _resolve_chat_completions_url("https://api.deepseek.com/chat/completions")
+            == "https://api.deepseek.com/chat/completions"
+        )

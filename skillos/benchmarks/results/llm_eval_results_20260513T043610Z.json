@@ -1,0 +1,1939 @@
+{
+  "generated_at": "2026-05-13T04:36:10Z",
+  "benchmark": "llm_planner_eval",
+  "task_count": 12,
+  "modes": [
+    "fallback",
+    "llm"
+  ],
+  "config": {
+    "api_url": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.0,
+    "max_tokens": 2000,
+    "timeout": 90,
+    "retry_count": 1,
+    "seed": null,
+    "context": "",
+    "distractor_count": 6,
+    "api_key_provided": true
+  },
+  "results": [
+    {
+      "task_id": "web_fill_login_form",
+      "domain": "web",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.15,
+      "expected_skills": [
+        "fill_form"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "fill_form"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "1edfa516-560f-4fe6-a1e0-b4ee94543681",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "160c3739-4207-42aa-bf7c-e6f33d353aae"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "b1e1c569-34b5-47ca-9b7c-d29241d36331"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "4ed2fc8d-287e-45df-aebc-57f3091d1407"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "5d874a44-d468-4636-8ba9-5dcbb2b2085b"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: fill_form; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['fill_form'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "web_fill_login_form",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 6154.685,
+      "expected_skills": [
+        "fill_form"
+      ],
+      "selected_skill_ids": [
+        "fill_form"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 734,
+        "completion_tokens": 293,
+        "total_tokens": 1027,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 152
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 734
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "c8962a3c-042d-48f4-af7d-0438e9a4e1be",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "fill_form",
+          "skill_name": "fill_form",
+          "depends_on": [],
+          "input_mapping": {
+            "url": "https://demo.local/login",
+            "form_data": {
+              "username": "demo",
+              "password": "secret"
+            }
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_click_and_type",
+      "domain": "web",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.363,
+      "expected_skills": [
+        "click_element",
+        "type_text"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "missing_expected": [
+        "click_element",
+        "type_text"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "ad660549-d575-4a60-b086-d00f147afcc7",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "49472e57-3458-4ce6-9686-80a7b076ea10"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "c7d0f0a7-3ce4-4449-92f4-b87569934e36"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "87bebeb7-2ce4-491e-9faa-61c59d2bdc81"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [
+            "65245398-c4e1-4164-8c22-e17615db26bf"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: click_element, type_text; unexpected skills: build_tool_call, detect_schema_change, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['click_element', 'type_text'], got ['build_tool_call', 'detect_schema_change', 'extract_function_skill', 'extract_selector', 'extract_steps']"
+    },
+    {
+      "task_id": "web_click_and_type",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 7590.203,
+      "expected_skills": [
+        "click_element",
+        "type_text"
+      ],
+      "selected_skill_ids": [
+        "click_element",
+        "type_text"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 741,
+        "completion_tokens": 549,
+        "total_tokens": 1290,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 323
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 741
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "f47acc35-c2b0-426a-9e16-70e8c614bf86",
+      "step_count": 2,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [],
+          "input_mapping": {
+            "selector": "#search"
+          }
+        },
+        {
+          "step_index": 1,
+          "skill_id": "type_text",
+          "skill_name": "type_text",
+          "depends_on": [
+            "ec3f7ddb-86c2-41e2-a31f-2b253d3edb30"
+          ],
+          "input_mapping": {
+            "text": "SkillOS"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_extract_selector",
+      "domain": "web",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.216,
+      "expected_skills": [
+        "extract_selector"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_steps"
+      ],
+      "missing_expected": [
+        "extract_selector"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_steps"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "bf21a23e-6dad-4e5f-a7eb-5d261b5f60bf",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "cc71a983-a66a-4a23-9f01-2270ffcbff29"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "de0dd34f-8067-41ec-9309-a7720928059c"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "1512062b-5b47-4ae3-b931-67c227b114f0"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [
+            "02c7787e-325f-437f-abec-6f1bf4d279a2"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: extract_selector; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_steps; skill order mismatch: expected ['extract_selector'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_steps']"
+    },
+    {
+      "task_id": "web_extract_selector",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 9158.483,
+      "expected_skills": [
+        "extract_selector"
+      ],
+      "selected_skill_ids": [
+        "extract_selector"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 724,
+        "completion_tokens": 700,
+        "total_tokens": 1424,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 593
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 724
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "8c5213c7-cb34-4bf8-9177-21ef2db93f45",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "web_submit_form",
+      "domain": "web",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.1,
+      "expected_skills": [
+        "submit_form"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "submit_form"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "e48d336a-532c-489d-8a85-cb484ab875a4",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "7c7a8018-bd76-483f-850d-d9d3d288b503"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "16adf3af-acbd-4b33-9a3b-ff4eaf8bf0c4"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "36f06ae7-371a-4a2a-91f7-3eb201df6b48"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "4b5180b4-3f4b-4edb-8671-772638b84270"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: submit_form; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['submit_form'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "web_submit_form",
+      "domain": "web",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 8940.472,
+      "expected_skills": [
+        "submit_form"
+      ],
+      "selected_skill_ids": [
+        "submit_form"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 705,
+        "completion_tokens": 379,
+        "total_tokens": 1084,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 293
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 705
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "37939e00-0c77-40a4-998f-9de014045cd5",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "submit_form",
+          "skill_name": "submit_form",
+          "depends_on": [],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_parse_openapi_endpoint",
+      "domain": "api",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.12,
+      "expected_skills": [
+        "parse_openapi_endpoint"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "parse_openapi_endpoint"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "28808755-1b0f-49c3-a39e-e924ba7d0de2",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "ae0ace70-b091-4bfd-9cf1-75826002484e"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "d42539bb-693d-472e-a2cd-f8d72d11baf5"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "388fb788-9d93-435e-848b-031c0df1c40d"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "bd9e545a-69ef-4ebb-aefc-8e319fd4c7c5"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: parse_openapi_endpoint; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['parse_openapi_endpoint'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "api_parse_openapi_endpoint",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 4943.536,
+      "expected_skills": [
+        "parse_openapi_endpoint"
+      ],
+      "selected_skill_ids": [
+        "parse_openapi_endpoint"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 728,
+        "completion_tokens": 288,
+        "total_tokens": 1016,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 169
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 728
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "32fb5609-32ce-4bda-bc39-396d87ca8bb7",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "parse_openapi_endpoint",
+          "skill_name": "parse_openapi_endpoint",
+          "depends_on": [],
+          "input_mapping": {
+            "openapi_fragment": "POST /users createUser"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_build_tool_call",
+      "domain": "api",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.099,
+      "expected_skills": [
+        "build_tool_call"
+      ],
+      "selected_skill_ids": [
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "missing_expected": [
+        "build_tool_call"
+      ],
+      "unexpected_skills": [
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "dd293467-521c-46dd-aa89-f6e7018eb990",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "b0a05570-2fe8-4b92-851b-a831c1ba7dff"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "e6abed28-15f6-41ac-9aa0-b95976e18016"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "f03de5a9-14e0-414d-a704-ffd5f73a12bc"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [
+            "9fa86116-3bed-4b15-b26a-5cf93188a533"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: build_tool_call; unexpected skills: click_element, detect_schema_change, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['build_tool_call'], got ['click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector', 'extract_steps']"
+    },
+    {
+      "task_id": "api_build_tool_call",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 5877.286,
+      "expected_skills": [
+        "build_tool_call"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 726,
+        "completion_tokens": 308,
+        "total_tokens": 1034,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 153
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 726
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "54c8cf10-3b5b-4abb-ba57-91d6ca056abc",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {
+            "operation_id": "createUser",
+            "arguments": {
+              "name": "Ada"
+            }
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "api_validate_response_schema",
+      "domain": "api",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 2.303,
+      "expected_skills": [
+        "validate_response_schema"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "validate_response_schema"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "8903f890-c0e5-4183-9fdf-623ecec801ec",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "a761b064-6d1a-45cc-8d92-b24bf1d12edd"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "10b5585f-29c4-4230-85fc-f40b5d1c5d21"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "b0ed28b8-7d54-4649-9e0a-cae9ed3f00da"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "dfcb9012-aafc-43e5-b875-dc83ff8d8240"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: validate_response_schema; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['validate_response_schema'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "api_validate_response_schema",
+      "domain": "api",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 9576.258,
+      "expected_skills": [
+        "validate_response_schema"
+      ],
+      "selected_skill_ids": [
+        "validate_response_schema"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 734,
+        "completion_tokens": 312,
+        "total_tokens": 1046,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 182
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 734
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "9ead58e0-b6ec-4283-85c8-d175b84d2982",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "validate_response_schema",
+          "skill_name": "validate_response_schema",
+          "depends_on": [],
+          "input_mapping": {
+            "response": "${task.input.response}",
+            "required": "${task.input.required}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "doc_extract_steps",
+      "domain": "doc",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.125,
+      "expected_skills": [
+        "extract_steps"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "extract_steps"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "c8826fbc-8063-4a14-843b-3d7a7e526e19",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "094f5889-b668-4a0b-b3ad-188a4d640d3d"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "b7f3db82-bea3-4b0b-b76e-8ac3c82cf8f5"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "883f9f71-0b4b-4f6a-a2eb-95970fbe7d62"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "9b8fba91-015a-448f-bcb7-a95b86b2df88"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: extract_steps; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['extract_steps'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "doc_extract_steps",
+      "domain": "doc",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 7094.007,
+      "expected_skills": [
+        "extract_steps"
+      ],
+      "selected_skill_ids": [
+        "extract_steps"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 722,
+        "completion_tokens": 238,
+        "total_tokens": 960,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 120
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 722
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "04dcb742-fb37-43ae-bc16-95f8a4af4e57",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [],
+          "input_mapping": {
+            "text": "Open settings, select profile, then save changes."
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "script_extract_function_skill",
+      "domain": "script",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.096,
+      "expected_skills": [
+        "extract_function_skill"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "missing_expected": [
+        "extract_function_skill"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "3ba47dc3-b9e7-4238-ae22-ea9bb2f5ee1a",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "85c2bea1-7e76-43af-91da-2c06bb07ace1"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "156a0d65-45d0-4deb-ae32-0d5010b18781"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "111c54d6-e997-41a6-bc7e-7173694387ea"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [
+            "40977f3f-8fc9-4122-99a1-00b44947b7d1"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: extract_function_skill; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_selector, extract_steps; skill order mismatch: expected ['extract_function_skill'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_selector', 'extract_steps']"
+    },
+    {
+      "task_id": "script_extract_function_skill",
+      "domain": "script",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 7026.035,
+      "expected_skills": [
+        "extract_function_skill"
+      ],
+      "selected_skill_ids": [
+        "extract_function_skill"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 721,
+        "completion_tokens": 475,
+        "total_tokens": 1196,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 357
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 721
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "c3704e65-73da-4e59-9732-7afdddd0deb7",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [],
+          "input_mapping": {
+            "code": "${input.code}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_repair_failed_postcondition",
+      "domain": "runtime",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.106,
+      "expected_skills": [
+        "reflect_failure"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "reflect_failure"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "4c50befe-4d4a-4822-aef4-dda883b6d08c",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "9b634788-ba00-489b-aadb-59a6454f75f9"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "a97a4a40-8f38-4846-abbf-a6ae9baa65ae"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "9124d13f-d258-4da4-b1b3-e4bab9b130ae"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "2d220f77-37ae-43f7-bb10-282c254ab2d9"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: reflect_failure; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['reflect_failure'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "skill_repair_failed_postcondition",
+      "domain": "runtime",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 7357.896,
+      "expected_skills": [
+        "reflect_failure"
+      ],
+      "selected_skill_ids": [
+        "reflect_failure"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 736,
+        "completion_tokens": 493,
+        "total_tokens": 1229,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 343
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 736
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "19765c82-7292-4474-9d91-146d7f359956",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "reflect_failure",
+          "skill_name": "reflect_failure",
+          "depends_on": [],
+          "input_mapping": {
+            "failed_skill_id": "${input.failed_skill_id}",
+            "issue": "${input.issue}",
+            "context": "${raw_context}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_detect_breaking_schema_change",
+      "domain": "governance",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.089,
+      "expected_skills": [
+        "detect_schema_change"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "missing_expected": [
+        "detect_schema_change"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "extract_function_skill",
+        "extract_selector",
+        "extract_steps"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "7780cd50-dabc-4db9-b989-974dabd6e3ef",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "50d0fc0d-65af-49e6-b6aa-db1f34687a84"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "52accf51-869d-483a-a8bd-c61d8138b778"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "f313e639-c1cb-4c7e-afa7-65ace89f6bd3"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_steps",
+          "skill_name": "extract_steps",
+          "depends_on": [
+            "50adec20-f660-4217-8dba-d8c0bdcff573"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: detect_schema_change; unexpected skills: build_tool_call, click_element, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['detect_schema_change'], got ['build_tool_call', 'click_element', 'extract_function_skill', 'extract_selector', 'extract_steps']"
+    },
+    {
+      "task_id": "skill_detect_breaking_schema_change",
+      "domain": "governance",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 5367.362,
+      "expected_skills": [
+        "detect_schema_change"
+      ],
+      "selected_skill_ids": [
+        "detect_schema_change"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 737,
+        "completion_tokens": 301,
+        "total_tokens": 1038,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 162
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 737
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "2d2835a7-06a3-4cc3-b5f6-5cb1505fa1ca",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [],
+          "input_mapping": {
+            "before": "{{input.before}}",
+            "after": "{{input.after}}"
+          }
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    },
+    {
+      "task_id": "skill_graph_trace_provenance",
+      "domain": "graph",
+      "mode": "fallback",
+      "status": "functional_failure",
+      "success": false,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 0.097,
+      "expected_skills": [
+        "trace_provenance"
+      ],
+      "selected_skill_ids": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "missing_expected": [
+        "trace_provenance"
+      ],
+      "unexpected_skills": [
+        "build_tool_call",
+        "click_element",
+        "detect_schema_change",
+        "extract_function_skill",
+        "extract_selector"
+      ],
+      "plan_source": "fallback",
+      "llm_model": null,
+      "llm_usage": {},
+      "llm_finish_reason": null,
+      "plan_id": "3830ad95-3859-4f1b-b4e9-371fb9f9848d",
+      "step_count": 5,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "build_tool_call",
+          "skill_name": "build_tool_call",
+          "depends_on": [],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 1,
+          "skill_id": "click_element",
+          "skill_name": "click_element",
+          "depends_on": [
+            "06e5d0f6-2eba-4c2c-a421-f981aab99e30"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 2,
+          "skill_id": "detect_schema_change",
+          "skill_name": "detect_schema_change",
+          "depends_on": [
+            "bd9fe695-18f0-4ea8-ae8b-342d629720ee"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 3,
+          "skill_id": "extract_function_skill",
+          "skill_name": "extract_function_skill",
+          "depends_on": [
+            "100f23bc-4c53-4e21-bcc0-b2f5ac93a15f"
+          ],
+          "input_mapping": {}
+        },
+        {
+          "step_index": 4,
+          "skill_id": "extract_selector",
+          "skill_name": "extract_selector",
+          "depends_on": [
+            "66cacc89-0f5f-4686-8ff8-54e2d897ab2e"
+          ],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": null,
+      "failure_reason": "missing expected skills: trace_provenance; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['trace_provenance'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']"
+    },
+    {
+      "task_id": "skill_graph_trace_provenance",
+      "domain": "graph",
+      "mode": "llm",
+      "status": "success",
+      "success": true,
+      "api_failure": false,
+      "api_error_type": null,
+      "latency_ms": 11596.173,
+      "expected_skills": [
+        "trace_provenance"
+      ],
+      "selected_skill_ids": [
+        "trace_provenance"
+      ],
+      "missing_expected": [],
+      "unexpected_skills": [],
+      "plan_source": "llm",
+      "llm_model": "deepseek-v4-flash",
+      "llm_usage": {
+        "prompt_tokens": 741,
+        "completion_tokens": 641,
+        "total_tokens": 1382,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 516
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 741
+      },
+      "llm_finish_reason": "stop",
+      "plan_id": "3bb36e8f-96fa-40ee-9583-bd422ea37951",
+      "step_count": 1,
+      "steps": [
+        {
+          "step_index": 0,
+          "skill_id": "trace_provenance",
+          "skill_name": "trace_provenance",
+          "depends_on": [],
+          "input_mapping": {}
+        }
+      ],
+      "llm_request": {
+        "api_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "seed": null,
+        "context_provided": false
+      },
+      "failure_reason": ""
+    }
+  ],
+  "summary": {
+    "task_count": 12,
+    "mode_totals": {
+      "fallback": {
+        "total": 12,
+        "success": 0,
+        "functional_failure": 12,
+        "api_failure": 0,
+        "skipped": 0,
+        "success_rate_excluding_api_failures": 0.0
+      },
+      "llm": {
+        "total": 12,
+        "success": 12,
+        "functional_failure": 0,
+        "api_failure": 0,
+        "skipped": 0,
+        "success_rate_excluding_api_failures": 1.0
+      }
+    },
+    "rows": [
+      {
+        "task_id": "api_build_tool_call",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector",
+          "extract_steps"
+        ],
+        "fallback_failure_reason": "missing expected skills: build_tool_call; unexpected skills: click_element, detect_schema_change, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['build_tool_call'], got ['click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector', 'extract_steps']",
+        "llm_status": "success",
+        "llm_selected": [
+          "build_tool_call"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "api_parse_openapi_endpoint",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: parse_openapi_endpoint; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['parse_openapi_endpoint'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "parse_openapi_endpoint"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "api_validate_response_schema",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: validate_response_schema; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['validate_response_schema'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "validate_response_schema"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "doc_extract_steps",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: extract_steps; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['extract_steps'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_steps"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "script_extract_function_skill",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_selector",
+          "extract_steps"
+        ],
+        "fallback_failure_reason": "missing expected skills: extract_function_skill; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_selector, extract_steps; skill order mismatch: expected ['extract_function_skill'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_selector', 'extract_steps']",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_function_skill"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_detect_breaking_schema_change",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "extract_function_skill",
+          "extract_selector",
+          "extract_steps"
+        ],
+        "fallback_failure_reason": "missing expected skills: detect_schema_change; unexpected skills: build_tool_call, click_element, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['detect_schema_change'], got ['build_tool_call', 'click_element', 'extract_function_skill', 'extract_selector', 'extract_steps']",
+        "llm_status": "success",
+        "llm_selected": [
+          "detect_schema_change"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_graph_trace_provenance",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: trace_provenance; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['trace_provenance'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "trace_provenance"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "skill_repair_failed_postcondition",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: reflect_failure; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['reflect_failure'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "reflect_failure"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_click_and_type",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector",
+          "extract_steps"
+        ],
+        "fallback_failure_reason": "missing expected skills: click_element, type_text; unexpected skills: build_tool_call, detect_schema_change, extract_function_skill, extract_selector, extract_steps; skill order mismatch: expected ['click_element', 'type_text'], got ['build_tool_call', 'detect_schema_change', 'extract_function_skill', 'extract_selector', 'extract_steps']",
+        "llm_status": "success",
+        "llm_selected": [
+          "click_element",
+          "type_text"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_extract_selector",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_steps"
+        ],
+        "fallback_failure_reason": "missing expected skills: extract_selector; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_steps; skill order mismatch: expected ['extract_selector'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_steps']",
+        "llm_status": "success",
+        "llm_selected": [
+          "extract_selector"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_fill_login_form",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: fill_form; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['fill_form'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "fill_form"
+        ],
+        "winner": "llm"
+      },
+      {
+        "task_id": "web_submit_form",
+        "fallback_status": "functional_failure",
+        "fallback_selected": [
+          "build_tool_call",
+          "click_element",
+          "detect_schema_change",
+          "extract_function_skill",
+          "extract_selector"
+        ],
+        "fallback_failure_reason": "missing expected skills: submit_form; unexpected skills: build_tool_call, click_element, detect_schema_change, extract_function_skill, extract_selector; skill order mismatch: expected ['submit_form'], got ['build_tool_call', 'click_element', 'detect_schema_change', 'extract_function_skill', 'extract_selector']",
+        "llm_status": "success",
+        "llm_selected": [
+          "submit_form"
+        ],
+        "winner": "llm"
+      }
+    ]
+  }
+}

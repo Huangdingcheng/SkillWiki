@@ -13,7 +13,7 @@ body {
   min-height: 100vh;
 }
 
-/* 滚动条美化 */
+/* Scrollbar polish */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -29,7 +29,7 @@ body {
   background: rgba(0, 0, 0, 0.25);
 }
 
-/* Ant Design 覆盖 */
+/* Ant Design overrides */
 .ant-layout-sider-trigger {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }

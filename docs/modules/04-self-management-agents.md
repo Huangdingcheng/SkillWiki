@@ -1,159 +1,154 @@
 # Module 04: Self-Management Agents
 
-**负责人分支：`agents-dev`**
+负责分支：`agents-dev`
 
----
+Self-Management Agents 是 SkillOS 的自我维护层。它不直接负责前端展示，而是让系统能从经验中生成 Skill、审计 Skill、修复或拆分坏掉的 Skill，并把健康状态和演化结果通知出去。
 
-## 职责概述
+## 模块职责
 
-Self-Management Agents 是 SkillOS 自演化能力的核心，负责：
-- 从任务/轨迹自动生成新 Skill
-- 对 Skill 进行安全审计和质量评估
-- 修复、拆分、合并、废弃 Skill
-- 维护 Wiki 页面和图谱关系
-- 协调所有自管理流程（Meta-Controller）
-- 系统健康监控与演化周期调度
+- **Builder**：从任务描述或执行轨迹生成 Skill 草稿。
+- **Auditor**：检查 Skill 的安全性、schema 一致性、prompt 变量和实现完整性。
+- **Maintainer**：执行 repair / split / merge / deprecate 四类维护动作。
+- **Librarian**：把 Skill 变化同步到 Wiki、Graph 和版本记录。
+- **Meta-Controller**：根据事件把工作路由到对应 Agent。
+- **Monitor / Evolution Engine**：评估 Skill 健康状态，并运行演化周期。
 
----
+## 当前 Agent 能力
 
-## 5 个 Self-Management Agents
+### Skill Builder Agent
 
-### 4.1 Skill Builder Agent（`layers/skill_management/builder.py`）
+路径：`skillos/layers/skill_management/builder.py`
 
-从任务描述或执行轨迹自动生成 Skill 草稿。
+当前能力：
+- 生成 atomic / functional / strategic 三类 Skill 草稿。
+- 使用稳定英文 ASCII prompt，要求 LLM 只返回 JSON。
+- 自动归一化非法名称、非法 `skill_type`、空描述、空 prompt 和越界 confidence。
+- 自动补齐 prompt 中出现但 schema 未声明的变量。
+- 清理 `required` 中不存在于 `properties` 的字段。
 
-```python
-class SkillBuilderAgent:
-    async def build_from_task(
-        task_description: str,
-        context: Dict = {},
-    ) -> SkillDraft
+输出保持现有 `SkillDraft` 结构，不新增跨组字段。
 
-    async def build_from_trajectory(
-        trajectory: str,
-    ) -> SkillDraft
+### Skill Auditor Agent
 
-@dataclass
-class SkillDraft:
-    name: str
-    description: str
-    skill_type: str
-    tags: List[str]
-    input_schema: Dict
-    output_schema: Dict
-    prompt_template: Optional[str]
-    confidence: float           # 生成置信度 [0, 1]
-    source: str                 # "task" / "trajectory"
-```
+路径：`skillos/layers/skill_management/auditor.py`
 
-**使用的 Meta-Skill：**
-- `generate_skill_from_task()`
-- `generate_skill_from_trajectory()`
-- `formalize_skill_schema()`
+当前能力：
+- 检查 Skill 名称、描述、input/output schema、implementation 是否完整。
+- 检查 `input_schema.required` 与 `properties` 是否一致。
+- 检查 `prompt_template` 中 `{xxx}` / `{{xxx}}` 变量是否存在于 `input_schema.properties`。
+- 检查危险代码模式，例如 `subprocess`、`eval(`、`exec(`、`open(`。
+- 使用轻量加权评分，`audit_score` 保持在 `[0, 1]`。
 
-### 4.2 Skill Auditor Agent（`layers/skill_management/auditor.py`）
+### Paper-Driven D Auditor Method
 
-对 Skill 进行安全审计和质量评估。
+The D-P0 auditor rules are based on local PDF review, not only the roadmap:
 
-```python
-class SkillAuditorAgent:
-    async def audit(skill: Skill) -> AuditResult
+- SkillX motivates hierarchical Skill checks: atomic Skills must map to executable code, prompt, or tool call contracts; functional Skills must expose composition or a workflow prompt; strategic Skills must keep explicit meta categories.
+- SKILLFOUNDRY motivates provenance and validation checks: retained Skills should carry scope, inputs/outputs, execution assumptions, provenance, and tests, and candidates should enter a repair/retest loop before becoming trusted library assets.
+- SkillsBench motivates deterministic verification: released or degraded Skills should have postconditions or `evaluation.verifier_specs` / test references so pass/fail is reproducible instead of relying on LLM judgment.
+- SkillClaw / Reflexion / ExpeL motivate human-review maintenance: recurring failure evidence becomes a maintenance proposal first; accepted changes should then flow through governance review instead of silent live mutation.
 
-@dataclass
-class AuditResult:
-    skill_id: str
-    is_safe: bool
-    audit_score: float          # [0, 1]，越高越好
-    risks: List[str]            # 风险列表
-    quality_issues: List[str]   # 质量问题
-    recommendations: List[str]  # 改进建议
-    passed: bool                # audit_score >= 0.6 且 is_safe
-```
+### Skill Maintainer Agent
 
-**审计维度：**
-1. **本地规则检查**（无需 LLM）：
-   - 名称/描述是否为空
-   - 接口 Schema 是否完整
-   - 代码是否包含危险操作（`import os`, `subprocess`, `open(` 等）
-2. **LLM 深度审计**（使用 `audit_skill_safety()` Meta-Skill）：
-   - 代码注入风险
-   - 权限越界
-   - 资源滥用
-   - 数据泄露
+路径：`skillos/layers/skill_management/maintainer.py`
 
-### 4.3 Skill Maintainer Agent（`layers/skill_management/maintainer.py`）
+当前能力：
+- `repair()`：修复 prompt/code，LLM 返回空实现时给出清晰失败原因。
+- `split()`：最多生成 5 个子 Skill，跳过空子项，归一化非法名称、描述和 prompt。
+- `merge()`：合并两个相似 Skill，通过 `MaintenanceResult.updated_skill` 返回合并后的 Skill，并在 `details` 中记录 source ids、merge rationale、confidence。
+- `deprecate()`：返回废弃决策，记录 reason 和可选 replacement skill id，不直接修改 Wiki 状态。
 
-修复、拆分、废弃 Skill。
+### Feedback & Evolution
 
-```python
-class SkillMaintainerAgent:
-    async def repair(skill: Skill, failure_info: str) -> MaintenanceResult
-    async def split(skill: Skill, reason: str) -> MaintenanceResult
-    async def deprecate(skill: Skill, reason: str) -> MaintenanceResult
+路径：`skillos/layers/feedback_evolution/`
 
-@dataclass
-class MaintenanceResult:
-    action: str             # "repair" / "split" / "deprecate"
-    success: bool
-    root_cause: str
-    new_skills: List[Dict]  # split 时生成的子 Skill 草稿
-    notes: str
-```
+当前能力：
+- `monitor.py`：根据成功率、执行次数、延迟、长期未使用情况评估健康状态。
+- `repair.py`：根据健康报告生成修复结果，LLM 不可用时返回稳定 `RepairResult`。
+- `evolution_engine.py`：运行一次演化周期，生成 repair / deprecate / split / merge 任务并汇总结果。
 
-**使用的 Meta-Skill：**
-- `repair_failed_skill()`
-- `split_oversized_skill()`
-- `merge_redundant_skills()`
-- `deprecate_low_utility_skill()`
+## Evolution API
 
-### 4.4 Skill Librarian Agent（`layers/skill_management/librarian.py`）
+当前对外接口保持不变：
 
-维护 Wiki 页面内容、图谱关系和版本记录。
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| `GET` | `/api/v1/evolution/health` | 系统健康报告 |
+| `GET` | `/api/v1/evolution/health/{id}` | 单个 Skill 健康报告 |
+| `POST` | `/api/v1/evolution/repair/{id}` | 修复指定 Skill |
+| `POST` | `/api/v1/evolution/cycle` | 运行一次完整演化周期 |
 
-```python
-class SkillLibrarianAgent:
-    async def update(skill_id: str, update_reason: str, **kwargs)
-    async def register_new(draft: SkillDraft, wiki: SkillWikiManager) -> Skill
-    async def add_relation(
-        source_id: str,
-        target_id: str,
-        relation_type: str,
-        graph: SkillGraphManager,
-    )
-```
+响应字段继续使用现有 `HealthReportResponse`、`SystemHealthResponse`、`EvolutionCycleResponse`，本模块没有修改飞书锁定接口。
 
-**使用的 Meta-Skill：**
-- `update_skill_wiki_page()`
-- `update_skill_graph_relation()`
+## 第四阶段：健康事件与演化事件
 
-### 4.5 Meta-Controller Agent（`layers/skill_management/meta_controller.py`）
+第四阶段新增的是“事件可见性”，不是后台自动调度系统。
 
-协调所有自管理流程，接收事件并路由到对应 Agent。
+### 健康事件
 
-```python
-class MetaControllerAgent:
-    def enqueue(event_type: str, payload: Dict)
-    async def process_queue(wiki: SkillWikiManager)
+单个 Skill 或系统健康报告中发现异常状态时，API 层会通过现有 WebSocket 广播：
 
-# 事件类型
-EVENT_TYPES = {
-    "skill_failed": → Maintainer.repair()
-    "skill_degraded": → Maintainer.repair() 或 deprecate()
-    "new_experience": → Builder.build_from_trajectory()
-    "skill_oversized": → Maintainer.split()
-    "skills_redundant": → Maintainer（merge）
-    "skill_updated": → Librarian.update()
+| 事件名 | 触发条件 |
+| --- | --- |
+| `health_degraded` | Skill 或系统报告中存在 degraded 状态 |
+| `health_critical` | Skill 或系统报告中存在 critical 状态 |
+
+payload 摘要：
+
+```json
+{
+  "skill_id": "skill-id-or-system",
+  "skill_name": "Skill name",
+  "status": "degraded",
+  "success_rate": 0.72,
+  "issues": ["low success rate"],
+  "timestamp": "2026-05-03T12:00:00Z"
 }
 ```
 
----
+系统级事件会额外带上 `total_skills`、`healthy_count`、`degraded_count`、`critical_count` 和最多 10 个 `affected_skills`。
 
-## 12 个 Meta-Skills（Strategic L3）
+### 演化周期完成事件
 
-Meta-Skills 是 Self-Management Agents 使用的工具，以 Strategic Skill 形式存储在 SkillWiki 中。
+`POST /api/v1/evolution/cycle` 完成后广播：
+
+```text
+evolution_cycle_done
+```
+
+payload 摘要：
+
+```json
+{
+  "cycle_id": "cycle-id",
+  "tasks_total": 3,
+  "tasks_completed": 2,
+  "tasks_failed": 1,
+  "repaired": 1,
+  "deprecated": 0,
+  "merged": 0,
+  "split": 1,
+  "errors": [],
+  "timestamp": "2026-05-03T12:00:00Z"
+}
+```
+
+事件广播沿用当前 WebSocket 旧格式：
+
+```json
+{ "event": "...", "data": {} }
+```
+
+E 前端已经兼容旧格式和飞书格式，所以本阶段不重写 WebSocket 契约。广播失败会被记录为非阻塞 warning，不影响 REST API 正常返回。
+
+健康事件带有 30 秒服务端冷却窗口，同一事件和同一对象短时间内不会重复广播。这样可以避免 Dashboard 自动刷新触发健康检查、健康检查又触发前端刷新，从而形成重复告警循环。
+
+## Meta-Skills
+
+Self-Management Agents 设计上会使用一组 Strategic L3 Meta-Skills。当前代码已经围绕这些能力建立 Builder / Auditor / Maintainer / Librarian 的入口，真实 Meta-Skill 内容后续可继续沉淀到 Wiki。
 
 | Meta-Skill | 分类 | 功能 |
-|------------|------|------|
+| --- | --- | --- |
 | `generate_skill_from_task` | generation | 从任务描述生成 Skill 草稿 |
 | `generate_skill_from_trajectory` | generation | 从执行轨迹提取 Skill |
 | `formalize_skill_schema` | knowledge_management | 规范化 Skill Schema |
@@ -167,96 +162,77 @@ Meta-Skills 是 Self-Management Agents 使用的工具，以 Strategic Skill 形
 | `update_skill_wiki_page` | knowledge_management | 更新 Wiki 页面 |
 | `update_skill_graph_relation` | graph | 更新图谱关系 |
 
----
-
-## Feedback & Evolution（`layers/feedback_evolution/`）
-
-### Monitor（`monitor.py`）
-
-持续监控所有 Skill 的健康状态。
-
-```python
-class SkillHealthMonitor:
-    async def check_skill(skill: Skill) -> HealthReport
-    async def check_all(skills: List[Skill]) -> SystemHealth
-
-@dataclass
-class HealthReport:
-    skill_id: str
-    skill_name: str
-    status: str         # "healthy" / "degraded" / "critical" / "stale"
-    success_rate: float
-    usage_count: int
-    avg_latency_ms: float
-    issues: List[str]
-    recommendations: List[str]
-```
-
-**健康状态判断规则：**
-- `healthy`：success_rate >= 0.8 且 total_executions >= 5
-- `degraded`：success_rate < 0.8 且 >= 0.5
-- `critical`：success_rate < 0.5
-- `stale`：total_executions < 5（数据不足）
-
-### Repair（`repair.py`）
-
-调用 Maintainer Agent 修复 degraded/critical Skill。
-
-### Evolution Engine（`evolution_engine.py`）
-
-定期运行演化周期，批量处理需要维护的 Skill。
-
-```python
-class EvolutionEngine:
-    async def run_cycle(wiki, graph) -> EvolutionCycleResult
-    # 1. 检查所有 Skill 健康状态
-    # 2. 修复 critical Skill
-    # 3. 废弃长期 stale 且低质量的 Skill
-    # 4. 识别并合并重复 Skill
-    # 5. 拆分过大 Skill
-```
-
----
-
-## API 端点
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| `GET` | `/api/v1/evolution/health` | 系统健康报告 |
-| `GET` | `/api/v1/evolution/health/{id}` | 单个 Skill 健康报告 |
-| `POST` | `/api/v1/evolution/repair/{id}` | 修复指定 Skill |
-| `POST` | `/api/v1/evolution/cycle` | 运行完整演化周期 |
-
----
-
 ## 关键文件
 
-```
+```text
 skillos/skillos/layers/
 ├── skill_management/
-│   ├── builder.py          # SkillBuilderAgent
-│   ├── auditor.py          # SkillAuditorAgent
-│   ├── maintainer.py       # SkillMaintainerAgent
-│   ├── librarian.py        # SkillLibrarianAgent
-│   ├── meta_controller.py  # MetaControllerAgent
-│   └── __init__.py         # 统一导出
+│   ├── builder.py
+│   ├── auditor.py
+│   ├── maintainer.py
+│   ├── librarian.py
+│   ├── meta_controller.py
+│   └── __init__.py
 └── feedback_evolution/
-    ├── monitor.py          # SkillHealthMonitor
-    ├── repair.py           # 修复逻辑
-    └── evolution_engine.py # 演化周期调度
+    ├── monitor.py
+    ├── repair.py
+    └── evolution_engine.py
 ```
 
----
+## 已完成阶段
 
-## 优化方向（Member D 任务）
+- **第一阶段：底座稳定**
+  清理 Builder / Auditor / Maintainer / Repair 的 LLM-facing prompt 和 fallback，增加基础归一化与回归测试。
 
-1. **Builder 质量提升**：`build_from_task()` 的 LLM prompt 可增加 few-shot 示例，提升生成 Skill 的质量和格式一致性
-2. **Auditor 规则扩展**：增加更多本地规则检查（如 prompt_template 变量与 input_schema 的一致性验证）
-3. **Meta-Controller 事件持久化**：当前 action queue 是内存列表，可接入消息队列（如 Redis）
-4. **演化周期自动触发**：当前需要手动调用 `/evolution/cycle`，可增加定时任务（APScheduler）
-5. **Skill 合并流程**：`merge_redundant_skills` Meta-Skill 已定义，但 Maintainer 的 merge 逻辑尚未完整实现
-6. **健康监控告警**：当 critical Skill 数量超过阈值时，通过 WebSocket 推送告警事件
+- **第二阶段：Builder + Auditor 质量增强**
+  增强 few-shot prompt、schema/prompt 变量对齐、审计规则和 audit score 稳定性。
 
----
+- **第三阶段：Maintainer 维护动作收口**
+  补齐 repair / split / merge / deprecate 四类维护动作，并补充对应测试。
 
-*更新此文档时请同步更新 `architecture.md` 中的 Self-Management Flow 部分（联系负责人）*
+- **第四阶段：事件可见性**
+  增加 `health_degraded`、`health_critical`、`evolution_cycle_done` WebSocket 事件，让 E 前端 Dashboard / Evolution 能跟随 D 的真实健康和演化结果刷新。
+
+## 仍未完成
+
+- 后台自动定时演化周期。
+- WebSocket 事件在真实多客户端场景下的端到端联调。
+- C 组真实执行历史与 D 组健康退化判断的闭环联调。
+- A 组真实 Skill 图谱边与 D 组 merge/split 结果的写入联调。
+- D 任务最终 PR 交付说明与组长 review。
+
+## 验证命令
+
+```powershell
+cd C:\Users\m1516\Desktop\SKILLOS\skillos\skillos
+python -m compileall -q skillos\api skillos\layers\feedback_evolution skillos\layers\skill_management
+python -m pytest tests\test_skill_management_phase1.py -q
+python -m pytest skillos\tests\test_governance_runtime_evolution.py -q
+python -m pytest skillos\tests\test_layers.py -q
+git diff --check
+```
+
+## D-P1-1 Proposal Queue
+
+`GET /api/v1/evolution/proposals` lists queued `MaintenanceProposal` items for human review. `POST /api/v1/evolution/proposals/{id}/accept` and `POST /api/v1/evolution/proposals/{id}/reject` update proposal status only.
+
+Health checks and evolution cycles store generated proposals in an in-memory queue for the current service lifecycle. This supports page refresh visibility for E without mutating the live Skill or bypassing B-side review.
+
+When a proposal is accepted, the response also includes `next_action` pointing to `POST /api/v1/lifecycle/{skill_id}/propose-maintenance-change`. That keeps D responsible for evidence and queue state, while B remains responsible for snapshot, structured diff, and review-bundle creation.
+
+The queue is optionally persisted under `SkillStorage/metadata/maintenance/` as JSON. This keeps demo proposals and reflection memories visible across local API restarts when a storage directory is configured, while still preserving human review before any canonical Skill mutation.
+
+## D-P1-3 Reflection Memory
+
+`POST /api/v1/evolution/reflection-memory` stores a runtime reflection memory item with `skill_id`, `failure_signature`, evidence, verifier result, and trajectory summary. The first repeated failures remain memory only. When the same `(skill_id, failure_signature)` reaches the configured threshold, D creates one `MaintenanceProposal` with the memory ids, occurrence count, target signature, validation plan, and invariants to preserve.
+
+This follows the Reflexion/ExpeL pattern of keeping linguistic experience before changing behavior, and the SkillClaw pattern of aggregating recurring failure signals before proposing a library update. It deliberately stops at a proposal; accepted proposals still route to B governance for review bundle and diff creation.
+
+## Paper Method Boundary
+
+The D-side implementation follows the local SkillClaw, SKILLFOUNDRY, Reflexion, and ExpeL PDFs as an engineering boundary:
+
+- Evidence should preserve more than pass/fail. Failures, reflections, and health reports become auditable proposal evidence.
+- Proposal actions stay bounded to repair/review/split/merge/deprecate/no_action. D does not directly deploy an LLM-generated change.
+- Successful behavior is treated as an invariant to preserve, while failed behavior defines the target to fix.
+- Accepted proposals must move through validation and governance before any canonical Skill changes. In SkillOS this means B creates the review bundle and structured diff first.

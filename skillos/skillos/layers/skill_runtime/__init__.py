@@ -6,7 +6,12 @@ from .planner import ExecutionPlan, PlanStep, SkillPlanner, StepStatus
 from .reflection import Feedback, ReflectionAgent
 from .retriever import RetrievalResult, RetrievalStrategy, SkillRetriever
 from .state_tracker import StateSnapshot, StateTracker
-from .verifier import VerificationResult, VerifierAgent
+from .verifier import (
+    VerificationResult,
+    VerifierAgent,
+    VerifierSpecResult,
+    evaluate_verifier_specs,
+)
 
 __all__ = [
     "StateTracker",
@@ -24,6 +29,8 @@ __all__ = [
     "SkillEdge",
     "VerifierAgent",
     "VerificationResult",
+    "VerifierSpecResult",
+    "evaluate_verifier_specs",
     "ReflectionAgent",
     "Feedback",
 ]

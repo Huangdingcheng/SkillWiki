@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
-  Card, Steps, Tag, Button, Select, Alert, Divider,
-  Timeline, Typography, Space, Badge, Row, Col, Tooltip, message,
+  Card, Steps, Tag, Button, Select, Divider,
+  Timeline, Typography, Space, Row, Col, message,
 } from 'antd'
 import {
-  ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  SyncOutlined, StopOutlined, ExperimentOutlined,
+  ArrowRightOutlined,
+  SyncOutlined, ExperimentOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
 import { skillsApi, lifecycleApi } from '@/api/client'
@@ -13,16 +13,16 @@ import type { SkillSummary } from '@/api/types'
 
 const { Text, Paragraph } = Typography
 
-// SkillOS 8 状态机定义
+// SkillOS 8-state machine definition
 const STATES = [
-  { key: 'S0', label: 'Raw Experience', color: '#722ed1', icon: '🌱', desc: '原始经验，来自轨迹/文档/脚本' },
-  { key: 'S1', label: 'Candidate',      color: '#1677ff', icon: '🔍', desc: 'LLM 识别出的 Skill 候选' },
-  { key: 'S2', label: 'Draft',          color: '#13c2c2', icon: '✏️', desc: '形式化为结构化 Skill 草稿' },
-  { key: 'S3', label: 'Verified',       color: '#52c41a', icon: '✅', desc: '通过静态检查和语义验证' },
-  { key: 'S4', label: 'Released',       color: '#52c41a', icon: '🚀', desc: '正式发布，可被 Agent 调用' },
-  { key: 'S5', label: 'Degraded',       color: '#faad14', icon: '⚠️', desc: '成功率下降，需要修复' },
-  { key: 'S6', label: 'Deprecated',     color: '#ff4d4f', icon: '🗑️', desc: '已废弃，不再推荐使用' },
-  { key: 'S7', label: 'Archived',       color: '#8c8c8c', icon: '📦', desc: '归档，历史记录保留' },
+  { key: 'S0', label: 'Raw Experience', color: '#722ed1', icon: '🌱', desc: 'Raw experience from trajectories, documents, or scripts' },
+  { key: 'S1', label: 'Candidate',      color: '#1677ff', icon: '🔍', desc: 'Skill candidate identified by an LLM' },
+  { key: 'S2', label: 'Draft',          color: '#13c2c2', icon: '✏️', desc: 'Structured Skill draft' },
+  { key: 'S3', label: 'Verified',       color: '#52c41a', icon: '✅', desc: 'Passed static checks and semantic validation' },
+  { key: 'S4', label: 'Released',       color: '#52c41a', icon: '🚀', desc: 'Released and callable by agents' },
+  { key: 'S5', label: 'Degraded',       color: '#faad14', icon: '⚠️', desc: 'Success rate dropped and repair is needed' },
+  { key: 'S6', label: 'Deprecated',     color: '#ff4d4f', icon: '🗑️', desc: 'Deprecated and no longer recommended' },
+  { key: 'S7', label: 'Archived',       color: '#8c8c8c', icon: '📦', desc: 'Archived with history preserved' },
 ]
 
 const TRANSITIONS: Record<string, string[]> = {
@@ -37,17 +37,17 @@ const TRANSITIONS: Record<string, string[]> = {
 }
 
 const TRANSITION_LABELS: Record<string, string> = {
-  'S0→S1': '候选挖掘',
-  'S1→S2': '形式化',
-  'S2→S3': '验证通过',
-  'S2→S1': '重新挖掘',
-  'S3→S4': '发布',
-  'S3→S2': '修订',
-  'S4→S5': '性能退化',
-  'S4→S6': '手动废弃',
-  'S5→S4': '修复成功',
-  'S5→S6': '无法修复',
-  'S6→S7': '归档',
+  'S0→S1': 'Candidate Mining',
+  'S1→S2': 'Formalize',
+  'S2→S3': 'Verify',
+  'S2→S1': 'Remine',
+  'S3→S4': 'Release',
+  'S3→S2': 'Revise',
+  'S4→S5': 'Performance Degraded',
+  'S4→S6': 'Manual Deprecation',
+  'S5→S4': 'Repair Succeeded',
+  'S5→S6': 'Repair Failed',
+  'S6→S7': 'Archive',
 }
 
 function StateMachineViz({ currentState }: { currentState: string }) {
@@ -64,7 +64,7 @@ function StateMachineViz({ currentState }: { currentState: string }) {
 
   return (
     <div>
-      {/* 主流程 */}
+      {/* Main flow */}
       <Steps
         current={mainFlow.indexOf(currentState)}
         items={mainFlow.map(key => {
@@ -78,9 +78,9 @@ function StateMachineViz({ currentState }: { currentState: string }) {
         style={{ marginBottom: 16 }}
       />
 
-      {/* 侧流程（退化/废弃/归档） */}
+      {/* Side flow: degraded, deprecated, archived */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>异常路径：</Text>
+        <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>Exception Path:</Text>
         {sideFlow.map(key => {
           const s = STATES.find(x => x.key === key)!
           const isActive = currentState === key
@@ -116,11 +116,14 @@ export default function LifecycleDemo() {
 
   useEffect(() => {
     if (!selectedId) return
-    const s = skills.find(x => x.skill_id === selectedId) || null
-    setSelected(s)
-    if (s) {
-      setHistory([{ state: s.state, label: STATES.find(x => x.key === s.state)?.label || s.state, time: new Date().toLocaleTimeString() }])
-    }
+    const timeoutId = window.setTimeout(() => {
+      const s = skills.find(x => x.skill_id === selectedId) || null
+      setSelected(s)
+      if (s) {
+        setHistory([{ state: s.state, label: STATES.find(x => x.key === s.state)?.label || s.state, time: new Date().toLocaleTimeString() }])
+      }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [selectedId, skills])
 
   const doTransition = async (targetState: string) => {
@@ -131,7 +134,7 @@ export default function LifecycleDemo() {
       if (targetState === 'S4') {
         updated = await lifecycleApi.release(selected.skill_id)
       } else if (targetState === 'S6') {
-        updated = await lifecycleApi.deprecate(selected.skill_id, '演示废弃')
+        updated = await lifecycleApi.deprecate(selected.skill_id, 'Demo deprecation')
       } else {
         updated = await lifecycleApi.transition(selected.skill_id, targetState as SkillSummary['state'])
       }
@@ -142,9 +145,9 @@ export default function LifecycleDemo() {
         { state: updated.state, label: stateInfo?.label || updated.state, time: new Date().toLocaleTimeString() },
         ...prev,
       ])
-      message.success(`状态已转换为 ${stateInfo?.label}`)
+      message.success(`State changed to ${stateInfo?.label}`)
     } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '转换失败')
+      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Transition failed')
     } finally {
       setLoading(false)
     }
@@ -158,21 +161,21 @@ export default function LifecycleDemo() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Skill Lifecycle Demo</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          选择一个 Skill，交互式演示其在 SkillOS 8 状态机中的完整生命周期流转。
+          Select a Skill and interactively walk through its full lifecycle in the SkillOS 8-state machine.
         </p>
       </motion.div>
 
       <Row gutter={[16, 16]}>
-        {/* 左侧：状态机可视化 + 操作 */}
+        {/* Left: state machine visualization and actions */}
         <Col xs={24} lg={14}>
           <Card
-            title="状态机可视化"
-            bordered={false}
+            title="State Machine Visualization"
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
           >
             <div style={{ marginBottom: 16 }}>
               <Select
-                placeholder="选择一个 Skill"
+                placeholder="Select a Skill"
                 style={{ width: '100%' }}
                 onChange={setSelectedId}
                 options={skills.map(s => ({
@@ -192,7 +195,7 @@ export default function LifecycleDemo() {
 
                 <Divider />
 
-                {/* 当前状态详情 */}
+                {/* Current state details */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                   <div style={{
                     width: 48, height: 48, borderRadius: '50%',
@@ -208,14 +211,14 @@ export default function LifecycleDemo() {
                   </div>
                 </div>
 
-                {/* 可用转换 */}
+                {/* Available transitions */}
                 <div>
                   <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
-                    可执行的状态转换：
+                    Available state transitions:
                   </Text>
                   <Space wrap>
                     {availableTransitions.length === 0 ? (
-                      <Text type="secondary">终态，无可用转换</Text>
+                      <Text type="secondary">Terminal state. No transitions available.</Text>
                     ) : (
                       availableTransitions.map(target => {
                         const targetInfo = STATES.find(x => x.key === target)!
@@ -243,15 +246,15 @@ export default function LifecycleDemo() {
             {!selected && (
               <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
                 <ExperimentOutlined style={{ fontSize: 48, marginBottom: 12 }} />
-                <div>请先选择一个 Skill 开始演示</div>
+                <div>Select a Skill to start the demo.</div>
               </div>
             )}
           </Card>
 
-          {/* 状态说明卡片 */}
+          {/* State description cards */}
           <Card
-            title="SkillOS 状态机说明"
-            bordered={false}
+            title="SkillOS State Machine"
+            variant="borderless"
             style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
           >
             <Row gutter={[8, 8]}>
@@ -274,47 +277,47 @@ export default function LifecycleDemo() {
           </Card>
         </Col>
 
-        {/* 右侧：转换历史 + Skill 信息 */}
+        {/* Right: transition history and Skill info */}
         <Col xs={24} lg={10}>
           {selected && (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
               <Card
-                title={`${selected.name} 信息`}
-                bordered={false}
+                title={`${selected.name} Info`}
+                variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
               >
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <div>
-                    <Text type="secondary">类型：</Text>
+                    <Text type="secondary">Type:</Text>
                     <Tag color={selected.skill_type === 'atomic' ? 'blue' : selected.skill_type === 'functional' ? 'purple' : 'gold'}>
                       {selected.skill_type.toUpperCase()}
                     </Tag>
                   </div>
                   <div>
-                    <Text type="secondary">版本：</Text>
+                    <Text type="secondary">Version:</Text>
                     <Text code>{selected.version}</Text>
                   </div>
                   <div>
-                    <Text type="secondary">描述：</Text>
+                    <Text type="secondary">Description:</Text>
                     <Paragraph style={{ margin: 0 }}>{selected.description}</Paragraph>
                   </div>
                   <div>
-                    <Text type="secondary">标签：</Text>
+                    <Text type="secondary">Tags:</Text>
                     {selected.tags.map(t => <Tag key={t}>{t}</Tag>)}
                   </div>
                   <div>
-                    <Text type="secondary">执行次数：</Text>
+                    <Text type="secondary">Executions:</Text>
                     <Text strong>{selected.metrics.total_executions}</Text>
                     <Text type="secondary" style={{ marginLeft: 8 }}>
-                      成功率 {(selected.metrics.success_rate * 100).toFixed(1)}%
+                      Success rate {(selected.metrics.success_rate * 100).toFixed(1)}%
                     </Text>
                   </div>
                 </Space>
               </Card>
 
               <Card
-                title="状态转换历史"
-                bordered={false}
+                title="State Transition History"
+                variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >
                 <AnimatePresence>

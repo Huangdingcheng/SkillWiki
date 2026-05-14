@@ -73,7 +73,11 @@ SkillOS 由五大组件构成，通过四条数据流协同工作：
   分析成功/失败原因，生成改进建议
     │
     ▼
-经验写入 Experience Store → 触发 Self-Management Flow
+执行历史写入 in-memory ExperienceUnit
+  agent_execution 只作为 S0/S1 候选材料
+    │
+    ▼
+人工审核后进入 Skill Builder / Self-Management Flow
 ```
 
 ### 2.2 Self-Management Flow（自管理流）
@@ -123,6 +127,11 @@ SkillOS 由五大组件构成，通过四条数据流协同工作：
     │
     ▼
 触发 Skill Builder → 生成 Skill 候选
+
+Runtime execution history is a second entry path: C records recent executions as
+`agent_execution` ExperienceUnits, and the ingest candidate review endpoint can
+turn one of those units into an S1 Candidate Skill. The current runtime history
+is memory-backed demo evidence, not a durable long-term experience store.
 ```
 
 ### 2.4 Governance Flow（治理流）
@@ -276,3 +285,20 @@ class ExecutionPlan:
 ---
 
 *最后更新：2026-04-25 | 维护人：项目负责人*
+## 8. Paper-Driven Runtime Evaluation Note
+
+The C runtime layer now has a deterministic demo-paper evaluation path:
+
+- `skillos/benchmarks/skillos_demo_tasks.json` holds the 12 fixed C-P0 tasks.
+- `skillos/benchmarks/run_demo_benchmark.py` compares `no_skill`, `raw_prompt`, and `with_skill` offline.
+- `skillos/benchmarks/run_llm_planner_eval.py` adds the C-P1 real-LLM planner evaluation path. It compares `fallback` and `llm` planner selection with fixed model, temperature, seed, and context settings, while recording API failures separately from functional planner failures. A `missing_api_key` latest artifact is only harness evidence, not a real LLM quality result.
+- `skillos/layers/skill_runtime/verifier.py` can evaluate `Skill.evaluation.verifier_specs` using deterministic `json_equals`, `json_exists`, `contains`, and `boolean_success` rules before any LLM verifier path.
+- `/api/v1/execution/plan`, `/api/v1/execution/skill`, and `/api/v1/execution/history/{execution_id}/experience` expose C-P1-2 `agent_execution` ExperienceUnits grounded in XSkill's action-level experience stream; ingest candidate review can convert them into S1 Candidate Skills with provenance.
+- C-P1-3 web benchmark tasks use WebXSkill-style parameterized action programs over a fixed fake DOM/state: `selector`, `text`, `url`, and `form_data` inputs drive the output instead of static expected-output copying.
+- Benchmark summaries are emitted as JSON and Markdown for the frontend evaluation page to consume without making C responsible for E UI implementation.
+
+This path strengthens the Task Execution Flow evidence with additive execution
+response fields, one read-only experience lookup endpoint, and benchmark-local
+parameterized web action programs.
+
+---

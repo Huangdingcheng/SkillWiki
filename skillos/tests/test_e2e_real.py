@@ -15,7 +15,7 @@ import pytest
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 
-API_KEY = os.environ.get("SKILLOS_API_KEY", "sk-9BwvNgcu3XHwbQ15aBcnryPWEgZgQq10PB27fJ3sVOZcSNcF")
+API_KEY = os.environ.get("SKILLOS_API_KEY")
 API_URL = os.environ.get("SKILLOS_API_URL", "https://yunwu.ai")
 MODEL = os.environ.get("SKILLOS_MODEL", "gpt-4o-mini")
 

@@ -36,6 +36,7 @@ from skillos.layers.skill_runtime import (
     StepStatus,
 )
 from skillos.models import (
+    EdgeType,
     Skill,
     SkillImplementation,
     SkillInterface,
@@ -349,7 +350,16 @@ class TestSkillMerger:
         assert result.merged_skill is not None
         assert result.merged_skill.name == "fill_auth_form"
         assert result.merged_skill.state == SkillState.DRAFT
-        assert len(result.edges_to_create) == 2  # 两条 replaces 边
+        replaces_edges = [
+            edge for edge in result.edges_to_create
+            if edge.edge_type == EdgeType.REPLACES
+        ]
+        similar_edges = [
+            edge for edge in result.edges_to_create
+            if edge.edge_type == EdgeType.SIMILAR_TO
+        ]
+        assert len(replaces_edges) == 2
+        assert len(similar_edges) == 1
 
     @pytest.mark.asyncio
     async def test_merge_llm_failure(self, mock_llm, skill_a, skill_b):
@@ -403,7 +413,16 @@ class TestSkillMerger:
         assert result.success
         assert len(result.sub_skills) == 2
         assert all(s.state == SkillState.DRAFT for s in result.sub_skills)
-        assert len(result.edges_to_create) == 2  # 两条 evolved_from 边
+        evolved_edges = [
+            edge for edge in result.edges_to_create
+            if edge.edge_type == EdgeType.EVOLVED_FROM
+        ]
+        composition_edges = [
+            edge for edge in result.edges_to_create
+            if edge.edge_type == EdgeType.COMPOSES_WITH
+        ]
+        assert len(evolved_edges) == 2
+        assert len(composition_edges) == 2
 
 
 # ===========================================================================

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -251,7 +252,8 @@ class SkillGraphRepository:
                    target_id: endNode(r).skill_id,
                    edge_type: type(r),
                    weight: r.weight,
-                   confidence: r.confidence
+                   confidence: r.confidence,
+                   metadata: r.metadata
                }) AS all_edges
         """
         results = await self._conn.run(cypher, {"skill_id": skill_id, "depth": depth})
@@ -386,6 +388,7 @@ class SkillGraphRepository:
             edge_type=EdgeType(et_raw),
             weight=d.get("weight") or 1.0,
             confidence=d.get("confidence") or 1.0,
+            metadata=_parse_metadata(d.get("metadata")),
         )
 
     def _parse_edge_result(self, row: Dict[str, Any]) -> SkillEdge:
@@ -398,4 +401,17 @@ class SkillGraphRepository:
             edge_type=EdgeType(et_raw),
             weight=r.get("weight") or 1.0,
             confidence=r.get("confidence") or 1.0,
+            metadata=_parse_metadata(r.get("metadata")),
         )
+
+
+def _parse_metadata(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}

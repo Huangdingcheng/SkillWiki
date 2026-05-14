@@ -200,12 +200,30 @@ class SkillMerger:
             # 创建 replaces 边
             for source_id in result.source_skill_ids:
                 result.edges_to_create.append(SkillEdge(
+                    edge_id=f"maintenance:merge:replaces:{merged.skill_id}:{source_id}",
                     source_id=merged.skill_id,
                     target_id=source_id,
                     edge_type=EdgeType.REPLACES,
                     weight=1.0,
                     description=f"合并替代: {result.rationale[:100]}",
                 ))
+
+            similarity = _bounded_weight(data.get("similarity", data.get("confidence")), default=0.8)
+            result.edges_to_create.append(SkillEdge(
+                edge_id=f"maintenance:merge:similar_to:{skill_a.skill_id}:{skill_b.skill_id}",
+                source_id=skill_a.skill_id,
+                target_id=skill_b.skill_id,
+                edge_type=EdgeType.SIMILAR_TO,
+                weight=similarity,
+                confidence=similarity,
+                description=f"merge candidate similarity: {result.rationale[:100]}",
+                created_by="skill_merger",
+                metadata={
+                    "maintenance_action": "merge",
+                    "merged_skill_id": merged.skill_id,
+                    "source": "skill_merger",
+                },
+            ))
 
             logger.info(
                 f"Skill 合并成功: {skill_a.name} + {skill_b.name} → {merged.name}"
@@ -259,13 +277,28 @@ class SkillMerger:
             result.success = True
 
             # 创建 evolved_from 边（子 Skill 从原 Skill 演化而来）
-            for sub in sub_skills:
+            for index, sub in enumerate(sub_skills):
                 result.edges_to_create.append(SkillEdge(
+                    edge_id=f"maintenance:split:evolved_from:{sub.skill_id}:{skill.skill_id}",
                     source_id=sub.skill_id,
                     target_id=skill.skill_id,
                     edge_type=EdgeType.EVOLVED_FROM,
                     weight=1.0,
                     description=f"拆分自: {skill.name}",
+                ))
+                result.edges_to_create.append(SkillEdge(
+                    edge_id=f"maintenance:split:composes_with:{skill.skill_id}:{sub.skill_id}",
+                    source_id=skill.skill_id,
+                    target_id=sub.skill_id,
+                    edge_type=EdgeType.COMPOSES_WITH,
+                    weight=1.0,
+                    description=f"split component of {skill.name}",
+                    created_by="skill_merger",
+                    metadata={
+                        "maintenance_action": "split",
+                        "source": "skill_merger",
+                        "composition_order": index,
+                    },
                 ))
 
             logger.info(
@@ -279,8 +312,10 @@ class SkillMerger:
 
     def _build_skill_from_data(self, data: Dict[str, Any], source: str) -> Skill:
         """从 LLM 数据构建 Skill 对象。"""
-        iface_data = data.get("interface", {})
-        impl_data = data.get("implementation", {})
+        iface_key = "merged_interface" if source == "merged" else "interface"
+        impl_key = "merged_implementation" if source == "merged" else "implementation"
+        iface_data = data.get(iface_key) or data.get("interface", {})
+        impl_data = data.get(impl_key) or data.get("implementation", {})
 
         interface = SkillInterface(
             input_schema=iface_data.get("input_schema", {"type": "object", "properties": {}}),
@@ -360,3 +395,11 @@ class SkillMerger:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _bounded_weight(value: Any, default: float = 1.0) -> float:
+    try:
+        weight = float(value)
+    except (TypeError, ValueError):
+        weight = default
+    return max(0.0, min(1.0, weight))

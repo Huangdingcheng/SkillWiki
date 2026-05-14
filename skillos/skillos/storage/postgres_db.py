@@ -75,6 +75,9 @@ class SkillORM(Base):
     # Test cases (JSON array)
     test_cases_json: Mapped[Optional[str]] = mapped_column(Text, default="[]")
 
+    # Evaluation contract (JSON)
+    evaluation_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # External references (JSON arrays)
     tool_refs_json: Mapped[Optional[str]] = mapped_column(Text, default="[]")
     trajectory_refs_json: Mapped[Optional[str]] = mapped_column(Text, default="[]")
@@ -205,6 +208,7 @@ def _j(v: Optional[str], default: Any = None) -> Any:
 def orm_to_skill(row: SkillORM) -> Skill:
     from ..models.skill_model import (
         SkillImplementation,
+        SkillEvaluation,
         SkillInterface,
         SkillMetrics,
         SkillProvenance,
@@ -213,6 +217,7 @@ def orm_to_skill(row: SkillORM) -> Skill:
 
     interface_data = _j(row.interface_json, {})
     impl_data = _j(row.implementation_json)
+    evaluation_data = _j(getattr(row, "evaluation_json", None), {})
     provenance_data = _j(row.provenance_json)
 
     return Skill(
@@ -230,6 +235,7 @@ def orm_to_skill(row: SkillORM) -> Skill:
         interface=SkillInterface(**interface_data) if interface_data else SkillInterface(),
         implementation=SkillImplementation(**impl_data) if impl_data else None,
         test_cases=[SkillTestCase(**tc) for tc in _j(row.test_cases_json, [])],
+        evaluation=SkillEvaluation(**evaluation_data) if evaluation_data else SkillEvaluation(),
         tool_refs=_j(row.tool_refs_json, []),
         trajectory_refs=_j(row.trajectory_refs_json, []),
         doc_refs=_j(row.doc_refs_json, []),
@@ -269,6 +275,7 @@ def skill_to_orm(skill: Skill) -> SkillORM:
         interface_json=skill.interface.model_dump_json(),
         implementation_json=skill.implementation.model_dump_json() if skill.implementation else None,
         test_cases_json=json.dumps([tc.model_dump() for tc in skill.test_cases]),
+        evaluation_json=skill.evaluation.model_dump_json(),
         tool_refs_json=json.dumps(skill.tool_refs),
         trajectory_refs_json=json.dumps(skill.trajectory_refs),
         doc_refs_json=json.dumps(skill.doc_refs),
@@ -312,6 +319,7 @@ class PostgresConnection(BaseConnection):
     async def connect(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE skills ADD COLUMN IF NOT EXISTS evaluation_json TEXT"))
         logger.info("PostgreSQL 连接成功，表结构已初始化")
 
     async def disconnect(self) -> None:
