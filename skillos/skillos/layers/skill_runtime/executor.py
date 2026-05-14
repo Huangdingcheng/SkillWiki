@@ -450,7 +450,9 @@ class SkillExecutor:
         except KeyError as e:
             raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
 
-        response = await asyncio.to_thread(
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
             self._llm.chat,
             [Message.system(f"你是 SkillOS 中的 {skill.name} Skill，请严格按照任务要求执行。"),
              Message.user(prompt)],

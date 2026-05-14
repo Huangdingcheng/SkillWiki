@@ -122,10 +122,11 @@ async def execute_plan(
     search_results = await app.search.search(
         SearchQuery(
             text=req.goal,
-            max_results=req.max_skills,
+            max_results=max(req.max_skills, 50),
         )
     )
-    available_skills = [r.skill for r in search_results]
+    runtime_results = _runtime_execution_results(search_results)[: req.max_skills]
+    available_skills = [r.skill for r in runtime_results]
 
     retrieved = [
         RetrievedSkill(
@@ -136,7 +137,7 @@ async def execute_plan(
             score=round(r.score, 3),
             match_reason=_format_match_reason(r),
         )
-        for r in search_results
+        for r in runtime_results
     ]
 
     strategy = OrchestrationStrategy(req.orchestration_strategy)
@@ -160,6 +161,7 @@ async def execute_plan(
     skill_ids = list({step.skill_id for step in plan.steps})
     skill_map_result = await app.wiki.get_many(skill_ids)
     skill_map: Dict[str, Any] = {k: v for k, v in skill_map_result.items() if v}
+    _populate_goal_input_mapping(plan, skill_map, req.goal, req.context)
 
     final_state = await app.executor.execute_plan(
         plan=plan,
@@ -278,6 +280,64 @@ def _format_match_reason(search_result: Any) -> str:
         return "; ".join(str(reason) for reason in reasons)
     reason = getattr(search_result, "match_reason", "")
     return str(reason or "")
+
+
+def _runtime_execution_results(search_results: List[Any]) -> List[Any]:
+    """Keep user-task execution candidates out of maintenance/meta skills."""
+
+    filtered: List[Any] = []
+    for result in search_results:
+        skill = result.skill
+        skill_type = getattr(getattr(skill, "skill_type", None), "value", "")
+        tags = {str(tag).lower() for tag in getattr(skill, "tags", [])}
+        name = str(getattr(skill, "name", "")).lower()
+        if skill_type == "strategic":
+            continue
+        if tags & {"meta", "maintenance", "graph", "test"}:
+            continue
+        if name.startswith("test_graph_"):
+            continue
+        filtered.append(result)
+
+    return filtered
+
+
+def _populate_goal_input_mapping(
+    plan: Any,
+    skill_map: Dict[str, Any],
+    goal: str,
+    context: Dict[str, Any],
+) -> None:
+    """Fill simple missing step inputs from request context or task goal."""
+
+    goal_like_fields = {
+        "description",
+        "goal",
+        "task",
+        "task_description",
+        "query",
+        "text",
+        "prompt",
+        "instruction",
+    }
+    for step in plan.steps:
+        skill = skill_map.get(step.skill_id)
+        if not skill or not getattr(skill, "interface", None):
+            continue
+        schema = getattr(skill.interface, "input_schema", {}) or {}
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if not isinstance(properties, dict):
+            continue
+        required = schema.get("required", []) if isinstance(schema, dict) else []
+        field_names = list(dict.fromkeys(list(required or []) + list(properties)))
+        for field_name in field_names:
+            field = str(field_name)
+            if field in step.input_mapping:
+                continue
+            if field in context:
+                step.input_mapping[field] = context[field]
+            elif field.lower() in goal_like_fields:
+                step.input_mapping[field] = goal
 
 
 def _execution_status(steps: List[ExecutionStepResult]) -> str:

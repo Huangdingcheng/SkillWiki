@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +29,7 @@ _last_health_event_at: Dict[Tuple[str, str], datetime] = {}
 
 
 def _event_timestamp() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _health_event_name(status: HealthStatus) -> Optional[str]:
@@ -100,7 +100,7 @@ async def _safe_broadcast(event: str, payload: Dict[str, Any]) -> None:
 
 
 def _should_emit_health_event(event: str, subject_id: str) -> bool:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     key = (event, subject_id)
     last_sent = _last_health_event_at.get(key)
     if last_sent and (now - last_sent).total_seconds() < _HEALTH_EVENT_COOLDOWN_SECONDS:
