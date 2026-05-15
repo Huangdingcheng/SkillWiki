@@ -1,0 +1,79 @@
+[
+  {
+    "name": "brand_guidelines",
+    "description": "Apply a product team's visual identity rules to generated documents, slides, and UI artifacts.",
+    "skill_type": "strategic",
+    "inputs": {
+      "artifact_type": "slide, document, or UI screen",
+      "brand_tokens": "colors, typography, spacing, and usage rules"
+    },
+    "outputs": {
+      "styled_artifact": "artifact that follows the provided brand guidance",
+      "audit_notes": "short list of style decisions"
+    },
+    "steps": [
+      "Read the requested artifact type and audience.",
+      "Map brand tokens to concrete layout and typography decisions.",
+      "Apply the decisions consistently.",
+      "Return audit notes for human review."
+    ],
+    "tags": ["anthropic-style", "artifact", "governance"]
+  },
+  {
+    "name": "claude_api",
+    "description": "Convert API documentation into a safe, parameter-complete tool call plan.",
+    "skill_type": "functional",
+    "inputs": {
+      "api_doc": "endpoint, authentication, parameters, and response schema",
+      "task": "the tool-use goal"
+    },
+    "outputs": {
+      "tool_call_plan": "endpoint, method, required parameters, optional parameters, and validation notes"
+    },
+    "steps": [
+      "Extract endpoint, method, auth, required parameters, and response fields.",
+      "Check that every required parameter has a source.",
+      "Produce a dry-run call plan.",
+      "Flag missing or unsafe values instead of guessing."
+    ],
+    "tags": ["api_doc", "tool-use", "parameter-check"]
+  },
+  {
+    "name": "docx",
+    "description": "Transform a document editing request into a structured DOCX workflow with render verification.",
+    "skill_type": "functional",
+    "inputs": {
+      "document_request": "editing or generation instructions",
+      "source_files": "optional source material"
+    },
+    "outputs": {
+      "workflow": "steps for creating, editing, rendering, and checking a DOCX file"
+    },
+    "steps": [
+      "Parse the requested document structure.",
+      "Generate or edit the DOCX content.",
+      "Render pages for visual checking.",
+      "Report layout or formatting issues before final delivery."
+    ],
+    "tags": ["document", "docx", "verification"]
+  },
+  {
+    "name": "frontend_design",
+    "description": "Convert a frontend feature request into an implementation plan with UI states and verification steps.",
+    "skill_type": "strategic",
+    "inputs": {
+      "feature_request": "desired UI behavior",
+      "existing_design_system": "components, colors, typography, and layout constraints"
+    },
+    "outputs": {
+      "ui_plan": "screens, states, controls, and validation steps"
+    },
+    "steps": [
+      "Identify the user's main workflow.",
+      "Reuse existing components and layout conventions.",
+      "Specify empty, loading, success, and error states.",
+      "Verify responsive behavior and text fit."
+    ],
+    "tags": ["frontend", "ui", "design"]
+  }
+]

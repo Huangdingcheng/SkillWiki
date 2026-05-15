@@ -21,6 +21,11 @@ from ..models.skill_model import (
     SkillState,
     SkillType,
 )
+from ..layers.skill_runtime.harness import (
+    HarnessKind,
+    HarnessRunResult,
+    HarnessTestCase,
+)
 
 
 # ─── 通用 ────────────────────────────────────────────────────────────────────
@@ -405,6 +410,35 @@ class ExecutionHistoryItem(BaseModel):
     created_at: datetime
     experience_unit_id: Optional[str] = None
     experience_source_type: Optional[str] = None
+
+
+class HarnessVerifyLoopRequest(BaseModel):
+    harness: HarnessKind = HarnessKind.LOCAL_SKILLOS
+    max_attempts: int = Field(default=3, ge=1, le=5)
+    promote_on_pass: bool = True
+    test_cases: List[HarnessTestCase] = Field(default_factory=list)
+    allow_repair: bool = True
+    timeout_s: int = Field(default=120, ge=1, le=600)
+
+
+class HarnessVerifyLoopResponse(BaseModel):
+    loop_id: str
+    skill_id: str
+    status: str
+    promotion_allowed: bool
+    attempt_count: int
+    score: Dict[str, Any]
+    attempts: List[HarnessRunResult] = Field(default_factory=list)
+    repairs: List[Dict[str, Any]] = Field(default_factory=list)
+    initial_version: str
+    final_version: str
+    final_state: str
+    evidence_path: str
+
+
+class HarnessLoopListResponse(BaseModel):
+    loops: List[Dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
 
 
 class EvolutionStats(BaseModel):

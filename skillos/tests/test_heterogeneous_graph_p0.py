@@ -482,6 +482,9 @@ def test_skill_only_projection_endpoint_returns_metadata_and_validation_evidence
     assert "validation_evidence" in payload["stats"]
     assert payload["stats"]["validation_evidence"]["skill-alpha"][0]["validation_node_id"] == "validation_alpha"
     assert payload["metadata"]["projection_source"] == "heterogeneous_graph"
+    relation_strength = payload["metadata"]["relation_strength"]
+    assert "execution dependency" in relation_strength["weak"]["similar_to"]
+    assert "Execution prerequisite" in relation_strength["strong"]["depends_on"]
     assert payload["validation_evidence"]["skill-alpha"][0]["validation_node_id"] == "validation_alpha"
     assert {
         (edge["source"], edge["target"], edge["edge_type"])
@@ -589,6 +592,9 @@ def test_graph_view_endpoint_returns_skill_only_view(
     assert {node["kind"] for node in payload["nodes"]} == {"skill"}
     assert {edge["edge_type"] for edge in payload["edges"]} == {"depends_on"}
     assert payload["stats"]["view"] == "skill_only"
+    relation_strength = payload["metadata"]["relation_strength"]
+    assert "Execution prerequisite" in relation_strength["strong"]["depends_on"]
+    assert "not an execution dependency" in relation_strength["weak"]["similar_to"]
 
 
 def test_graph_view_endpoint_returns_provenance_view(api_app: FastAPI):
@@ -670,6 +676,7 @@ def test_graph_view_endpoint_returns_version_impact_projection(
         "hetero_shared_source",
     }
     assert payload["validation_evidence"]["skill-alpha"][0]["validation_node_id"] == "validation_alpha"
+    assert "not an execution dependency" in payload["metadata"]["relation_strength"]["weak"]["similar_to"]
 
 
 def test_graph_view_endpoint_focuses_version_impact_on_same_skill(

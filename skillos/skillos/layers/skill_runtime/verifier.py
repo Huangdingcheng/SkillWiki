@@ -234,6 +234,16 @@ def _evaluate_spec(spec: Dict[str, Any], document: Dict[str, Any]) -> VerifierSp
     if spec_type == "json_exists":
         return VerifierSpecResult(spec=spec, passed=True, path=path, actual=actual)
 
+    if spec_type == "json_nonempty":
+        passed = _is_nonempty_value(actual)
+        return VerifierSpecResult(
+            spec=spec,
+            passed=passed,
+            path=path,
+            actual=actual,
+            issue="" if passed else f"Expected {path} to be non-empty.",
+        )
+
     if spec_type == "json_equals":
         passed = actual == expected
         return VerifierSpecResult(
@@ -243,6 +253,50 @@ def _evaluate_spec(spec: Dict[str, Any], document: Dict[str, Any]) -> VerifierSp
             actual=actual,
             expected=expected,
             issue="" if passed else f"Expected {path} == {expected!r}, got {actual!r}.",
+        )
+
+    if spec_type == "json_array":
+        passed = isinstance(actual, list)
+        return VerifierSpecResult(
+            spec=spec,
+            passed=passed,
+            path=path,
+            actual=actual,
+            expected="array",
+            issue="" if passed else f"Expected {path} to be an array.",
+        )
+
+    if spec_type == "json_array_nonempty":
+        passed = isinstance(actual, list) and len(actual) > 0
+        return VerifierSpecResult(
+            spec=spec,
+            passed=passed,
+            path=path,
+            actual=actual,
+            expected="non-empty array",
+            issue="" if passed else f"Expected {path} to be a non-empty array.",
+        )
+
+    if spec_type == "json_object":
+        passed = isinstance(actual, dict)
+        return VerifierSpecResult(
+            spec=spec,
+            passed=passed,
+            path=path,
+            actual=actual,
+            expected="object",
+            issue="" if passed else f"Expected {path} to be an object.",
+        )
+
+    if spec_type == "json_object_nonempty":
+        passed = isinstance(actual, dict) and len(actual) > 0
+        return VerifierSpecResult(
+            spec=spec,
+            passed=passed,
+            path=path,
+            actual=actual,
+            expected="non-empty object",
+            issue="" if passed else f"Expected {path} to be a non-empty object.",
         )
 
     if spec_type == "contains":
@@ -321,6 +375,16 @@ def _contains_value(actual: Any, expected: Any) -> bool:
             value == expected for value in actual.values()
         )
     return str(expected) in str(actual)
+
+
+def _is_nonempty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, tuple, set)):
+        return len(value) > 0
+    return True
 
 
 def _normalize_verification(data: Dict[str, Any], goal: str) -> VerificationResult:

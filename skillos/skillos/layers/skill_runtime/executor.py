@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Union
@@ -323,6 +325,13 @@ class SkillExecutor:
              Message.user(prompt)],
         )
         result_text = response.content
+        parsed_result = _extract_json_object(result_text)
+        if parsed_result is not None:
+            return {
+                **parsed_result,
+                "skill_name": skill.name,
+                "_state_changes": {f"{skill.name}_result": parsed_result},
+            }
         return {
             "result": result_text,
             "skill_name": skill.name,
@@ -411,6 +420,29 @@ class SkillExecutor:
         except Exception as e:
             record.fail(str(e), type(e).__name__)
         return record
+
+
+def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Parse a prompt Skill response when the model returns machine-readable JSON."""
+    stripped = str(text or "").strip()
+    if not stripped:
+        return None
+    candidates = [stripped]
+    fenced = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", stripped)
+    if fenced:
+        candidates.insert(0, fenced.group(1).strip())
+    object_match = re.search(r"\{[\s\S]+\}", stripped)
+    if object_match:
+        candidates.append(object_match.group(0))
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 def _plan_status(plan: ExecutionPlan) -> str:

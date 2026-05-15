@@ -155,7 +155,7 @@ class SkillGraphManager:
         valid_ids = set(valid_skill_ids)
         for edge in await self.get_edges(skill.skill_id, direction="out"):
             if (
-                edge.edge_type in {EdgeType.COMPOSES_WITH, EdgeType.EVOLVED_FROM}
+                edge.edge_type in {EdgeType.COMPOSES_WITH, EdgeType.EVOLVED_FROM, EdgeType.DEPENDS_ON}
                 and edge.metadata.get("auto_generated") is True
                 and edge.metadata.get("source") == "skill_repository"
             ):
@@ -181,6 +181,16 @@ class SkillGraphManager:
                 source_id=skill.skill_id,
                 target_id=parent_id,
                 edge_type=EdgeType.EVOLVED_FROM,
+            ))
+
+        for dependency_id in _unique_ids(skill.dependency_ids):
+            if dependency_id == skill.skill_id or dependency_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing dependency Skill: %s -> %s", skill.skill_id, dependency_id)
+                continue
+            await self._graph.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=dependency_id,
+                edge_type=EdgeType.DEPENDS_ON,
             ))
 
     async def get_edges(

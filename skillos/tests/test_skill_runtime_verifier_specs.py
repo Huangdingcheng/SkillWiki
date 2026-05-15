@@ -46,6 +46,53 @@ def test_pathless_boolean_success_rejects_failed_status():
     assert result.issues == ["Output contains failure evidence."]
 
 
+def test_deterministic_verifier_specs_support_input_contract_and_nonempty_types():
+    result = evaluate_verifier_specs(
+        [
+            {"type": "json_equals", "path": "input.dry_run", "value": True},
+            {"type": "json_array_nonempty", "path": "input.allowed_paths"},
+            {"type": "json_nonempty", "path": "output.result.entrypoint"},
+            {"type": "json_array", "path": "output.result.dependencies"},
+            {"type": "json_object", "path": "output.verifier"},
+            {"type": "json_equals", "path": "output.verifier.passed", "value": True},
+        ],
+        {
+            "input": {"dry_run": True, "allowed_paths": ["scripts/demo.py"]},
+            "output": {
+                "result": {"entrypoint": "scripts/demo.py", "dependencies": []},
+                "verifier": {"passed": True},
+            },
+        },
+        goal="verify script dry-run contract",
+    )
+
+    assert result.passed is True
+    assert result.score == 1.0
+
+
+def test_deterministic_verifier_specs_fail_empty_and_wrong_type_contracts():
+    result = evaluate_verifier_specs(
+        [
+            {"type": "json_array_nonempty", "path": "input.allowed_paths"},
+            {"type": "json_object", "path": "output.result.parameters"},
+            {"type": "json_nonempty", "path": "output.result.answer"},
+        ],
+        {
+            "input": {"allowed_paths": []},
+            "output": {
+                "result": {"parameters": [], "answer": "  "},
+            },
+        },
+        goal="reject weak contract evidence",
+    )
+
+    assert result.passed is False
+    assert result.score == 0.0
+    assert "Expected input.allowed_paths to be a non-empty array." in result.issues
+    assert "Expected output.result.parameters to be an object." in result.issues
+    assert "Expected output.result.answer to be non-empty." in result.issues
+
+
 def test_deterministic_verifier_specs_fail_for_missing_path_and_false_success():
     result = evaluate_verifier_specs(
         [

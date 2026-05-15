@@ -10,6 +10,9 @@ import type {
   GraphData,
   GraphViewData,
   GraphViewMode,
+  HarnessLoopListResponse,
+  HarnessVerifyLoopRequest,
+  HarnessVerifyLoopResponse,
   HeterogeneousGraphData,
   HealthReport,
   IngestResponse,
@@ -154,6 +157,17 @@ export const executionApi = {
 }
 
 // ── Evolution ─────────────────────────────────────────────────────────────────
+
+export const harnessApi = {
+  runVerifyLoop: (skill_id: string, request: HarnessVerifyLoopRequest = {}) =>
+    http.post<HarnessVerifyLoopResponse>(`/harness/${skill_id}/verify-loop`, request).then(r => r.data),
+
+  list: (limit = 20) =>
+    http.get<HarnessLoopListResponse>('/harness', { params: { limit } }).then(r => r.data),
+
+  get: (loop_id: string) =>
+    http.get<Record<string, unknown>>(`/harness/${loop_id}`).then(r => r.data),
+}
 
 export const evolutionApi = {
   systemHealth: () =>

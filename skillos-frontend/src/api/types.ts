@@ -74,6 +74,7 @@ export interface SkillEvaluation {
   test_case_refs: string[]
   benchmark_task_ids: string[]
   validation_summary?: string | null
+  harness_validation?: Record<string, unknown>
 }
 
 export interface SkillProvenance {
@@ -140,6 +141,7 @@ export interface ExperienceUnit {
   confidence: number
   index_keywords: string[]
   index_embedding_hint: string
+  metadata?: Record<string, unknown>
 }
 
 export interface CreatedSkill {
@@ -175,6 +177,11 @@ export interface CandidateSkillReviewRequest {
   prompt_template: string
   provenance?: SkillProvenance | null
   evaluation: SkillEvaluation
+  dependency_ids?: string[]
+  component_ids?: string[]
+  sub_skill_ids?: string[]
+  parent_skill_ids?: string[]
+  tool_calls?: string[]
   author?: string
 }
 
@@ -635,6 +642,67 @@ export interface ExecutionHistoryItem {
   created_at: string
   experience_unit_id?: string | null
   experience_source_type?: string | null
+}
+
+export type HarnessKind = 'local_skillos' | 'codex_cli' | 'claude_code'
+
+export interface HarnessTestCase {
+  test_id: string
+  name: string
+  goal: string
+  input_data: Record<string, unknown>
+  context?: Record<string, unknown>
+  verifier_specs: Record<string, unknown>[]
+  timeout_s?: number
+  expected_artifacts?: string[]
+}
+
+export interface HarnessRunResult {
+  run_id: string
+  skill_id: string
+  attempt: number
+  harness: HarnessKind
+  status: string
+  input_data: Record<string, unknown>
+  output: Record<string, unknown>
+  stdout: string
+  stderr: string
+  artifacts: Record<string, unknown>[]
+  verifier_passed: boolean
+  verifier_summary: Record<string, unknown>
+  latency_ms: number
+  cost_estimate: Record<string, unknown>
+  failure_reason: string
+  evidence_path: string
+}
+
+export interface HarnessVerifyLoopRequest {
+  harness?: HarnessKind
+  max_attempts?: number
+  promote_on_pass?: boolean
+  test_cases?: HarnessTestCase[]
+  allow_repair?: boolean
+  timeout_s?: number
+}
+
+export interface HarnessVerifyLoopResponse {
+  loop_id: string
+  skill_id: string
+  status: string
+  promotion_allowed: boolean
+  attempt_count: number
+  score: Record<string, unknown>
+  attempts: HarnessRunResult[]
+  repairs: Record<string, unknown>[]
+  initial_version: string
+  final_version: string
+  final_state: SkillState | string
+  evidence_path: string
+}
+
+export interface HarnessLoopListResponse {
+  loops: HarnessVerifyLoopResponse[]
+  total: number
 }
 
 export interface OverviewStats {

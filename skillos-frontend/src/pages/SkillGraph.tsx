@@ -283,6 +283,24 @@ function formatMetadataValue(value: unknown) {
   }
 }
 
+function relationStrengthSummary(metadata?: Record<string, unknown>) {
+  const relationStrength = metadata?.relation_strength
+  if (!relationStrength || typeof relationStrength !== 'object' || Array.isArray(relationStrength)) return ''
+  const relation = relationStrength as Record<string, unknown>
+  const strong = relation.strong && typeof relation.strong === 'object' && !Array.isArray(relation.strong)
+    ? Object.keys(relation.strong as Record<string, unknown>).map(formatEdgeType).join(', ')
+    : ''
+  const weak = relation.weak && typeof relation.weak === 'object' && !Array.isArray(relation.weak)
+    ? Object.keys(relation.weak as Record<string, unknown>).map(formatEdgeType).join(', ')
+    : ''
+  const claimBoundary = typeof relation.claim_boundary === 'string' ? relation.claim_boundary : ''
+  return [
+    strong ? `Strong relations: ${strong}.` : '',
+    weak ? `Weak projected relations: ${weak}.` : '',
+    claimBoundary,
+  ].filter(Boolean).join(' ')
+}
+
 function metadataEntries(metadata?: Record<string, unknown>) {
   return Object.entries(metadata ?? {}).filter(([, value]) => value !== undefined && value !== null && value !== '')
 }
@@ -753,6 +771,7 @@ export default function SkillGraph() {
   const selectedEdgeMetadata = metadataEntries(selectedEdge?.metadata)
   const viewCopy = GRAPH_VIEW_COPY[viewMode]
   const detailTitle = selectedEdge ? 'Edge Details' : 'Node Details'
+  const relationStrengthText = relationStrengthSummary(graphData?.metadata)
 
   const zoomGraph = (ratio: number) => {
     void graphRef.current?.zoomBy(ratio, { duration: 180 })
@@ -898,6 +917,16 @@ export default function SkillGraph() {
           showIcon
           title="Projection meta-paths"
           description={formatMetadataValue(graphData?.metadata?.meta_paths)}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      {relationStrengthText && (
+        <Alert
+          type="info"
+          showIcon
+          title="Relation strength"
+          description={relationStrengthText}
           style={{ marginBottom: 12 }}
         />
       )}

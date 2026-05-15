@@ -254,3 +254,54 @@ Paper grounding and URLs read from local PDFs:
 - SKILLFOUNDRY: heterogeneous resources should compile into structured skill cards with scope, dependencies, inputs, outputs, provenance, examples, and tests. URLs observed in the PDF include `https://arxiv.org/abs/2604.03964v1`, `https://github.com/ma-compbio-lab/SkillFoundry`, `https://ma-compbio-lab.github.io/SkillFoundry/`, and `https://openreview.net/forum?id=kZHSvETWdi`.
 - Heterogeneous Information Network Survey: heterogeneous networks distinguish object types and relation types; meta-paths encode different semantics and can project heterogeneous networks into homogeneous analysis views. URLs observed in the PDF include `http://aminer.org/`, `http://dblp.uni-trier.de/`, `http://pminer.org/home.do?m=home`, `http://www.douban.com/`, and `http://www.uspto.gov/patents/`.
 - GraphRAG: graph indexes organize entities, relationships, covariates/claims, and communities to support explanation-oriented retrieval and summarization. URLs observed in the PDF include `https://github.com/microsoft/graphrag`, `https://neo4j.com/developer-blog/graphrag-ecosystem-tools/`, `https://langchain-graphrag.readthedocs.io/en/latest/`, and `https://www.nebula-graph.io/posts/graph-RAG`.
+
+## 5.9 Ctx2Skill-Lite and Past Skills Import
+
+`/ingest` now supports five input types: `trajectory`, `document`, `api_doc`,
+`script`, and `past_skills`.
+
+The P0/P1 demo implementation borrows Ctx2Skill's loop at system level:
+
+```text
+context pack
+  -> challenge/rubric generation
+  -> reasoner/judge replay evidence
+  -> candidate Skill proposal
+  -> cross-time replay lite score
+```
+
+This is intentionally a lightweight demo-paper reproduction. It does not run the
+full long-horizon self-play training loop or large-scale benchmark from
+Ctx2Skill.
+
+Backend contract changes:
+
+- `IngestResponse.units[].metadata` may include:
+  - `ctx2skill_evidence`
+  - `layering_reason`
+  - `graph_relation_preview`
+  - `candidate_interface`
+  - `candidate_implementation`
+  - `candidate_relations`
+- `past_skills` accepts legacy Skill JSON/YAML/Markdown/free text and normalizes
+  it into SkillOS schema v0.2 candidates.
+- Candidate creation remains S1 only. It may carry `dependency_ids`,
+  `component_ids`, `sub_skill_ids`, `parent_skill_ids`, and `tool_calls`, but it
+  does not bypass audit, verification, or release governance.
+
+Frontend contract changes:
+
+- Knowledge Import shows a `Past Skills` tab.
+- Candidate Review shows read-only `Ctx2Skill Evidence`, `SkillX Layering`, and
+  `Graph Relation Preview` panels when metadata is present.
+- Document import is no longer only a summary preview: it now exposes challenge,
+  rubric, judge, and selected-candidate evidence suitable for demo-paper
+  narration.
+
+Paper grounding:
+
+- Ctx2Skill: document/context-to-skill self-play loop; SkillOS uses the
+  Challenger, Judge, Proposer, and cross-time replay ideas as a lightweight
+  evidence generator.
+- SkillX: imported past skills are normalized into atomic, functional, or
+  strategic layers and linked through dependency/composition/evolution fields.

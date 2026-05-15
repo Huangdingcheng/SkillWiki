@@ -10,6 +10,7 @@ const EvaluationDashboard = lazy(() => import('@/pages/EvaluationDashboard'))
 const SkillWiki = lazy(() => import('@/pages/SkillWiki'))
 const SkillGraph = lazy(() => import('@/pages/SkillGraph'))
 const AgentExecution = lazy(() => import('@/pages/AgentExecution'))
+const HarnessVerification = lazy(() => import('@/pages/HarnessVerification'))
 const Evolution = lazy(() => import('@/pages/Evolution'))
 const LifecycleDemo = lazy(() => import('@/pages/LifecycleDemo'))
 const KnowledgeImport = lazy(() => import('@/pages/KnowledgeImport'))
@@ -48,6 +49,7 @@ export default function App() {
               <Route path="/wiki" element={<SkillWiki />} />
               <Route path="/graph" element={<SkillGraph />} />
               <Route path="/execution" element={<AgentExecution />} />
+              <Route path="/harness" element={<HarnessVerification />} />
               <Route path="/evolution" element={<Evolution />} />
               <Route path="/lifecycle" element={<LifecycleDemo />} />
               <Route path="/ingest" element={<KnowledgeImport />} />

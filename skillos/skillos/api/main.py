@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from ..utils.llm_client import LLMClient
 from .deps import app_state
 from .memory_store import MemoryGraphManager, MemoryWikiManager
-from .routes import evaluation, evolution, execution, graph, ingest, lifecycle, repository, skills, ws
+from .routes import evaluation, evolution, execution, graph, harness, ingest, lifecycle, repository, skills, ws
 
 logger = logging.getLogger(__name__)
 
@@ -558,6 +558,7 @@ async def _seed_degraded_demo_skill(wiki: MemoryWikiManager, iface: Any) -> None
     skill_id = "demo_degraded_submit_form"
     existing = await wiki.get(skill_id)
     if existing:
+        await _seed_harness_verification_draft(wiki, iface)
         return
 
     skill = Skill(
@@ -604,6 +605,68 @@ async def _seed_degraded_demo_skill(wiki: MemoryWikiManager, iface: Any) -> None
     for _ in range(8):
         skill.record_execution(success=False, latency_ms=650.0)
     skill.transition_to(SkillState.DEGRADED)
+    try:
+        await wiki.create(skill)
+    except ValueError:
+        pass
+
+    await _seed_harness_verification_draft(wiki, iface)
+
+
+async def _seed_harness_verification_draft(wiki: MemoryWikiManager, iface: Any) -> None:
+    """Seed a broken Draft Skill for the harness repair/retry demo."""
+    from ..models.skill_model import (
+        Skill, SkillEvaluation, SkillImplementation, SkillProvenance, SkillTestCase, SkillType,
+    )
+
+    skill_id = "demo_draft_extract_email"
+    if await wiki.get(skill_id):
+        return
+
+    skill = Skill(
+        skill_id=skill_id,
+        name=skill_id,
+        description=(
+            "Extract an email address from text; intentionally starts broken so the "
+            "harness loop can repair and verify it."
+        ),
+        skill_type=SkillType.ATOMIC,
+        tags=["demo", "harness", "verification", "repair"],
+        interface=iface(
+            [{"name": "text", "type": "string", "required": True}],
+            [{"name": "email", "type": "string"}],
+            post=["output.email must exist"],
+        ),
+        implementation=SkillImplementation(
+            language="python",
+            code='output["summary"] = input_data.get("text", "")',
+        ),
+        test_cases=[
+            SkillTestCase(
+                test_id="demo_extract_email_case",
+                name="extract_email_from_contact_text",
+                description="Extracts a required email field from contact text.",
+                input_data={"text": "Contact Ada at ada@example.com", "email": "ada@example.com"},
+                expected_output={"email": "ada@example.com"},
+            )
+        ],
+        evaluation=SkillEvaluation(
+            verifier_specs=[
+                {"type": "json_exists", "path": "output.email"},
+            ],
+            test_case_refs=["demo_extract_email_case"],
+            benchmark_task_ids=["demo_harness_extract_email"],
+            validation_summary="Draft intentionally fails until harness repair adds output.email.",
+        ),
+        provenance=SkillProvenance(
+            source_type="demo",
+            created_by_agent="system",
+            creation_context={
+                "paper_method": "CoEvoSkills/Voyager-style execution-feedback repair loop",
+                "demo_harness_case": True,
+            },
+        ),
+    )
     try:
         await wiki.create(skill)
     except ValueError:
@@ -702,6 +765,7 @@ def create_app(
     app.include_router(lifecycle.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(execution.router, prefix="/api/v1")
+    app.include_router(harness.router, prefix="/api/v1")
     app.include_router(evolution.router, prefix="/api/v1")
     app.include_router(evaluation.router, prefix="/api/v1")
     app.include_router(ingest.router, prefix="/api/v1")
