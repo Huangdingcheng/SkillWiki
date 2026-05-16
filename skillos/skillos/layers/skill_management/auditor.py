@@ -46,6 +46,12 @@ Audit dimensions:
 3. Whether the implementation can satisfy the skill description and postconditions.
 4. Naming quality and maintainability.
 
+Notes:
+- Lifecycle/system tags such as candidate-review, ctx2skill, past_skills, auto-imported, and the source_type are expected metadata.
+  Do not treat them as quality issues unless the Skill has no meaningful domain tags at all.
+- S1/S2 candidates may use prompt_template implementations before a harness-backed deterministic implementation exists.
+  Flag missing execution only when the Skill claims verified execution rather than preview, extraction, or dry-run behavior.
+
 Return only valid JSON with this shape:
 {{
   "passed": true,
@@ -213,9 +219,9 @@ class SkillAuditorAgent:
                 impl_str = ""
                 if impl:
                     if impl.prompt_template:
-                        impl_str = f"prompt_template: {impl.prompt_template[:100]}"
+                        impl_str = f"prompt_template: {_audit_preview(impl.prompt_template, 3000)}"
                     elif impl.code:
-                        impl_str = f"code: {impl.code[:100]}"
+                        impl_str = f"code: {_audit_preview(impl.code, 1600)}"
                     elif impl.sub_skill_ids:
                         impl_str = f"sub_skills: {impl.sub_skill_ids}"
 
@@ -224,8 +230,8 @@ class SkillAuditorAgent:
                     description=skill.description,
                     skill_type=skill.skill_type.value,
                     tags=skill.tags,
-                    input_schema=json.dumps(skill.interface.input_schema, ensure_ascii=False)[:200],
-                    output_schema=json.dumps(skill.interface.output_schema, ensure_ascii=False)[:200],
+                    input_schema=_audit_preview(json.dumps(skill.interface.input_schema, ensure_ascii=False), 2000),
+                    output_schema=_audit_preview(json.dumps(skill.interface.output_schema, ensure_ascii=False), 2000),
                     implementation=impl_str or "(no implementation)",
                 )
                 response = self._llm.chat([
@@ -365,6 +371,13 @@ def _clamp_float(value: Any, *, default: float) -> float:
     except (TypeError, ValueError):
         number = default
     return max(0.0, min(1.0, number))
+
+
+def _audit_preview(value: str, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n[truncated for audit prompt budget]"
 
 
 def _score_audit(

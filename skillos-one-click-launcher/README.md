@@ -16,6 +16,12 @@ To stop the demo, double-click:
 STOP_SKILLOS_DEMO.bat
 ```
 
+To restore public demo fixtures after a memory-backend restart, double-click:
+
+```text
+RESTORE_SKILLOS_DEMO_STATE.bat
+```
+
 Default local URLs:
 
 ```text
@@ -73,4 +79,10 @@ Runtime logs and PID state are written under:
 
 ```text
 skillos-one-click-launcher\runtime
+```
+
+Demo-state restore reports are also written under:
+
+```text
+skillos-one-click-launcher\runtime\demo-state-runs
 ```

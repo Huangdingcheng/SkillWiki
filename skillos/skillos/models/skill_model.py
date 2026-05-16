@@ -141,6 +141,10 @@ class SkillEvaluation(BaseModel):
         default=None,
         description="Short human-readable validation result summary.",
     )
+    harness_validation: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Latest execution-harness validation evidence and promotion gate metadata.",
+    )
 
     @field_validator("verifier_specs")
     @classmethod

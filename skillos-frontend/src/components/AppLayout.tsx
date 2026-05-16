@@ -14,6 +14,7 @@ import {
   WifiOutlined,
   RocketOutlined,
   BarChartOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -56,6 +57,7 @@ const menuItems = [
         ),
       },
       { key: '/execution', icon: <PlayCircleOutlined />, label: 'Agent Execution' },
+      { key: '/harness', icon: <SafetyCertificateOutlined />, label: 'Harness Verification' },
       { key: '/evolution', icon: <SyncOutlined />, label: 'Evolution' },
       { key: '/ingest', icon: <CloudUploadOutlined />, label: 'Knowledge Import' },
     ],

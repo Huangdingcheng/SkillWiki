@@ -385,6 +385,7 @@ def _step_verifier_document(
     output.setdefault("success", step.status == "success")
     return {
         "success": step.status == "success",
+        "input": dict(step.input_mapping or {}),
         "output": output,
         "final_state": final_state,
         "step": {

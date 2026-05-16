@@ -27,6 +27,27 @@ from ..schemas import (
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 
+def _relation_strength_metadata() -> Dict[str, Any]:
+    return {
+        "strong": {
+            "depends_on": "Execution prerequisite or hard operational dependency.",
+            "composes_with": "Structural composition: the source Skill uses the target Skill as a component.",
+            "evolved_from": "Lineage/version relation: the source Skill is derived from the target Skill.",
+            "replaces": "Lifecycle relation: the source Skill supersedes the target Skill.",
+        },
+        "weak": {
+            "similar_to": (
+                "Projected discovery relation from shared evidence such as source context or validation "
+                "meta-paths; it is not an execution dependency."
+            ),
+        },
+        "claim_boundary": (
+            "Use strong relations for dependency and composition claims. Treat weak projected relations "
+            "as navigation hints unless they are promoted by explicit review or validation evidence."
+        ),
+    }
+
+
 def _skill_to_node(skill) -> GraphNodeData:
     return GraphNodeData(
         id=skill.skill_id,
@@ -353,7 +374,10 @@ async def get_skill_only_projection(
     return SkillGraphProjectionData(
         nodes=[_graph_node_to_data(node) for node in projection.nodes.values()],
         edges=[_projection_edge_to_data(edge) for edge in projection.edges],
-        metadata=projection.metadata,
+        metadata={
+            **projection.metadata,
+            "relation_strength": _relation_strength_metadata(),
+        },
         validation_evidence=projection.metadata.get("validation_evidence", {}),
         stats=stats,
     )
@@ -384,6 +408,7 @@ async def get_graph_view(
             metadata={
                 "paper_basis": ["HIN typed graph projection"],
                 "description": "Legacy Skill-only graph view.",
+                "relation_strength": _relation_strength_metadata(),
             },
         )
         if skill_id:

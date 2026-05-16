@@ -12,6 +12,17 @@ from .verifier import (
     VerifierSpecResult,
     evaluate_verifier_specs,
 )
+from .harness import (
+    CodexCliHarness,
+    HarnessEvidenceStore,
+    HarnessKind,
+    HarnessRunResult,
+    HarnessTestCase,
+    HarnessWorkspace,
+    LocalSkillOSHarness,
+    VerificationLoop,
+    VerificationLoopResult,
+)
 
 __all__ = [
     "StateTracker",
@@ -31,6 +42,15 @@ __all__ = [
     "VerificationResult",
     "VerifierSpecResult",
     "evaluate_verifier_specs",
+    "HarnessKind",
+    "HarnessTestCase",
+    "HarnessRunResult",
+    "VerificationLoopResult",
+    "LocalSkillOSHarness",
+    "CodexCliHarness",
+    "VerificationLoop",
+    "HarnessWorkspace",
+    "HarnessEvidenceStore",
     "ReflectionAgent",
     "Feedback",
 ]

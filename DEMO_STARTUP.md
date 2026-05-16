@@ -24,6 +24,19 @@ To stop both services, double-click:
 STOP_SKILLOS_DEMO.bat
 ```
 
+## Restore Demo State
+
+The default launcher uses the `memory` backend, so imported demo candidates are
+cleared after a backend restart. To restore the public demo fixtures, double-click:
+
+```text
+RESTORE_SKILLOS_DEMO_STATE.bat
+```
+
+The restore script imports the small public fixtures under `docs\demo-fixtures`,
+runs the harness checks for the two S3 demo examples, and validates the related
+Skill graph pack.
+
 ## Manual Startup
 
 Backend:
@@ -83,4 +96,19 @@ http://127.0.0.1:5174/evaluation
 http://127.0.0.1:5174/execution
 http://127.0.0.1:5174/evolution
 http://127.0.0.1:5174/versions
+```
+
+## Full Operator Guide
+
+For the group-demo checklist, API configuration, fixture import steps, and
+troubleshooting, see:
+
+```text
+docs\SKILLOS_DEMO_OPERATOR_GUIDE_20260516.md
+```
+
+For the detailed update report since the previous demo-paper PR baseline, see:
+
+```text
+docs\SKILLOS_DEMO_PAPER_UPDATE_REPORT_20260516.md
 ```

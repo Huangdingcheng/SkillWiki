@@ -230,6 +230,7 @@ class MemoryGraphManager:
         self._remove_auto_edges_from(skill.skill_id, {
             EdgeType.COMPOSES_WITH,
             EdgeType.EVOLVED_FROM,
+            EdgeType.DEPENDS_ON,
         })
 
         if not skill.implementation:
@@ -255,6 +256,16 @@ class MemoryGraphManager:
                 source_id=skill.skill_id,
                 target_id=parent_id,
                 edge_type=EdgeType.EVOLVED_FROM,
+            ))
+
+        for dependency_id in _unique_ids(skill.dependency_ids):
+            if dependency_id == skill.skill_id or dependency_id not in valid_ids:
+                logger.warning("Skip auto graph edge with missing dependency Skill: %s -> %s", skill.skill_id, dependency_id)
+                continue
+            await self.create_edge(_auto_edge(
+                source_id=skill.skill_id,
+                target_id=dependency_id,
+                edge_type=EdgeType.DEPENDS_ON,
             ))
 
     async def remove_skill(self, skill_id: str) -> None:

@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import {
   Alert, Badge, Button, Card, Col, Collapse, Descriptions, Divider, Input, Progress,
-  Row, Select, Space, Steps, Tabs, Tag, Typography,
+  Row, Select, Space, Steps, Tabs, Tag, Typography, Upload,
 } from 'antd'
+import type { UploadProps } from 'antd'
 import {
   ApiOutlined, CheckCircleOutlined, CloudUploadOutlined, CodeOutlined,
   CompressOutlined, DatabaseOutlined, FileSearchOutlined, FileTextOutlined,
   FilterOutlined, LoadingOutlined, PlayCircleOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ingestApi, lifecycleApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
 import type {
@@ -24,7 +25,9 @@ import type {
 } from '@/api/types'
 
 const { TextArea } = Input
+const { Dragger } = Upload
 const { Paragraph, Text } = Typography
+const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024
 
 const SOURCE_TYPES = [
   {
@@ -74,6 +77,23 @@ async def login(page, username: str, password: str) -> bool:
     await page.fill("#password", password)
     await page.click("#submit")
     return True`,
+  },
+  {
+    key: 'past_skills',
+    label: 'Past Skills',
+    icon: <DatabaseOutlined />,
+    color: '#13c2c2',
+    placeholder: `Paste legacy Skill JSON, YAML, Markdown, or free text.
+
+[
+  {
+    "name": "legacy_login_flow",
+    "description": "Log in by filling credentials and waiting for the dashboard.",
+    "steps": ["open login page", "fill username", "fill password", "click submit"],
+    "dependencies": ["click_element", "type_text"],
+    "skill_type": "functional"
+  }
+]`,
   },
 ]
 
@@ -170,6 +190,27 @@ def validate_orders_csv(path: str) -> dict:
     missing = [i for i, row in enumerate(rows, start=1) if not row.get("order_id")]
     return {"row_count": len(rows), "missing_order_id_rows": missing, "ok": not missing}`,
   },
+  {
+    sourceType: 'past_skills',
+    title: 'Legacy Login Skill',
+    content: `[
+  {
+    "name": "legacy_login_flow",
+    "description": "Log in by filling credentials and waiting for the dashboard.",
+    "steps": ["open login page", "fill username", "fill password", "click submit"],
+    "dependencies": ["click_element", "type_text"],
+    "skill_type": "functional",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      },
+      "required": ["username", "password"]
+    }
+  }
+]`,
+  },
 ]
 
 interface CandidateDraft {
@@ -184,6 +225,11 @@ interface CandidateDraft {
   promptTemplate: string
   provenanceText: string
   evaluationText: string
+  dependencyIds: string[]
+  componentIds: string[]
+  subSkillIds: string[]
+  parentSkillIds: string[]
+  toolCalls: string[]
 }
 
 function toJson(value: unknown): string {
@@ -236,6 +282,26 @@ function parseLooseJsonObject(value: string): Record<string, unknown> {
     return {}
   }
   return {}
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map(item => String(item).trim()).filter(Boolean)
+    : []
+}
+
+function metadataRecord(unit: ExperienceUnit | null | undefined): Record<string, unknown> {
+  return asRecord(unit?.metadata) ?? {}
+}
+
+function nestedRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
+  return asRecord(parent[key]) ?? {}
 }
 
 function extractJsonAfterLabel(content: string, label: string): Record<string, unknown> {
@@ -380,13 +446,20 @@ function contractOutputSchema(contract: ResourceContract): Record<string, unknow
 }
 
 function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): CandidateDraft {
+  const metadata = metadataRecord(unit)
+  const candidateInterface = nestedRecord(metadata, 'candidate_interface')
+  const candidateImplementation = nestedRecord(metadata, 'candidate_implementation')
+  const candidateRelations = nestedRecord(metadata, 'candidate_relations')
+  const evidence = nestedRecord(metadata, 'ctx2skill_evidence')
+  const selectedCandidate = nestedRecord(evidence, 'selected_candidate')
   const name = toSnakeCase(unit.proposed_skill_name || `skill_from_${sourceType}_${unit.unit_id}`)
   const description = unit.proposed_description || unit.summary || `Candidate Skill imported from ${sourceType}.`
   const skillType = isSkillType(unit.proposed_type) ? unit.proposed_type : 'atomic'
-  const tags = Array.from(new Set([sourceType, 'candidate-review', ...unit.index_keywords.slice(0, 3)]))
+  const metadataTags = asStringArray(metadata.candidate_tags)
+  const tags = Array.from(new Set([sourceType, 'candidate-review', ...metadataTags, ...unit.index_keywords.slice(0, 3)]))
   const contract = buildResourceContract(sourceType, unit.raw_content)
 
-  const inputSchema = contractInputSchema(contract) ?? {
+  const inputSchema = asRecord(candidateInterface.input_schema) ?? contractInputSchema(contract) ?? {
     type: 'object',
     properties: {
       context: {
@@ -395,7 +468,7 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
       },
     },
   }
-  const outputSchema = contractOutputSchema(contract) ?? {
+  const outputSchema = asRecord(candidateInterface.output_schema) ?? contractOutputSchema(contract) ?? {
     type: 'object',
     properties: {
       result: {
@@ -404,10 +477,15 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
       },
     },
   }
+  const parentSkillIds = asStringArray(candidateRelations.parent_skill_ids)
+  const dependencyIds = asStringArray(candidateRelations.dependency_ids)
+  const componentIds = asStringArray(candidateRelations.component_ids)
+  const subSkillIds = asStringArray(candidateImplementation.sub_skill_ids)
+  const toolCalls = asStringArray(candidateImplementation.tool_calls)
   const provenance: SkillProvenance = {
     source_type: sourceType,
     source_ids: [unit.unit_id],
-    parent_skill_ids: [],
+    parent_skill_ids: parentSkillIds,
     created_by_agent: 'human_reviewer',
     creation_context: {
       import_unit_id: unit.unit_id,
@@ -415,13 +493,19 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
       index_keywords: unit.index_keywords,
       raw_content_preview: unit.raw_content,
       resource_contract: contract,
+      ctx2skill_evidence: metadata.ctx2skill_evidence ?? null,
+      layering_reason: metadata.layering_reason ?? null,
+      graph_relation_preview: metadata.graph_relation_preview ?? [],
     },
   }
+  const verifierDescription = sourceType === 'document' || sourceType === 'past_skills'
+    ? 'Replace Ctx2Skill-lite challenge replay with a deterministic verifier before S3/S4 release.'
+    : 'Replace with deterministic verifier before S3/S4 release.'
   const evaluation: SkillEvaluation = {
     verifier_specs: [
       {
         type: 'placeholder',
-        description: 'Replace with deterministic verifier before S3/S4 release.',
+        description: verifierDescription,
       },
     ],
     test_case_refs: [],
@@ -433,7 +517,9 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
     ? `Call ${contract.method} ${contract.endpoint} with reviewed parameters and validate the response schema.`
     : contract?.kind === 'script'
       ? `Run or adapt ${contract.entrypoint} using the reviewed arguments. Runnable hint: ${contract.runnableHint}.`
-      : unit.summary || description
+      : String(candidateImplementation.prompt_template || selectedCandidate.prompt_template || unit.summary || description)
+  const metadataPreconditions = asStringArray(candidateInterface.preconditions)
+  const metadataPostconditions = asStringArray(candidateInterface.postconditions)
 
   return {
     name,
@@ -442,12 +528,16 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
     tagsText: tags.join(', '),
     inputSchemaText: toJson(inputSchema),
     outputSchemaText: toJson(outputSchema),
-    preconditionsText: contract?.kind === 'api_doc'
+    preconditionsText: metadataPreconditions.length
+      ? metadataPreconditions.join('\n')
+      : contract?.kind === 'api_doc'
       ? `Endpoint ${contract.endpoint} is reachable.\nRequired parameters are available: ${contract.requiredParams.join(', ') || 'reviewed request payload'}.`
       : contract?.kind === 'script'
         ? `Runtime supports ${contract.language}.\nDependencies are available: ${contract.dependencies.join(', ') || 'none detected'}.`
         : '',
-    postconditionsText: contract?.kind === 'api_doc'
+    postconditionsText: metadataPostconditions.length
+      ? metadataPostconditions.join('\n')
+      : contract?.kind === 'api_doc'
       ? `Response conforms to the reviewed schema for ${contract.method} ${contract.endpoint}.`
       : contract?.kind === 'script'
         ? `Entrypoint ${contract.entrypoint} completes and returns ${contract.returns}.`
@@ -455,10 +545,16 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
     promptTemplate: contractPrompt,
     provenanceText: toJson(provenance),
     evaluationText: toJson(evaluation),
+    dependencyIds,
+    componentIds,
+    subSkillIds,
+    parentSkillIds,
+    toolCalls,
   }
 }
 
 export default function KnowledgeImport() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<SourceType>('trajectory')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
@@ -472,17 +568,51 @@ export default function KnowledgeImport() {
   const [auditResult, setAuditResult] = useState<CandidateAuditResult | null>(null)
   const [createdSkill, setCreatedSkill] = useState<CreatedSkill | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
 
   const currentSource = SOURCE_TYPES.find(s => s.key === activeTab)!
   const selectedUnit = result?.units.find(unit => unit.unit_id === selectedUnitId) ?? result?.units[0] ?? null
   const currentDraft = selectedUnit ? drafts[selectedUnit.unit_id] : undefined
   const sourceContract = buildResourceContract(activeTab, content)
+  const selectedMetadata = metadataRecord(selectedUnit)
+  const selectedEvidence = nestedRecord(selectedMetadata, 'ctx2skill_evidence')
+  const selectedGraphPreview = Array.isArray(selectedMetadata.graph_relation_preview)
+    ? selectedMetadata.graph_relation_preview
+    : []
+  const selectedLayeringReason = typeof selectedMetadata.layering_reason === 'string'
+    ? selectedMetadata.layering_reason
+    : ''
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   const resetReviewState = () => {
     setAuditResult(null)
     setCreatedSkill(null)
+  }
+
+  const resetParsedContentState = () => {
+    setResult(null)
+    setDrafts({})
+    setSelectedUnitId(null)
+    resetReviewState()
+  }
+
+  const handleFileBeforeUpload: UploadProps['beforeUpload'] = async file => {
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      setError('File is too large for browser-side import. Use a file under 2 MB.')
+      return Upload.LIST_IGNORE
+    }
+
+    try {
+      const text = await file.text()
+      setContent(text)
+      setLoadedFileName(file.name)
+      setError(null)
+      resetParsedContentState()
+    } catch {
+      setError('Could not read this file as text.')
+    }
+    return Upload.LIST_IGNORE
   }
 
   const handleParse = async () => {
@@ -555,6 +685,11 @@ export default function KnowledgeImport() {
       prompt_template: currentDraft.promptTemplate,
       provenance,
       evaluation,
+      dependency_ids: currentDraft.dependencyIds,
+      component_ids: currentDraft.componentIds,
+      sub_skill_ids: currentDraft.subSkillIds,
+      parent_skill_ids: currentDraft.parentSkillIds,
+      tool_calls: currentDraft.toolCalls,
       author: 'human_reviewer',
     }
   }
@@ -639,11 +774,9 @@ export default function KnowledgeImport() {
               onChange={key => {
                 setActiveTab(key as SourceType)
                 setContent('')
-                setResult(null)
-                setDrafts({})
-                setSelectedUnitId(null)
+                setLoadedFileName(null)
                 setError(null)
-                resetReviewState()
+                resetParsedContentState()
               }}
               items={SOURCE_TYPES.map(source => ({
                 key: source.key,
@@ -658,13 +791,44 @@ export default function KnowledgeImport() {
 
             <TextArea
               value={content}
-              onChange={event => setContent(event.target.value)}
+              onChange={event => {
+                setContent(event.target.value)
+                setLoadedFileName(null)
+              }}
               placeholder={currentSource.placeholder}
               rows={15}
               style={{ fontFamily: 'monospace', fontSize: 13 }}
             />
 
-            {(activeTab === 'api_doc' || activeTab === 'script') && (
+            <Dragger
+              accept=".txt,.md,.markdown,.json,.jsonl,.yaml,.yml,.py,.js,.ts,.tsx,.sh,.bash,.csv,.log,.html,.xml"
+              beforeUpload={handleFileBeforeUpload}
+              multiple={false}
+              showUploadList={false}
+              style={{ marginTop: 12, padding: '6px 0', background: '#fafafa' }}
+            >
+              <p className="ant-upload-drag-icon" style={{ marginBottom: 4 }}>
+                <CloudUploadOutlined style={{ color: currentSource.color }} />
+              </p>
+              <p className="ant-upload-text" style={{ marginBottom: 0 }}>
+                Drop a source file here or click to choose one
+              </p>
+              <p className="ant-upload-hint" style={{ marginBottom: 0 }}>
+                The file is read locally into this {currentSource.label} input. Nothing is created until you parse and review it.
+              </p>
+            </Dragger>
+
+            {loadedFileName && (
+              <Alert
+                type="success"
+                showIcon
+                style={{ marginTop: 10 }}
+                message={`Loaded ${loadedFileName}`}
+                description="Review the text above, then parse it for Candidate Review."
+              />
+            )}
+
+            {(activeTab === 'api_doc' || activeTab === 'script' || activeTab === 'past_skills') && (
               <Space wrap style={{ marginTop: 10 }}>
                 {RESOURCE_EXAMPLES
                   .filter(example => example.sourceType === activeTab)
@@ -674,10 +838,8 @@ export default function KnowledgeImport() {
                       size="small"
                       onClick={() => {
                         setContent(example.content)
-                        setResult(null)
-                        setDrafts({})
-                        setSelectedUnitId(null)
-                        resetReviewState()
+                        setLoadedFileName(null)
+                        resetParsedContentState()
                       }}
                     >
                       {example.title}
@@ -868,6 +1030,45 @@ export default function KnowledgeImport() {
                           </div>
                         ),
                       },
+                      ...(Object.keys(selectedEvidence).length
+                        ? [{
+                          key: 'ctx2skill',
+                          label: 'Ctx2Skill Evidence',
+                          children: (
+                            <Descriptions column={1} bordered size="small">
+                              <Descriptions.Item label="Paper method">
+                                {String(selectedEvidence.paper_method || 'Ctx2Skill-lite')}
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Selected reason">
+                                {String(selectedEvidence.selected_reason || '')}
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Challenges">
+                                <pre style={PREVIEW_BLOCK_STYLE}>{toJson(selectedEvidence.challenges || [])}</pre>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Judge results">
+                                <pre style={PREVIEW_BLOCK_STYLE}>{toJson(selectedEvidence.judge_results || [])}</pre>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Candidate scores">
+                                <pre style={PREVIEW_BLOCK_STYLE}>{toJson(selectedEvidence.candidate_scores || [])}</pre>
+                              </Descriptions.Item>
+                            </Descriptions>
+                          ),
+                        }]
+                        : []),
+                      ...(selectedLayeringReason
+                        ? [{
+                          key: 'skillx-layer',
+                          label: 'SkillX Layering',
+                          children: <Alert type="info" showIcon message={currentDraft.skillType} description={selectedLayeringReason} />,
+                        }]
+                        : []),
+                      ...(selectedGraphPreview.length
+                        ? [{
+                          key: 'graph-preview',
+                          label: 'Graph Relation Preview',
+                          children: <pre style={PREVIEW_BLOCK_STYLE}>{toJson(selectedGraphPreview)}</pre>,
+                        }]
+                        : []),
                       ...(activeTab === 'api_doc' || activeTab === 'script'
                         ? [{
                           key: 'contract',
@@ -1047,11 +1248,16 @@ export default function KnowledgeImport() {
                       showIcon
                       style={{ marginTop: 16 }}
                       title={`Created ${createdSkill.name} as ${createdSkill.state}`}
-                      description={
+                    description={
                         <Space wrap>
                           <Link to={`/wiki?skill_id=${encodeURIComponent(createdSkill.skill_id)}`}>
                             Open in Wiki
                           </Link>
+                          {createdSkill.state === 'S2' && (
+                            <Link to={`/harness?skill_id=${encodeURIComponent(createdSkill.skill_id)}`}>
+                              Open Verification Loop
+                            </Link>
+                          )}
                           <Text type="secondary">Version {createdSkill.version}</Text>
                         </Space>
                       }
@@ -1067,6 +1273,13 @@ export default function KnowledgeImport() {
                     </Button>
                     <Button disabled={!createdSkill || createdSkill.state !== 'S1'} loading={promoting} onClick={handlePromoteDraft}>
                       Promote Draft (S2)
+                    </Button>
+                    <Button
+                      icon={<SafetyCertificateOutlined />}
+                      disabled={!createdSkill || createdSkill.state !== 'S2'}
+                      onClick={() => createdSkill && navigate(`/harness?skill_id=${encodeURIComponent(createdSkill.skill_id)}`)}
+                    >
+                      Verify Draft
                     </Button>
                   </div>
                 </Card>

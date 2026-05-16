@@ -1,0 +1,76 @@
+[
+  {
+    "name": "rg_web_open_url",
+    "description": "Open a target URL in a browser context and return navigation evidence.",
+    "skill_type": "atomic",
+    "inputs": {"target_url": "URL to open"},
+    "outputs": {"navigation_evidence": "loaded URL and status"},
+    "steps": ["Open the URL.", "Record load status."],
+    "tags": ["related-graph", "browser", "atomic"]
+  },
+  {
+    "name": "rg_web_click_element",
+    "description": "Click one UI element selected by a stable selector and return click evidence.",
+    "skill_type": "atomic",
+    "dependencies": ["rg_web_open_url"],
+    "inputs": {"selector": "CSS or accessibility selector"},
+    "outputs": {"click_evidence": "selector clicked and timestamp"},
+    "steps": ["Check that the selector is present.", "Click the element.", "Return evidence."],
+    "tags": ["related-graph", "browser", "atomic"]
+  },
+  {
+    "name": "rg_web_type_text",
+    "description": "Type text into one UI field selected by a stable selector.",
+    "skill_type": "atomic",
+    "dependencies": ["rg_web_click_element"],
+    "inputs": {"selector": "input selector", "text": "text to type"},
+    "outputs": {"typing_evidence": "selector and text length"},
+    "steps": ["Focus the field.", "Type the text.", "Return evidence without leaking secrets."],
+    "tags": ["related-graph", "browser", "atomic"]
+  },
+  {
+    "name": "rg_login_fill_credentials",
+    "description": "Fill username and password fields using lower-level browser typing skills.",
+    "skill_type": "functional",
+    "dependencies": ["rg_web_open_url"],
+    "components": ["rg_web_click_element", "rg_web_type_text"],
+    "inputs": {"username": "user name", "password_secret_ref": "secret reference"},
+    "outputs": {"filled_form_evidence": "fields filled without exposing secret value"},
+    "steps": ["Open login page.", "Click username field.", "Type username.", "Click password field.", "Type secret reference."],
+    "tags": ["related-graph", "login", "functional"]
+  },
+  {
+    "name": "rg_login_submit_and_wait",
+    "description": "Submit the login form and wait for the success signal.",
+    "skill_type": "functional",
+    "dependencies": ["rg_login_fill_credentials"],
+    "components": ["rg_web_click_element"],
+    "inputs": {"submit_selector": "login button selector", "success_signal": "post-login signal"},
+    "outputs": {"submit_evidence": "submit action and observed success signal"},
+    "steps": ["Click submit.", "Wait for success signal.", "Return validation evidence."],
+    "tags": ["related-graph", "login", "functional"]
+  },
+  {
+    "name": "rg_login_flow_v1",
+    "description": "End-to-end login workflow composed from URL opening, credential fill, and submit/wait skills.",
+    "skill_type": "functional",
+    "dependencies": ["rg_login_fill_credentials", "rg_login_submit_and_wait"],
+    "components": ["rg_web_open_url", "rg_login_fill_credentials", "rg_login_submit_and_wait"],
+    "inputs": {"target_url": "login URL", "username": "user name", "password_secret_ref": "secret reference"},
+    "outputs": {"login_evidence": "dry-run login workflow evidence"},
+    "steps": ["Open the login URL.", "Fill credentials.", "Submit and wait for success."],
+    "tags": ["related-graph", "login", "workflow"]
+  },
+  {
+    "name": "rg_login_flow_v2_verified",
+    "description": "Safer v2 login flow that evolves from v1, requires dry-run or allowed domains, and records verifier evidence.",
+    "skill_type": "strategic",
+    "dependencies": ["rg_login_flow_v1"],
+    "components": ["rg_login_flow_v1"],
+    "parents": ["rg_login_flow_v1"],
+    "inputs": {"target_url": "login URL", "dry_run": "true for demo validation"},
+    "outputs": {"verified_login_plan": "workflow plus safety and validation notes"},
+    "steps": ["Review allowed domain or dry-run mode.", "Run the v1 plan as a component.", "Attach verifier evidence."],
+    "tags": ["related-graph", "login", "strategic", "version"]
+  }
+]
