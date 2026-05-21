@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
 from ..deps import AppState, get_app_state
@@ -26,6 +26,7 @@ class ExperienceUnitOut(BaseModel):
     proposed_description: Optional[str]
     proposed_type: Optional[str]
     confidence: float
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IngestResponse(BaseModel):
@@ -35,6 +36,10 @@ class IngestResponse(BaseModel):
     token_usage: int
     errors: List[str]
     units: List[ExperienceUnitOut]
+    created_skill_ids: List[str] = Field(default_factory=list)
+    graph_nodes_created: int = 0
+    graph_edges_created: int = 0
+    agent_trace: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 def _unit_to_out(unit: Any) -> ExperienceUnitOut:
@@ -47,6 +52,7 @@ def _unit_to_out(unit: Any) -> ExperienceUnitOut:
         proposed_description=getattr(unit, "proposed_description", None),
         proposed_type=getattr(unit, "proposed_type", None),
         confidence=getattr(unit, "confidence", 0.5),
+        metadata=getattr(unit, "metadata", {}) or {},
     )
 
 
@@ -82,12 +88,13 @@ async def parse_and_create_skills(
     req: IngestRequest,
     app: AppState = Depends(get_app_state),
 ) -> IngestResponse:
-    """解析输入并自动创建 Skill 草稿（S1 候选状态）。"""
+    """解析输入，并由 Self-Management Agents 创建 Skill 与图谱上下文。"""
     if not app.pipeline:
         raise HTTPException(status_code=503, detail="Experience Pipeline 未初始化")
+    if not app.meta_controller:
+        raise HTTPException(status_code=503, detail="Meta-Controller Agent 未初始化")
 
     import asyncio
-    from ...models.skill_model import Skill, SkillState, SkillType, SkillProvenance, SkillInterface, SkillImplementation
 
     try:
         result = await asyncio.to_thread(
@@ -96,38 +103,41 @@ async def parse_and_create_skills(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    created_skill_ids: List[str] = []
+    graph_nodes_created = 0
+    graph_edges_created = 0
+    agent_trace: List[Dict[str, Any]] = []
+
     for unit in result.units:
-        name = unit.proposed_skill_name or f"skill_from_{req.source_type}"
-        desc = unit.proposed_description or unit.raw_content[:100]
-        try:
-            skill = Skill(
-                name=name,
-                description=desc,
-                skill_type=SkillType(unit.proposed_type or "atomic"),
-                state=SkillState.SKILL_CANDIDATE,
-                tags=[req.source_type, "auto-imported"] + unit.index_keywords[:3],
-                interface=SkillInterface(
-                    input_schema={"type": "object", "properties": {}},
-                    output_schema={"type": "object", "properties": {}},
-                ),
-                implementation=SkillImplementation(
-                    prompt_template=unit.summary or desc,
-                ),
-                provenance=SkillProvenance(
-                    source_type=req.source_type,
-                    author="ingest_pipeline",
-                    source_id=unit.unit_id,
-                ),
-            )
-            await app.wiki.create(skill)
-        except (ValueError, Exception):
-            pass
+        managed = await app.meta_controller.manage_ingested_unit(
+            unit=unit,
+            wiki=app.wiki,
+            request_source_type=req.source_type,
+        )
+        if managed.skill:
+            created_skill_ids.append(managed.skill.skill_id)
+        graph_nodes_created += managed.graph_nodes_created
+        graph_edges_created += managed.graph_edges_created
+        result.errors.extend(managed.errors)
+        agent_trace.extend([
+            {
+                "agent": step.agent,
+                "action": step.action,
+                "status": step.status,
+                "details": step.details,
+            }
+            for step in managed.trace
+        ])
 
     return IngestResponse(
-        success=result.success,
+        success=result.success and not result.errors,
         source_type=result.source_type,
         unit_count=result.unit_count,
         token_usage=result.token_usage,
         errors=result.errors,
         units=[_unit_to_out(u) for u in result.units],
+        created_skill_ids=created_skill_ids,
+        graph_nodes_created=graph_nodes_created,
+        graph_edges_created=graph_edges_created,
+        agent_trace=agent_trace,
     )

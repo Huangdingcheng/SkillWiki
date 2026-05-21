@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 from ..layers.feedback_evolution import EvolutionEngine, SkillMonitor, SkillRepair
@@ -16,6 +17,7 @@ from ..layers.skill_management import (
 )
 from ..layers.skill_runtime import (
     CompositionAgent,
+    HostExecutionAgent,
     ReflectionAgent,
     SkillExecutor,
     SkillPlanner,
@@ -42,6 +44,7 @@ class AppState:
         self.retriever: Optional[SkillRetriever] = None
         self.planner: Optional[SkillPlanner] = None
         self.executor: Optional[SkillExecutor] = None
+        self.host_execution_agent: Optional[HostExecutionAgent] = None
         self.composer: Optional[CompositionAgent] = None
         self.verifier: Optional[VerifierAgent] = None
         self.reflector: Optional[ReflectionAgent] = None
@@ -54,12 +57,12 @@ class AppState:
         self.evolution: Optional[EvolutionEngine] = None
         self.state_tracker: StateTracker = StateTracker(task_id="session")
 
-    def initialize(self, llm: LLMClient, wiki: Any, graph: Any) -> None:
-        from .memory_store import MemorySearchEngine
+    def initialize(self, llm: LLMClient, wiki: Any, graph: Any, embedding_cache_path: Optional[Path] = None) -> None:
+        from ..layers.skill_repository.indexing import SemanticSkillSearchEngine
         self.llm = llm
         self.wiki = wiki
         self.graph = graph
-        self.search = MemorySearchEngine(wiki)
+        self.search = SemanticSkillSearchEngine(wiki, llm, cache_path=embedding_cache_path)
         self.monitor = SkillMonitor()
         self.repair = SkillRepair(llm)
         self.merger = SkillMerger(llm)
@@ -68,6 +71,14 @@ class AppState:
         self.retriever = SkillRetriever(llm_client=llm, search_engine=self.search)
         self.planner = SkillPlanner(llm_client=llm)
         self.executor = SkillExecutor(skill_registry=wiki, llm_client=llm)
+        self.host_execution_agent = HostExecutionAgent(
+            search_engine=self.search,
+            planner=self.planner,
+            executor=self.executor,
+            wiki=wiki,
+            graph=graph,
+            llm_client=llm,
+        )
         self.composer = CompositionAgent(llm_client=llm)
         self.verifier = VerifierAgent(llm_client=llm)
         self.reflector = ReflectionAgent(llm_client=llm)

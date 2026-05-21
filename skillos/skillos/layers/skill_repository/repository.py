@@ -57,6 +57,7 @@ class SkillWikiManager:
         skill_type: Optional[SkillType] = None,
         state: Optional[SkillState] = None,
         tags: Optional[List[str]] = None,
+        visibility: Optional[str] = None,
         domain: Optional[str] = None,
         name_like: Optional[str] = None,
         limit: int = 100,
@@ -73,11 +74,14 @@ class SkillWikiManager:
             limit=limit,
             offset=offset,
         )
-        return [
+        skills = [
             skill
             for row in rows
             if (skill := self._store.get_skill(row["name"], row["version"])) is not None
         ]
+        if visibility and visibility != "all":
+            skills = [skill for skill in skills if skill.visibility.value == visibility]
+        return skills
 
     async def list_all_versions(
         self,

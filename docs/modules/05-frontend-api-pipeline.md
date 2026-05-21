@@ -36,7 +36,7 @@
 | `/` | `Dashboard.tsx` | 系统概览：核心指标、类型分布、健康报告、Self-Evolution Metrics、实时事件 |
 | `/demo` | `SelfEvolutionDemo.tsx` | **EMNLP 核心展示**：完整自演化闭环（检索→规划→执行→记录→学习） |
 | `/wiki` | `SkillWiki.tsx` | Skill 目录：搜索、过滤、详情抽屉、发布/废弃操作 |
-| `/graph` | `SkillGraph.tsx` | 交互式知识图谱（AntV G6）：节点/边类型过滤、子图展开 |
+| `/graph` | `SkillGraph.tsx` | 交互式异构知识图谱（AntV G6）：Source / Skill / Tool / API / Test / Version / Feedback 节点展示与关系过滤 |
 | `/execution` | `AgentExecution.tsx` | 任务执行：检索到的 Skill 展示、步骤结果、经验记录反馈 |
 | `/evolution` | `Evolution.tsx` | 健康监控：degraded/critical Skill 列表、修复、演化周期 |
 | `/lifecycle` | `LifecycleDemo.tsx` | 状态机可视化：S0-S7 转换演示 |
@@ -157,8 +157,8 @@ class AppState:
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| GET | `/graph` | 完整图谱 |
-| POST | `/graph/subgraph` | 子图 |
+| GET | `/graph` | 完整异构图谱；内存 demo 优先返回 source / skill / tool / api_doc / test / version / feedback 等节点 |
+| POST | `/graph/subgraph` | 指定 Skill 周边的异构子图 |
 | POST | `/graph/edges` | 添加边 |
 | GET | `/graph/{id}/dependencies` | 依赖链 |
 | GET | `/graph/{id}/execution-order` | 执行顺序 |
@@ -215,6 +215,8 @@ class AppState:
 | `document` | 技术文档/操作说明 | Markdown 格式的操作规范 |
 | `api_doc` | API 文档/OpenAPI 规范 | REST API 描述 |
 | `script` | 代码脚本 | Python/JavaScript 函数 |
+
+当前 demo 优先支持固定研究输入：前端 Knowledge Import 页面提供静态 JSON fixture，后端 pipeline 会跳过真实采集，直接解析 `skills[]` 数组并生成结构化经验单元。`parse-and-create` 现在通过 `MetaControllerAgent` 调度 `SkillBuilderAgent`、`SkillAuditorAgent` 和 `SkillLibrarianAgent`，创建或复用 Skill，并同步写入异构图节点与关系，包括 source、tool、api_doc、test、version 和 Skill 节点。响应中的 `agent_trace` 用于前端展示内部 Agent 管理过程。
 
 ### 关键数据结构
 

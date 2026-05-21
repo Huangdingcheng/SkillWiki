@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import {
   Card, Input, Button, Tag, Alert, Spin, Divider,
-  Typography, Space, Badge, Statistic, Row, Col, Progress, Tooltip,
+  Typography, Space, Statistic, Row, Col, Progress, Tooltip, Collapse, Timeline,
 } from 'antd'
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
   CloseCircleOutlined, SearchOutlined, DatabaseOutlined,
+  BranchesOutlined, NodeIndexOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
 import { executionApi } from '@/api/client'
@@ -26,8 +27,215 @@ const SKILL_TYPE_COLOR: Record<string, string> = {
   atomic: '#1677ff', functional: '#722ed1', strategic: '#faad14',
 }
 
+const NODE_TYPE_COLOR: Record<string, string> = {
+  host_information: 'geekblue',
+  document: 'green',
+  trajectory: 'red',
+  task: 'orange',
+  tool: 'cyan',
+  api_doc: 'purple',
+  script: 'gold',
+  agent: 'lime',
+}
+
+const TRACE_LABEL: Record<string, string> = {
+  interpret_without_graph_or_skills: 'Task-only interpretation',
+  read_graph_context: 'Graph / host information retrieval',
+  decompose_task_layers: 'Three-layer decomposition',
+  retrieve_and_judge_skill_candidates: 'Skill retrieval and grounded judgment',
+  predict_expected_outcome: 'Expected outcome prediction',
+  build_execution_plan: 'Execution plan generation',
+  bind_step_inputs: 'Runtime input binding',
+  configure_observation_loop: 'Observation loop configuration',
+  observe_runtime_steps: 'Runtime step observations',
+  browser_observe_decide_act_loop: 'Browser observe-decide-act loop',
+  validate_expected_outcome: 'Outcome validation',
+  retry_after_mismatch: 'Mismatch repair retry',
+  execute_on_host_runtime: 'Host runtime execution',
+  reflect_and_update_skill_memory: 'Execution learning',
+}
+
+const DEFAULT_EXECUTION_CONTEXT = {
+  username: 'demo@example.com',
+  password: 'pass123',
+  form_data: {
+    email: 'demo@example.com',
+    password: 'pass123',
+  },
+}
+
+function findTrace(result: ExecutionResult | null, action: string) {
+  return result?.agent_trace?.find(trace => trace.action === action)
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function traceStatusColor(status: string) {
+  if (['success', 'completed', 'created', 'reused'].includes(status)) return 'green'
+  if (['partial', 'empty', 'skipped', 'mismatch'].includes(status)) return 'gold'
+  if (['failed', 'error'].includes(status)) return 'red'
+  return 'blue'
+}
+
+function JsonBlock({ value, maxHeight = 280 }: { value: unknown; maxHeight?: number }) {
+  return (
+    <pre style={{
+      background: '#0f172a',
+      color: '#dbeafe',
+      padding: 12,
+      borderRadius: 8,
+      fontSize: 11,
+      overflow: 'auto',
+      maxHeight,
+      margin: 0,
+    }}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  )
+}
+
+function getTrace(result: ExecutionResult | null, action: string) {
+  return result?.agent_trace?.find(trace => trace.action === action)
+}
+
+function getHostInformationUsed(result: ExecutionResult | null) {
+  const all: Record<string, Record<string, unknown>> = {}
+  for (const trace of result?.agent_trace || []) {
+    const details = asRecord(trace.details)
+    for (const item of asArray(details.host_information_used)) {
+      const node = asRecord(item)
+      const id = String(node.id || node.name || Math.random())
+      all[id] = node
+    }
+    for (const item of asArray(details.graph_context)) {
+      const node = asRecord(item)
+      if (node.node_type === 'host_information') {
+        const id = String(node.id || node.name || Math.random())
+        all[id] = node
+      }
+    }
+  }
+  return Object.values(all)
+}
+
+function getBrowserLoopTrace(result: ExecutionResult | null) {
+  return result?.agent_trace?.find(trace => trace.action === 'browser_observe_decide_act_loop') || null
+}
+
+function compactValue(value: unknown, max = 90) {
+  if (value === undefined || value === null || value === '') return ''
+  if (typeof value === 'object') return JSON.stringify(value).slice(0, max)
+  return String(value).slice(0, max)
+}
+
+function BrowserLoopPanel({ result }: { result: ExecutionResult | null }) {
+  const browserTrace = getBrowserLoopTrace(result)
+  const details = asRecord(browserTrace?.details)
+  const finalState = asRecord(result?.final_state)
+  const observations = asArray(details.observations || finalState.observations)
+  const actions = asArray(details.actions || finalState.actions)
+  if (!browserTrace && observations.length === 0 && actions.length === 0) return null
+
+  return (
+    <Card
+      title={<span><NodeIndexOutlined style={{ color: '#1677ff', marginRight: 6 }} />Browser Observation Loop</span>}
+      bordered={false}
+      size="small"
+      style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+    >
+      <Alert
+        type={details.requires_visual_controller ? 'warning' : 'success'}
+        showIcon
+        message={details.requires_visual_controller ? 'Visual/DOM controller required' : 'Browser loop completed'}
+        description={String(details.blocking_reason || details.message || 'The agent exposed browser observations and actions for this execution.')}
+        style={{ marginBottom: 12 }}
+      />
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={6}><Statistic title="Rounds" value={Number(details.rounds || actions.length || 0)} /></Col>
+        <Col xs={24} md={6}><Statistic title="Max Rounds" value={Number(details.max_rounds || 0)} /></Col>
+        <Col xs={24} md={6}><Statistic title="Observations" value={observations.length} /></Col>
+        <Col xs={24} md={6}><Statistic title="Actions" value={actions.length} /></Col>
+      </Row>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Space wrap>
+          <Tag color="blue">query: {compactValue(details.query || finalState.query, 80)}</Tag>
+          <Tag color="geekblue">entry: {compactValue(details.entry_url || finalState.entry_url, 120)}</Tag>
+          <Tag color={details.success ? 'green' : 'gold'}>{details.success ? 'success' : 'not finished'}</Tag>
+        </Space>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={12}>
+            <Card size="small" title="Action Rounds" style={{ height: '100%' }}>
+              <Timeline
+                items={actions.map((item, index) => {
+                  const action = asRecord(item)
+                  return {
+                    color: action.status === 'success' ? 'green' : action.status === 'blocked' ? 'red' : 'blue',
+                    children: (
+                      <div>
+                        <Space wrap>
+                          <Tag color={action.status === 'blocked' ? 'red' : 'blue'}>round {String(action.round ?? index)}</Tag>
+                          <Text strong>{String(action.action || 'action')}</Text>
+                        </Space>
+                        <div><Text type="secondary">{String(action.reason || '')}</Text></div>
+                        <Text code style={{ fontSize: 11 }}>{compactValue(action.target, 140)}</Text>
+                      </div>
+                    ),
+                  }
+                })}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} md={12}>
+            <Card size="small" title="Observation Evidence" style={{ height: '100%' }}>
+              <Collapse
+                size="small"
+                items={observations.map((item, index) => {
+                  const obs = asRecord(item)
+                  return {
+                    key: `browser-loop-${index}`,
+                    label: `round ${String(obs.round ?? index)} · ${String(obs.observation_type || obs.type || 'observation')}`,
+                    children: <JsonBlock value={obs} maxHeight={220} />,
+                  }
+                })}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </Space>
+    </Card>
+  )
+}
+
+function observationColor(type: string) {
+  if (type === 'filesystem') return 'gold'
+  if (type === 'terminal') return 'green'
+  if (type === 'browser') return 'blue'
+  if (type === 'application') return 'purple'
+  if (type === 'runtime') return 'default'
+  return 'cyan'
+}
+
+function getExecutionContextForGoal(goalText: string) {
+  const normalized = goalText.toLowerCase()
+  const needsFormFixture = normalized.includes('login')
+    || normalized.includes('form')
+    || goalText.includes('登录')
+    || goalText.includes('表单')
+  return needsFormFixture ? DEFAULT_EXECUTION_CONTEXT : {}
+}
+
 function StepCard({ step, index }: { step: ExecutionStepResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
+  const observations = step.observations || []
+  const judgment = step.step_judgment || {}
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -54,12 +262,53 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
           </Space>
           <Space>
             <Tag color={STATUS_COLOR[step.status]}>{step.status}</Tag>
+            {observations.length > 0 && <Tag color="cyan">obs {observations.length}</Tag>}
             <Text type="secondary">{step.latency_ms.toFixed(0)}ms</Text>
           </Space>
         </div>
         {expanded && (
           <div style={{ marginTop: 8 }}>
             {step.error && <Alert type="error" message={step.error} style={{ marginBottom: 8 }} />}
+            {Object.keys(judgment).length > 0 && (
+              <Alert
+                type={judgment.next_action === 'repair' ? 'warning' : 'success'}
+                showIcon
+                message={`Step judgment: ${String(judgment.next_action || 'continue')}`}
+                description={String(judgment.reason || '')}
+                style={{ marginBottom: 8 }}
+              />
+            )}
+            {observations.length > 0 && (
+              <Collapse
+                size="small"
+                style={{ marginBottom: 8 }}
+                items={observations.map((packet, packetIndex) => {
+                  const packetRecord = asRecord(packet)
+                  const packetObservations = asArray(packetRecord.observations)
+                  return {
+                    key: `${step.step_id}-obs-${packetIndex}`,
+                    label: `${String(packetRecord.phase || 'observation')} observations (${packetObservations.length})`,
+                    children: (
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        {packetObservations.map((item, obsIndex) => {
+                          const obs = asRecord(item)
+                          return (
+                            <Card key={`${step.step_id}-${packetIndex}-${obsIndex}`} size="small" style={{ background: '#fafafa' }}>
+                              <Space wrap>
+                                <Tag color={observationColor(String(obs.type))}>{String(obs.type || 'observation')}</Tag>
+                                <Text strong>{String(obs.source || 'ObservationProvider')}</Text>
+                                <Text type="secondary">{compactValue(obs.target, 120)}</Text>
+                              </Space>
+                              <JsonBlock value={obs.evidence || obs} maxHeight={180} />
+                            </Card>
+                          )
+                        })}
+                      </Space>
+                    ),
+                  }
+                })}
+              />
+            )}
             {Object.keys(step.outputs).length > 0 && (
               <pre style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, fontSize: 11, overflow: 'auto' }}>
                 {JSON.stringify(step.outputs, null, 2)}
@@ -84,7 +333,7 @@ export default function AgentExecution() {
     setError(null)
     setResult(null)
     try {
-      const res = await executionApi.executePlan(goal)
+      const res = await executionApi.executePlan(goal, getExecutionContextForGoal(goal))
       setResult(res)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string; error?: string } }; message?: string }
@@ -137,6 +386,12 @@ export default function AgentExecution() {
             '点击页面上的提交按钮',
             '填写登录表单并提交',
             '在搜索框中输入关键词并搜索',
+            'Please open the Chrome browser for me.',
+            'Open Chrome and go to the GPT conversation page.',
+            'Open GPT, ask today weather, and save the answer to Downloads.',
+            'Open my Downloads folder in Finder.',
+            '打开下载目录里的 abc.json 文件',
+            '打开终端执行 top 命令查看不同进程的实时动态，持续 10 秒',
           ].map(ex => (
             <Tag
               key={ex}
@@ -226,6 +481,244 @@ export default function AgentExecution() {
                 </Col>
               </Row>
             </Card>
+
+            {result.agent_trace && result.agent_trace.length > 0 && (
+              <Card
+                title={<span><NodeIndexOutlined style={{ color: '#1677ff', marginRight: 6 }} />Full Agent Execution Trace</span>}
+                bordered={false}
+                size="small"
+                style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+              >
+                {(() => {
+                  const retrieve = getTrace(result, 'retrieve_and_judge_skill_candidates')
+                  const graphTrace = getTrace(result, 'read_graph_context')
+                  const decompositionTrace = findTrace(result, 'decompose_task_layers')
+                  const planTrace = findTrace(result, 'build_execution_plan')
+                  const bindTrace = getTrace(result, 'bind_step_inputs')
+                  const validationTrace = getTrace(result, 'validate_expected_outcome')
+                  const details = asRecord(retrieve?.details)
+                  const graphDetails = asRecord(graphTrace?.details)
+                  const decompositionDetails = asRecord(decompositionTrace?.details)
+                  const planDetails = asRecord(planTrace?.details)
+                  const bindDetails = asRecord(bindTrace?.details)
+                  const validationDetails = asRecord(validationTrace?.details)
+                  const inferred = asRecord(details.inferred_context)
+                  const graphContext = asArray(graphDetails.graph_context || details.graph_context).slice(0, 8)
+                  const hostInfo = getHostInformationUsed(result)
+                  const layers = asArray(decompositionDetails.layers)
+                  const groundedDecision = asRecord(details.grounded_decision)
+                  const rejected = asArray(groundedDecision.rejected_skills)
+                  const candidates = asArray(details.candidate_skills)
+                  return (
+                    <div style={{ marginBottom: 12 }}>
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="Execution is fully exposed here: task interpretation, graph evidence, host information, skill judgment, planning, input binding, runtime execution, validation, and learning."
+                        style={{ marginBottom: 12 }}
+                      />
+                      {layers.length > 0 && (
+                        <Card size="small" title="Three-Layer Agent Decomposition" style={{ marginBottom: 12 }}>
+                          <Row gutter={[8, 8]}>
+                            {layers.map((layer, index) => {
+                              const item = asRecord(layer)
+                              const matched = asArray(item.matched_skills)
+                              return (
+                                <Col xs={24} md={8} key={`${String(item.layer)}-${index}`}>
+                                  <div style={{
+                                    border: '1px solid #edf0f5',
+                                    borderRadius: 10,
+                                    padding: 10,
+                                    height: '100%',
+                                    background: index === 0 ? '#fff7e6' : index === 1 ? '#f9f0ff' : '#e6f4ff',
+                                  }}>
+                                    <Tag color={index === 0 ? 'gold' : index === 1 ? 'purple' : 'blue'}>
+                                      {String(item.layer)} · {String(item.expected_skill_type)}
+                                    </Tag>
+                                    <div style={{ fontWeight: 700, marginTop: 6 }}>{String(item.intent)}</div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>{String(item.description)}</Text>
+                                    <div style={{ marginTop: 8 }}>
+                                      {matched.length === 0 ? (
+                                        <Tag>agent fallback</Tag>
+                                      ) : matched.slice(0, 3).map(skill => (
+                                        <Tag key={String(skill)} color="cyan">{String(skill)}</Tag>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </Col>
+                              )
+                            })}
+                          </Row>
+                        </Card>
+                      )}
+                      <Row gutter={[12, 12]}>
+                        <Col xs={24} md={8}>
+                          <Card size="small" title="Inferred Context" style={{ height: '100%' }}>
+                            {Object.keys(inferred).length === 0 ? (
+                              <Text type="secondary">No inferred parameters.</Text>
+                            ) : (
+                              <Space wrap>
+                                {Object.entries(inferred).map(([key, value]) => (
+                                  <Tag key={key} color="blue">{key}: {String(value).slice(0, 60)}</Tag>
+                                ))}
+                              </Space>
+                            )}
+                          </Card>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Card size="small" title="Graph Evidence" style={{ height: '100%' }}>
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                              {graphContext.length === 0 && <Text type="secondary">No graph evidence.</Text>}
+                              {graphContext.map((node, index) => {
+                                const item = asRecord(node)
+                                return (
+                                  <div key={`${String(item.id)}-${index}`}>
+                                    <Tag color={NODE_TYPE_COLOR[String(item.node_type)] || 'cyan'}>{String(item.node_type || 'node')}</Tag>
+                                    <Text style={{ fontSize: 12 }}>{String(item.name || item.id)}</Text>
+                                  </div>
+                                )
+                              })}
+                            </Space>
+                          </Card>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Card size="small" title="Execution Plan" style={{ height: '100%' }}>
+                            <Space direction="vertical" size={4}>
+                              <Text type="secondary">step count: {String(planDetails.step_count || result.steps.length)}</Text>
+                              {result.steps.map(step => (
+                                <Tag key={step.step_id} color="purple">{step.skill_name}</Tag>
+                              ))}
+                            </Space>
+                          </Card>
+                        </Col>
+                      </Row>
+                      <Card
+                        size="small"
+                        title={<span><DatabaseOutlined style={{ color: '#2f54eb', marginRight: 6 }} />Host Information Used</span>}
+                        style={{ marginTop: 12 }}
+                      >
+                        {hostInfo.length === 0 ? (
+                          <Text type="secondary">No host information nodes were used for this execution.</Text>
+                        ) : (
+                          <Row gutter={[8, 8]}>
+                            {hostInfo.map((node, index) => (
+                              <Col xs={24} md={12} key={`${String(node.id)}-${index}`}>
+                                <div style={{
+                                  border: '1px solid #d6e4ff',
+                                  background: 'linear-gradient(135deg, #f0f5ff, #e6fffb)',
+                                  borderRadius: 10,
+                                  padding: 10,
+                                }}>
+                                  <Space wrap>
+                                    <Tag color="geekblue">host_information</Tag>
+                                    <Text strong>{String(node.name || node.id)}</Text>
+                                  </Space>
+                                  <div style={{ marginTop: 6 }}>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                      {String(node.description || '').slice(0, 180)}
+                                    </Text>
+                                  </div>
+                                  <div style={{ marginTop: 6 }}>
+                                    {asArray(node.labels).slice(0, 5).map(label => <Tag key={String(label)}>{String(label)}</Tag>)}
+                                  </div>
+                                  {Boolean(node.command) && (
+                                    <Text code style={{ fontSize: 11 }}>{compactValue(node.command, 120)}</Text>
+                                  )}
+                                </div>
+                              </Col>
+                            ))}
+                          </Row>
+                        )}
+                      </Card>
+
+                      <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+                        <Col xs={24} md={12}>
+                          <Card size="small" title={<span><SearchOutlined /> Skill Candidate Judgment</span>} style={{ height: '100%' }}>
+                            <Space direction="vertical" style={{ width: '100%' }}>
+                              <Text type="secondary">action: {String(groundedDecision.skill_action || 'unknown')}</Text>
+                              <Text type="secondary">coverage: {compactValue(asRecord(groundedDecision.coverage).coverage_score || 'n/a')}</Text>
+                              <div>
+                                <Text strong>Selected</Text>
+                                <div style={{ marginTop: 4 }}>
+                                  {asArray(details.selected).length === 0
+                                    ? <Tag>none</Tag>
+                                    : asArray(details.selected).map(name => <Tag key={String(name)} color="green">{String(name)}</Tag>)}
+                                </div>
+                              </div>
+                              <div>
+                                <Text strong>Rejected</Text>
+                                <div style={{ marginTop: 4 }}>
+                                  {rejected.length === 0
+                                    ? <Tag>none</Tag>
+                                    : rejected.slice(0, 6).map((item, i) => {
+                                      const reject = asRecord(item)
+                                      return <Tooltip key={`${String(reject.name)}-${i}`} title={String(reject.reason || '')}><Tag color="red">{String(reject.name || item)}</Tag></Tooltip>
+                                    })}
+                                </div>
+                              </div>
+                              <Collapse
+                                size="small"
+                                items={[{
+                                  key: 'candidates',
+                                  label: `All candidate skills seen by agent (${candidates.length})`,
+                                  children: <JsonBlock value={candidates} />,
+                                }]}
+                              />
+                            </Space>
+                          </Card>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Card size="small" title={<span><BranchesOutlined /> Plan, Inputs, Validation</span>} style={{ height: '100%' }}>
+                            <Space direction="vertical" style={{ width: '100%' }}>
+                              <Text type="secondary">step count: {String(planDetails.step_count || result.steps.length)}</Text>
+                              <Text type="secondary">validation: {String(validationTrace?.status || 'not available')}</Text>
+                              <Space wrap>
+                                {result.steps.map(step => <Tag key={step.step_id} color="purple">{step.skill_name}</Tag>)}
+                              </Space>
+                              <Collapse
+                                size="small"
+                                items={[
+                                  { key: 'inputs', label: 'Bound runtime inputs', children: <JsonBlock value={bindDetails.steps || []} /> },
+                                  { key: 'validation', label: 'Expected-vs-actual validation', children: <JsonBlock value={validationDetails} /> },
+                                ]}
+                              />
+                            </Space>
+                          </Card>
+                        </Col>
+                      </Row>
+                    </div>
+                  )
+                })()}
+                <Divider style={{ margin: '12px 0' }} />
+                <Timeline
+                  items={result.agent_trace.map((trace, index) => ({
+                    color: traceStatusColor(trace.status),
+                    children: (
+                      <div>
+                        <Space wrap>
+                          <Tag color={traceStatusColor(trace.status)}>{trace.status}</Tag>
+                          <Text strong>{TRACE_LABEL[trace.action] || trace.action.replace(/_/g, ' ')}</Text>
+                          <Text type="secondary">{trace.agent}</Text>
+                        </Space>
+                        <div style={{ marginTop: 6 }}>
+                          <Collapse
+                            size="small"
+                            ghost
+                            items={[{
+                              key: `${trace.action}-${index}`,
+                              label: 'Show raw trace details',
+                              children: <JsonBlock value={trace.details} maxHeight={360} />,
+                            }]}
+                          />
+                        </div>
+                      </div>
+                    ),
+                  }))}
+                />
+              </Card>
+            )}
+
+            <BrowserLoopPanel result={result} />
 
             {/* 执行步骤 */}
             <Card

@@ -149,7 +149,17 @@ class SkillReviewer:
         impl_info = "无实现"
         if skill.implementation:
             impl = skill.implementation
-            if impl.code:
+            host_tools = [tool for tool in impl.tool_calls if str(tool).startswith("host.")]
+            if host_tools:
+                impl_info = (
+                    "Allowlisted host runtime tool implementation. "
+                    f"Runtime tool_calls={host_tools}. "
+                    "Do not judge this Skill by placeholder seed code length; judge whether the tool contract, "
+                    "interface, description, side effects, and tests are coherent."
+                )
+                if impl.sub_skill_ids:
+                    impl_info += f" Composes helper Skill IDs: {impl.sub_skill_ids}."
+            elif impl.code:
                 impl_info = f"Python 代码 ({len(impl.code)} 字符)"
             elif impl.prompt_template:
                 impl_info = f"Prompt 模板: {impl.prompt_template[:150]}"
@@ -164,8 +174,8 @@ class SkillReviewer:
             granularity_level=skill.granularity_level,
             description=skill.description,
             tags=skill.tags,
-            input_schema=json.dumps(skill.interface.input_schema, ensure_ascii=False)[:400],
-            output_schema=json.dumps(skill.interface.output_schema, ensure_ascii=False)[:300],
+            input_schema=json.dumps(skill.interface.input_schema, ensure_ascii=False)[:1200],
+            output_schema=json.dumps(skill.interface.output_schema, ensure_ascii=False)[:1200],
             preconditions=skill.interface.preconditions,
             postconditions=skill.interface.postconditions,
             side_effects=skill.interface.side_effects,

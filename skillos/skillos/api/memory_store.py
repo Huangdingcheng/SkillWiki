@@ -8,7 +8,16 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ..layers.skill_repository.indexing import SearchQuery, SearchResult, rank_search_results
-from ..models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
+from ..models.graph_model import (
+    GraphNodeType,
+    GraphRelationType,
+    HeterogeneousGraphEdge,
+    HeterogeneousGraphNode,
+    HeterogeneousSubgraph,
+    SkillEdge,
+    SkillGraphNode,
+    SkillSubgraph,
+)
 from ..models.skill_model import EdgeType, Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 from ..utils.logger import get_logger
 
@@ -41,6 +50,7 @@ class MemoryWikiManager:
         skill_type: Optional[SkillType] = None,
         state: Optional[SkillState] = None,
         tags: Optional[List[str]] = None,
+        visibility: Optional[str] = None,
         domain: Optional[str] = None,
         name_like: Optional[str] = None,
         limit: int = 100,
@@ -54,6 +64,8 @@ class MemoryWikiManager:
         if tags:
             tag_set = {tag.strip().lower() for tag in tags if tag.strip()}
             skills = [skill for skill in skills if tag_set & set(skill.tags)]
+        if visibility and visibility != "all":
+            skills = [skill for skill in skills if skill.visibility.value == visibility]
         if domain:
             skills = [skill for skill in skills if skill.domain == domain]
         if name_like:
@@ -200,9 +212,12 @@ class MemoryGraphManager:
     def __init__(self) -> None:
         self._nodes: Dict[str, SkillGraphNode] = {}
         self._edges: List[SkillEdge] = []
+        self._hetero_nodes: Dict[str, HeterogeneousGraphNode] = {}
+        self._hetero_edges: List[HeterogeneousGraphEdge] = []
 
     async def sync_skill(self, skill: Skill) -> None:
         self._nodes[skill.skill_id] = _skill_to_graph_node(skill)
+        await self.upsert_node(_skill_to_hetero_node(skill))
 
     async def sync_auto_edges(self, skill: Skill, valid_skill_ids: Iterable[str]) -> None:
         valid_ids = set(valid_skill_ids)
@@ -238,8 +253,13 @@ class MemoryGraphManager:
 
     async def remove_skill(self, skill_id: str) -> None:
         self._nodes.pop(skill_id, None)
+        self._hetero_nodes.pop(skill_id, None)
         self._edges = [
             edge for edge in self._edges
+            if edge.source_id != skill_id and edge.target_id != skill_id
+        ]
+        self._hetero_edges = [
+            edge for edge in self._hetero_edges
             if edge.source_id != skill_id and edge.target_id != skill_id
         ]
 
@@ -253,10 +273,102 @@ class MemoryGraphManager:
                 and edge.metadata.get("source") == "skill_repository"
             )
         ]
+        relation_types = {
+            _edge_type_to_relation(edge_type)
+            for edge_type in edge_types
+            if _edge_type_to_relation(edge_type) is not None
+        }
+        self._hetero_edges = [
+            edge for edge in self._hetero_edges
+            if not (
+                edge.source_id == source_id
+                and edge.relation_type in relation_types
+                and edge.metadata.get("auto_generated") is True
+                and edge.metadata.get("source") == "skill_repository"
+            )
+        ]
 
     async def create_edge(self, edge: SkillEdge) -> None:
         self._edges = [existing for existing in self._edges if existing.edge_id != edge.edge_id]
         self._edges.append(edge)
+        relation_type = _edge_type_to_relation(edge.edge_type)
+        if relation_type:
+            metadata = dict(edge.metadata)
+            metadata.setdefault("legacy_edge_type", edge.edge_type.value)
+            await self.upsert_edge(HeterogeneousGraphEdge(
+                edge_id=edge.edge_id,
+                source_id=edge.source_id,
+                target_id=edge.target_id,
+                relation_type=relation_type,
+                weight=edge.weight,
+                confidence=edge.confidence,
+                description=edge.description,
+                metadata=metadata,
+                created_at=edge.created_at,
+                created_by=edge.created_by,
+            ))
+
+    async def upsert_node(self, node: HeterogeneousGraphNode) -> None:
+        self._hetero_nodes[node.node_id] = node
+
+    async def upsert_edge(self, edge: HeterogeneousGraphEdge) -> None:
+        self._hetero_edges = [
+            existing for existing in self._hetero_edges
+            if existing.edge_id != edge.edge_id
+        ]
+        self._hetero_edges.append(edge)
+
+    async def get_heterogeneous_graph(
+        self,
+        node_ids: Optional[List[str]] = None,
+        depth: int = 1,
+        limit: int = 500,
+    ) -> HeterogeneousSubgraph:
+        roots = list(node_ids or [])
+        if not roots:
+            selected_ids = list(self._hetero_nodes)[:limit]
+        else:
+            selected_ids = self._expand_heterogeneous_ids(roots, depth=depth, limit=limit)
+
+        selected = set(selected_ids)
+        subgraph = HeterogeneousSubgraph(name="SkillOS heterogeneous graph")
+        for node_id in selected_ids:
+            node = self._hetero_nodes.get(node_id)
+            if node:
+                subgraph.add_node(node)
+
+        subgraph.edges = [
+            edge for edge in self._hetero_edges
+            if edge.source_id in selected and edge.target_id in selected
+        ]
+        return subgraph
+
+    def _expand_heterogeneous_ids(self, roots: List[str], depth: int, limit: int) -> List[str]:
+        visited: List[str] = []
+        visited_set: Set[str] = set()
+        frontier: Set[str] = set(roots)
+
+        for root in roots:
+            if root in self._hetero_nodes and root not in visited_set:
+                visited.append(root)
+                visited_set.add(root)
+
+        for _ in range(max(depth, 1)):
+            next_frontier: Set[str] = set()
+            for edge in self._hetero_edges:
+                if edge.source_id not in frontier and edge.target_id not in frontier:
+                    continue
+                for node_id in (edge.source_id, edge.target_id):
+                    if node_id in self._hetero_nodes and node_id not in visited_set:
+                        visited.append(node_id)
+                        visited_set.add(node_id)
+                        next_frontier.add(node_id)
+                        if len(visited) >= limit:
+                            return visited
+            frontier = next_frontier
+            if not frontier:
+                break
+        return visited
 
     async def get_subgraph(
         self,
@@ -378,15 +490,25 @@ class MemoryGraphManager:
 
     async def get_stats(self) -> Dict[str, Any]:
         edge_types: Dict[str, int] = {}
+        relation_types: Dict[str, int] = {}
+        node_types: Dict[str, int] = {}
         node_ids = set(self._nodes)
         for edge in self._edges:
             node_ids.add(edge.source_id)
             node_ids.add(edge.target_id)
             edge_types[edge.edge_type.value] = edge_types.get(edge.edge_type.value, 0) + 1
+        for node in self._hetero_nodes.values():
+            node_types[node.node_type.value] = node_types.get(node.node_type.value, 0) + 1
+        for edge in self._hetero_edges:
+            relation_types[edge.relation_type.value] = relation_types.get(edge.relation_type.value, 0) + 1
         return {
             "nodes": len(node_ids),
             "edges": len(self._edges),
             "edge_type_distribution": edge_types,
+            "heterogeneous_nodes": len(self._hetero_nodes),
+            "heterogeneous_edges": len(self._hetero_edges),
+            "node_type_distribution": node_types,
+            "relation_type_distribution": relation_types,
         }
 
     async def find_merge_candidates(self, threshold: float = 0.85) -> List:
@@ -451,6 +573,31 @@ def _skill_to_graph_node(skill: Skill) -> SkillGraphNode:
     )
 
 
+def _skill_to_hetero_node(skill: Skill) -> HeterogeneousGraphNode:
+    return HeterogeneousGraphNode(
+        node_id=skill.skill_id,
+        node_type=GraphNodeType.SKILL,
+        name=skill.display_name or skill.name,
+        description=skill.description,
+        labels=skill.tags,
+        metadata={
+            "canonical_name": skill.name,
+            "visibility": skill.visibility.value,
+            "created_at": skill.created_at.isoformat(),
+            "updated_at": skill.updated_at.isoformat(),
+        },
+        skill_id=skill.skill_id,
+        skill_type=skill.skill_type,
+        state=skill.state,
+        version=skill.version,
+        domain=skill.domain,
+        granularity_level=skill.granularity_level,
+        success_rate=skill.metrics.success_rate,
+        usage_count=skill.metrics.usage_count,
+        source_type=skill.provenance.source_type if skill.provenance else None,
+    )
+
+
 def _dedupe_edges(edges: Iterable[SkillEdge]) -> List[SkillEdge]:
     seen: Set[str] = set()
     unique: List[SkillEdge] = []
@@ -471,6 +618,17 @@ def _auto_edge(source_id: str, target_id: str, edge_type: EdgeType) -> SkillEdge
         weight=1.0,
         metadata={"auto_generated": True, "source": "skill_repository"},
     )
+
+
+def _edge_type_to_relation(edge_type: EdgeType) -> Optional[GraphRelationType]:
+    mapping = {
+        EdgeType.DEPENDS_ON: GraphRelationType.REQUIRES,
+        EdgeType.COMPOSES_WITH: GraphRelationType.COMPOSES_WITH,
+        EdgeType.SIMILAR_TO: GraphRelationType.SIMILAR_TO,
+        EdgeType.EVOLVED_FROM: GraphRelationType.EVOLVES_FROM,
+        EdgeType.REPLACES: GraphRelationType.REPLACES,
+    }
+    return mapping.get(edge_type)
 
 
 def _unique_ids(skill_ids: Iterable[str]) -> List[str]:

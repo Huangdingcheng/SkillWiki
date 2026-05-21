@@ -106,6 +106,7 @@ class LLMClient:
     def __init__(self, config: LLMConfig) -> None:
         self._cfg = config
         self._base_url = config.api_url.rstrip("/")
+        self._chat_completions_url = self._build_chat_completions_url(self._base_url)
         self._headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
@@ -170,6 +171,29 @@ class LLMClient:
         )
         yield from self._stream_request(payload)
 
+    def embed(
+        self,
+        texts: List[str],
+        *,
+        model: str = "text-embedding-3-small",
+    ) -> List[List[float]]:
+        """Request OpenAI-compatible embeddings for semantic retrieval."""
+        if not texts:
+            return []
+        raw = self._request_with_retry(
+            {"model": model, "input": texts},
+            url=self._build_embeddings_url(self._base_url),
+        )
+        rows = raw.get("data", [])
+        vectors: List[List[float]] = []
+        for row in sorted(rows, key=lambda item: item.get("index", 0)):
+            embedding = row.get("embedding")
+            if isinstance(embedding, list):
+                vectors.append([float(value) for value in embedding])
+        if len(vectors) != len(texts):
+            raise LLMError(f"Embedding response size mismatch: expected {len(texts)}, got {len(vectors)}")
+        return vectors
+
     def ping(self) -> bool:
         """
         测试 API 连通性。
@@ -194,6 +218,20 @@ class LLMClient:
     # 内部实现
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_chat_completions_url(base_url: str) -> str:
+        """Support both provider roots and OpenAI SDK-style `/v1` base URLs."""
+        if base_url.endswith("/v1"):
+            return f"{base_url}/chat/completions"
+        return f"{base_url}/v1/chat/completions"
+
+    @staticmethod
+    def _build_embeddings_url(base_url: str) -> str:
+        """Support both provider roots and OpenAI SDK-style `/v1` base URLs."""
+        if base_url.endswith("/v1"):
+            return f"{base_url}/embeddings"
+        return f"{base_url}/v1/embeddings"
+
     def _build_payload(
         self,
         messages: List[Message],
@@ -215,14 +253,14 @@ class LLMClient:
             payload.update(extra)
         return payload
 
-    def _request_with_retry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _request_with_retry(self, payload: Dict[str, Any], *, url: Optional[str] = None) -> Dict[str, Any]:
         """带指数退避重试的 HTTP 请求。"""
         last_exc: Optional[Exception] = None
         delay = self._cfg.retry_delay
 
         for attempt in range(self._cfg.retry_count + 1):
             try:
-                return self._do_request(payload)
+                return self._do_request(payload, url=url)
             except LLMAuthError:
                 raise  # 认证错误不重试
             except LLMRateLimitError as e:
@@ -244,8 +282,8 @@ class LLMClient:
 
         raise last_exc or LLMError("所有重试均失败")
 
-    def _do_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{self._base_url}/v1/chat/completions"
+    def _do_request(self, payload: Dict[str, Any], *, url: Optional[str] = None) -> Dict[str, Any]:
+        url = url or self._chat_completions_url
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
                 resp = client.post(url, json=payload, headers=self._headers)
@@ -258,7 +296,7 @@ class LLMClient:
         return resp.json()
 
     def _stream_request(self, payload: Dict[str, Any]) -> Iterator[str]:
-        url = f"{self._base_url}/v1/chat/completions"
+        url = self._chat_completions_url
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
                 with client.stream("POST", url, json=payload, headers=self._headers) as resp:

@@ -100,6 +100,46 @@ class TestLLMClient:
         c = create_client(llm_config)
         assert isinstance(c, LLMClient)
 
+    def test_chat_url_accepts_provider_root(self, client: LLMClient, mock_response: dict):
+        import httpx
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_response
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_http = MagicMock()
+            mock_http.__enter__ = MagicMock(return_value=mock_http)
+            mock_http.__exit__ = MagicMock(return_value=False)
+            mock_http.post.return_value = mock_resp
+            mock_client_cls.return_value = mock_http
+
+            client.chat([Message.user("hi")])
+
+        assert mock_http.post.call_args.args[0] == "https://yunwu.ai/v1/chat/completions"
+
+    def test_chat_url_accepts_openai_sdk_style_v1_base(self, mock_response: dict):
+        import httpx
+        cfg = LLMConfig(
+            api_url="https://yunwu.ai/v1",
+            model="gpt-4o",
+            api_key="test_key",
+        )
+        client = LLMClient(cfg)
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_response
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_http = MagicMock()
+            mock_http.__enter__ = MagicMock(return_value=mock_http)
+            mock_http.__exit__ = MagicMock(return_value=False)
+            mock_http.post.return_value = mock_resp
+            mock_client_cls.return_value = mock_http
+
+            client.chat([Message.user("hi")])
+
+        assert mock_http.post.call_args.args[0] == "https://yunwu.ai/v1/chat/completions"
+
     def test_chat_success(self, client: LLMClient, mock_response: dict):
         import httpx
         mock_resp = MagicMock(spec=httpx.Response)

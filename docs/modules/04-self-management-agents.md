@@ -146,6 +146,34 @@ EVENT_TYPES = {
 }
 ```
 
+### 固定输入 Pipeline 的内部 Agent 管理
+
+当前 demo 已将 Knowledge Import 的 `parse-and-create` 接入 Self-Management Agents，而不是由 API 路由直接写 Skill / Graph。
+
+固定研究输入的内部链路为：
+
+```
+ExperiencePipeline
+  Extractor → Normalizer → Summarizer → Indexer
+        │
+        ▼
+MetaControllerAgent.manage_ingested_unit()
+        │
+        ├── SkillBuilderAgent.build_from_experience_unit()
+        │     从结构化 experience unit 生成 S1 Candidate Skill
+        │
+        ├── SkillAuditorAgent.audit()
+        │     本地规则审计 schema / safety，demo 固定输入不强制走 LLM
+        │     通过后推动 Skill: S1 Candidate → S2 Draft → S3 Verified
+        │
+        └── SkillLibrarianAgent
+              register_new() / update()
+              index_ingested_unit_graph()
+              写入 source、tool、api_doc、test、version、skill 节点和关系边
+```
+
+API 响应会返回 `agent_trace`，前端 Knowledge Import 页面用它展示内部 Agent 管理过程。
+
 ---
 
 ## 12 个 Meta-Skills（Strategic L3）

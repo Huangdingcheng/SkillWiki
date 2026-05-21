@@ -13,7 +13,9 @@ from ..models.skill_model import (
     SkillMetrics,
     SkillProvenance,
     SkillState,
+    SkillTestCase,
     SkillType,
+    SkillVisibility,
 )
 
 class MergeSkillsRequest(BaseModel):
@@ -21,6 +23,18 @@ class MergeSkillsRequest(BaseModel):
     skill_b_id: str
     author: str = "api"
     persist: bool = True
+
+
+class MergeUpdateRequest(BaseModel):
+    source_skill_ids: List[str] = Field(default_factory=list)
+    bump: str = Field(default="minor", pattern=r"^(major|minor|patch)$")
+    merge_strategy: str = Field(default="agent_generalize", pattern=r"^(agent_generalize|field_union)$")
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    interface: Optional[SkillInterface] = None
+    implementation: Optional[SkillImplementation] = None
+    test_cases: Optional[List[SkillTestCase]] = None
+    author: str = "api"
 
 
 class SplitSkillRequest(BaseModel):
@@ -47,6 +61,7 @@ class SkillCreateRequest(BaseModel):
     description: str
     skill_type: SkillType = SkillType.ATOMIC
     tags: List[str] = Field(default_factory=list)
+    visibility: SkillVisibility = SkillVisibility.USER
     interface: SkillInterface
     implementation: Optional[SkillImplementation] = None
     author: str = "api"
@@ -55,6 +70,7 @@ class SkillCreateRequest(BaseModel):
 class SkillUpdateRequest(BaseModel):
     description: Optional[str] = None
     tags: Optional[List[str]] = None
+    visibility: Optional[SkillVisibility] = None
     interface: Optional[SkillInterface] = None
     implementation: Optional[SkillImplementation] = None
     author: str = "api"
@@ -64,6 +80,7 @@ class SkillListRequest(BaseModel):
     state: Optional[SkillState] = None
     skill_type: Optional[SkillType] = None
     tags: Optional[List[str]] = None
+    visibility: SkillVisibility | str = SkillVisibility.USER
     limit: int = Field(default=50, ge=1, le=1000)
     offset: int = Field(default=0, ge=0)
 
@@ -86,6 +103,7 @@ class SkillSearchResult(BaseModel):
     skill_type: SkillType
     state: SkillState
     tags: List[str]
+    visibility: SkillVisibility = SkillVisibility.USER
     version: str
     score: float
     match_reason: str
@@ -98,6 +116,7 @@ class SkillSummary(BaseModel):
     skill_type: SkillType
     state: SkillState
     tags: List[str]
+    visibility: SkillVisibility = SkillVisibility.USER
     version: str
     granularity_level: int
     metrics: SkillMetrics
@@ -130,6 +149,7 @@ class NewVersionRequest(BaseModel):
     tags: Optional[List[str]] = None
     interface: Optional[SkillInterface] = None
     implementation: Optional[SkillImplementation] = None
+    test_cases: Optional[List[SkillTestCase]] = None
     domain: Optional[str] = None
     granularity_level: Optional[int] = Field(default=None, ge=1, le=5)
 
@@ -143,18 +163,25 @@ class AddEdgeRequest(BaseModel):
     edge_type: str
     weight: float = 1.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    visibility: Optional[str] = None
 
 
 class GraphNodeData(BaseModel):
     id: str
     name: str
-    skill_type: str
-    state: str
-    tags: List[str]
-    version: str
-    granularity_level: int
-    success_rate: float
-    usage_count: int
+    node_type: str = "skill"
+    description: str = ""
+    skill_type: str = ""
+    state: str = ""
+    tags: List[str] = Field(default_factory=list)
+    labels: List[str] = Field(default_factory=list)
+    version: str = ""
+    domain: str = "general"
+    granularity_level: int = 1
+    success_rate: float = 0.0
+    usage_count: int = 0
+    source_type: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphEdgeData(BaseModel):
@@ -163,6 +190,9 @@ class GraphEdgeData(BaseModel):
     target: str
     edge_type: str
     weight: float
+    confidence: float = 1.0
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphData(BaseModel):
@@ -198,6 +228,8 @@ class ExecutionStepResult(BaseModel):
     status: str
     outputs: Dict[str, Any] = Field(default_factory=dict)
     result: Optional[Dict[str, Any]] = None
+    observations: List[Dict[str, Any]] = Field(default_factory=list)
+    step_judgment: Dict[str, Any] = Field(default_factory=dict)
     latency_ms: float
     error: Optional[str] = None
 
@@ -221,6 +253,7 @@ class ExecutionResult(BaseModel):
     retrieved_skills: List[RetrievedSkill] = Field(default_factory=list)
     experience_recorded: bool = False
     suggested_skill: Optional[Dict[str, Any]] = None
+    agent_trace: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ExecutionHistoryItem(BaseModel):

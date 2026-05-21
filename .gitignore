@@ -45,6 +45,8 @@ htmlcov/
 # Database
 *.db
 *.sqlite3
+skillos/skillos/storage/embedding_cache/
+**/storage/embedding_cache/
 
 # Docker
 .dockerignore

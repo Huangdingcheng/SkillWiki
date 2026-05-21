@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Card, Col, Row, Statistic, Progress, Tag, Table, Badge, Spin, Timeline, Button, Empty, Divider } from 'antd'
+import { Card, Col, Row, Statistic, Progress, Tag, Badge, Spin, Divider, Table, Segmented } from 'antd'
 import {
   RocketOutlined,
   CheckCircleOutlined,
   WarningOutlined,
   ThunderboltOutlined,
-  ClearOutlined,
-  WifiOutlined,
   StarOutlined,
   SyncOutlined,
   BulbOutlined,
@@ -14,8 +12,7 @@ import {
 import { motion } from 'framer-motion'
 import { statsApi, evolutionApi } from '@/api/client'
 import type { EvolutionStats } from '@/api/client'
-import { useAppStore } from '@/store/appStore'
-import type { OverviewStats, HealthReport } from '@/api/types'
+import type { HealthReport, OverviewStats, SkillVisibility } from '@/api/types'
 
 const stateColors: Record<string, string> = {
   S4: 'green', S2: 'blue', S3: 'cyan', S1: 'orange',
@@ -37,29 +34,45 @@ const healthColors: Record<string, string> = {
 export default function Dashboard() {
   const [stats, setStats] = useState<OverviewStats | null>(null)
   const [reports, setReports] = useState<HealthReport[]>([])
+  const [healthVisibility, setHealthVisibility] = useState<SkillVisibility | 'all'>('user')
   const [evoStats, setEvoStats] = useState<EvolutionStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const { wsEvents, clearWsEvents } = useAppStore()
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [healthLoading, setHealthLoading] = useState(true)
+  const [evoLoading, setEvoLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      statsApi.overview(),
-      evolutionApi.systemHealth(),
-      statsApi.evolutionStats().catch(() => null),
-    ])
-      .then(([s, h, evo]) => {
-        setStats(s)
-        setReports(h.skill_reports.slice(0, 10))
-        if (evo) setEvoStats(evo)
-      })
-      .finally(() => setLoading(false))
+    setStatsLoading(true)
+    statsApi.overview()
+      .then(setStats)
+      .finally(() => setStatsLoading(false))
   }, [])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
-  if (!stats) return null
+  useEffect(() => {
+    setHealthLoading(true)
+    evolutionApi.systemHealth({ visibility: healthVisibility })
+      .then(h => setReports(h.skill_reports.slice(0, 6)))
+      .finally(() => setHealthLoading(false))
+  }, [healthVisibility])
 
-  const healthyPct = stats.total_skills > 0
-    ? Math.round((stats.by_state['S4'] || 0) / stats.total_skills * 100)
+  useEffect(() => {
+    setEvoLoading(true)
+    statsApi.evolutionStats()
+      .then(setEvoStats)
+      .catch(() => setEvoStats(null))
+      .finally(() => setEvoLoading(false))
+  }, [])
+
+  const emptyStats: OverviewStats = {
+    total_skills: 0,
+    by_state: {},
+    by_type: {},
+    total_executions: 0,
+    avg_success_rate: 1,
+    graph_stats: {},
+  }
+  const displayStats = stats || emptyStats
+  const healthyPct = displayStats.total_skills > 0
+    ? Math.round((displayStats.by_state['S4'] || 0) / displayStats.total_skills * 100)
     : 0
 
   const cardVariants = {
@@ -80,10 +93,10 @@ export default function Dashboard() {
       {/* 核心指标 */}
       <Row gutter={[16, 16]}>
         {[
-          { title: 'Total Skills', value: stats.total_skills, icon: <RocketOutlined />, color: '#1677ff', i: 0 },
-          { title: 'Released', value: stats.by_state['S4'] || 0, icon: <CheckCircleOutlined />, color: '#52c41a', i: 1 },
-          { title: 'Degraded', value: stats.by_state['S5'] || 0, icon: <WarningOutlined />, color: '#faad14', i: 2 },
-          { title: 'Total Executions', value: stats.total_executions, icon: <ThunderboltOutlined />, color: '#722ed1', i: 3 },
+          { title: 'Total Skills', value: displayStats.total_skills, icon: <RocketOutlined />, color: '#1677ff', i: 0 },
+          { title: 'Released', value: displayStats.by_state['S4'] || 0, icon: <CheckCircleOutlined />, color: '#52c41a', i: 1 },
+          { title: 'Degraded', value: displayStats.by_state['S5'] || 0, icon: <WarningOutlined />, color: '#faad14', i: 2 },
+          { title: 'Total Executions', value: displayStats.total_executions, icon: <ThunderboltOutlined />, color: '#722ed1', i: 3 },
         ].map(({ title, value, icon, color, i }) => (
           <Col xs={24} sm={12} lg={6} key={title}>
             <motion.div custom={i} initial="hidden" animate="visible" variants={cardVariants}>
@@ -91,6 +104,7 @@ export default function Dashboard() {
                 <Statistic
                   title={title}
                   value={value}
+                  loading={statsLoading}
                   prefix={<span style={{ color }}>{icon}</span>}
                   valueStyle={{ color, fontWeight: 700 }}
                 />
@@ -105,7 +119,11 @@ export default function Dashboard() {
         <Col xs={24} md={8}>
           <motion.div custom={4} initial="hidden" animate="visible" variants={cardVariants}>
             <Card title="Skill Types" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-              {Object.entries(stats.by_type).map(([type, count]) => (
+              <Spin spinning={statsLoading}>
+              {Object.entries(displayStats.by_type).length === 0 && !statsLoading && (
+                <div style={{ color: '#8c8c8c' }}>No type data yet.</div>
+              )}
+              {Object.entries(displayStats.by_type).map(([type, count]) => (
                 <div key={type} style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Tag color={type === 'atomic' ? 'blue' : type === 'functional' ? 'purple' : 'gold'}>
@@ -114,13 +132,14 @@ export default function Dashboard() {
                     <span style={{ fontWeight: 600 }}>{count}</span>
                   </div>
                   <Progress
-                    percent={Math.round(count / stats.total_skills * 100)}
+                    percent={displayStats.total_skills ? Math.round(count / displayStats.total_skills * 100) : 0}
                     strokeColor={type === 'atomic' ? '#1677ff' : type === 'functional' ? '#722ed1' : '#faad14'}
                     showInfo={false}
                     size="small"
                   />
                 </div>
               ))}
+              </Spin>
             </Card>
           </motion.div>
         </Col>
@@ -129,12 +148,17 @@ export default function Dashboard() {
         <Col xs={24} md={8}>
           <motion.div custom={5} initial="hidden" animate="visible" variants={cardVariants}>
             <Card title="State Distribution" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-              {Object.entries(stats.by_state).map(([state, count]) => (
+              <Spin spinning={statsLoading}>
+              {Object.entries(displayStats.by_state).length === 0 && !statsLoading && (
+                <div style={{ color: '#8c8c8c' }}>No state data yet.</div>
+              )}
+              {Object.entries(displayStats.by_state).map(([state, count]) => (
                 <div key={state} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Tag color={stateColors[state] || 'default'}>{stateLabels[state] || state}</Tag>
                   <Badge count={count} style={{ backgroundColor: '#1677ff' }} />
                 </div>
               ))}
+              </Spin>
             </Card>
           </motion.div>
         </Col>
@@ -153,20 +177,37 @@ export default function Dashboard() {
               </div>
               <Statistic
                 title="Avg Success Rate"
-                value={(stats.avg_success_rate * 100).toFixed(1)}
+                value={(displayStats.avg_success_rate * 100).toFixed(1)}
                 suffix="%"
-                valueStyle={{ color: stats.avg_success_rate > 0.8 ? '#52c41a' : '#faad14' }}
+                loading={statsLoading}
+                valueStyle={{ color: displayStats.avg_success_rate > 0.8 ? '#52c41a' : '#faad14' }}
               />
             </Card>
           </motion.div>
         </Col>
       </Row>
 
-      {/* 健康报告表格 */}
       <motion.div custom={7} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
-        <Card title="Skill Health Overview" bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <Card
+          title="Skill Health Preview"
+          bordered={false}
+          style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+          extra={
+            <Segmented
+              size="small"
+              value={healthVisibility}
+              onChange={value => setHealthVisibility(value as SkillVisibility | 'all')}
+              options={[
+                { label: 'User', value: 'user' },
+                { label: 'Kernel', value: 'kernel' },
+                { label: 'All', value: 'all' },
+              ]}
+            />
+          }
+        >
           <Table
             dataSource={reports}
+            loading={healthLoading}
             rowKey="skill_id"
             size="small"
             pagination={false}
@@ -179,9 +220,7 @@ export default function Dashboard() {
               {
                 title: 'Status',
                 dataIndex: 'status',
-                render: (s: string) => (
-                  <Badge color={healthColors[s] || '#8c8c8c'} text={s} />
-                ),
+                render: (s: string) => <Badge color={healthColors[s] || '#8c8c8c'} text={s} />,
               },
               {
                 title: 'Success Rate',
@@ -194,21 +233,17 @@ export default function Dashboard() {
                   />
                 ),
               },
-              {
-                title: 'Executions',
-                dataIndex: 'usage_count',
-              },
-              {
-                title: 'Avg Latency',
-                dataIndex: 'avg_latency_ms',
-                render: (ms: number) => `${ms.toFixed(0)}ms`,
-              },
+              { title: 'Executions', dataIndex: 'usage_count' },
             ]}
           />
+          <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 8 }}>
+            Full review reports and real runtime evaluation live in the Evaluation page.
+          </div>
         </Card>
       </motion.div>
 
       {/* 演化指标面板 */}
+      <Spin spinning={evoLoading}>
       {evoStats && (
         <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
           <Card
@@ -291,54 +326,8 @@ export default function Dashboard() {
           </Card>
         </motion.div>
       )}
+      </Spin>
 
-      {/* Agent 动态 Feed */}
-      <motion.div custom={8} initial="hidden" animate="visible" variants={cardVariants} style={{ marginTop: 16 }}>
-        <Card
-          title={<span><WifiOutlined style={{ color: '#52c41a', marginRight: 6 }} />Agent 实时动态</span>}
-          bordered={false}
-          style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
-          extra={
-            <Button size="small" icon={<ClearOutlined />} onClick={clearWsEvents}>
-              清空
-            </Button>
-          }
-        >
-          {wsEvents.filter(e => e.event !== 'pong' && e.event !== 'connected').length === 0 ? (
-            <Empty description="暂无事件，执行 Agent 任务后将在此显示实时动态" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-              <Timeline
-                items={wsEvents
-                  .filter(e => e.event !== 'pong' && e.event !== 'connected')
-                  .slice(0, 30)
-                  .map(e => {
-                    const isError = e.event.includes('error') || e.event.includes('fail')
-                    const isSuccess = e.event.includes('success') || e.event.includes('complete') || e.event.includes('release')
-                    return {
-                      color: isError ? 'red' : isSuccess ? 'green' : 'blue',
-                      children: (
-                        <div>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <Tag color={isError ? 'red' : isSuccess ? 'green' : 'blue'} style={{ fontSize: 11 }}>
-                              {e.event}
-                            </Tag>
-                            <span style={{ fontSize: 11, color: '#999' }}>{e.time}</span>
-                          </div>
-                          {e.data !== null && e.data !== undefined && typeof e.data === 'object' && (
-                            <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                              {JSON.stringify(e.data as Record<string, unknown>).slice(0, 120)}
-                            </div>
-                          )}
-                        </div>
-                      ),
-                    }
-                  })}
-              />
-            </div>
-          )}
-        </Card>
-      </motion.div>
     </div>
   )
 }

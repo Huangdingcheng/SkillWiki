@@ -2,6 +2,7 @@
 
 from .composition import CompositionAgent, SkillEdge, SkillGraph
 from .executor import SkillExecutor
+from .host_agent import HostExecutionAgent, HostExecutionRun, HostExecutionTraceStep
 from .planner import ExecutionPlan, PlanStep, SkillPlanner, StepStatus
 from .reflection import Feedback, ReflectionAgent
 from .retriever import RetrievalResult, RetrievalStrategy, SkillRetriever
@@ -19,6 +20,9 @@ __all__ = [
     "PlanStep",
     "StepStatus",
     "SkillExecutor",
+    "HostExecutionAgent",
+    "HostExecutionRun",
+    "HostExecutionTraceStep",
     "CompositionAgent",
     "SkillGraph",
     "SkillEdge",

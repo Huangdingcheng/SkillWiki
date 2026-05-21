@@ -44,6 +44,17 @@ class MetaSkillCategory(str, Enum):
     GRAPH = "graph"                                 # 图谱管理
 
 
+class SkillVisibility(str, Enum):
+    """Skill exposure scope.
+
+    USER skills are product capabilities shown in SkillWiki.
+    KERNEL skills are internal tools used by SkillOS agents for construction,
+    governance, lifecycle management, and graph maintenance.
+    """
+    USER = "user"
+    KERNEL = "kernel"
+
+
 class EdgeType(str, Enum):
     """同质图中 Skill 节点之间的边类型。"""
     DEPENDS_ON = "depends_on"           # A 依赖 B（执行 A 前需要 B）
@@ -220,6 +231,10 @@ class Skill(BaseModel):
         le=5,
         description="粒度级别 1-5（1=最细粒度原子操作，5=高层策略）",
     )
+    visibility: SkillVisibility = Field(
+        default=SkillVisibility.USER,
+        description="Skill 暴露范围: user=用户态可见, kernel=内核态仅 Agent 内部使用",
+    )
 
     # --- Lifecycle ---
     state: SkillState = Field(default=SkillState.DRAFT)
@@ -290,10 +305,43 @@ class Skill(BaseModel):
 
     @model_validator(mode="after")
     def validate_meta_category(self) -> "Skill":
-        if self.skill_type == SkillType.STRATEGIC and self.meta_category is None:
-            raise ValueError("Strategic Skill 必须指定 meta_category")
+        if (
+            self.skill_type == SkillType.STRATEGIC
+            and self.visibility == SkillVisibility.KERNEL
+            and self.meta_category is None
+        ):
+            raise ValueError("Kernel Strategic Skill 必须指定 meta_category")
         if self.skill_type != SkillType.STRATEGIC and self.meta_category is not None:
             raise ValueError("只有 Strategic Skill 才能设置 meta_category")
+        return self
+
+    @model_validator(mode="after")
+    def infer_visibility(self) -> "Skill":
+        tag_set = {tag.lower() for tag in self.tags}
+        internal_names = (
+            "generate_skill_from_",
+            "formalize_skill_schema",
+            "audit_skill_",
+            "verify_skill_",
+            "repair_failed_skill",
+            "split_oversized_skill",
+            "merge_redundant_skills",
+            "deprecate_low_utility_skill",
+            "update_skill_wiki_",
+            "update_skill_graph_",
+        )
+        is_internal = (
+            "meta" in tag_set
+            or "internal" in tag_set
+            or self.name.startswith(internal_names)
+        )
+        if is_internal:
+            object.__setattr__(self, "visibility", SkillVisibility.KERNEL)
+            if "kernel" not in tag_set:
+                object.__setattr__(self, "tags", [*self.tags, "kernel"])
+        elif self.visibility == SkillVisibility.KERNEL and "kernel" in tag_set:
+            object.__setattr__(self, "visibility", SkillVisibility.USER)
+            object.__setattr__(self, "tags", [tag for tag in self.tags if tag.lower() != "kernel"])
         return self
 
     @model_validator(mode="after")
@@ -372,6 +420,7 @@ class Skill(BaseModel):
             "meta_category": self.meta_category.value if self.meta_category else None,
             "domain": self.domain,
             "granularity_level": self.granularity_level,
+            "visibility": self.visibility.value,
             "state": self.state.value,
             "tags": self.tags,
             "success_rate": self.metrics.success_rate,

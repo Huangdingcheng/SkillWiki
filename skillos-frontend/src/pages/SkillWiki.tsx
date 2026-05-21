@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import {
   Table, Tag, Input, Select, Button, Drawer, Descriptions, Badge,
-  Space, Tooltip, Popconfirm, message, Tabs, Typography, Progress,
+  Space, Tooltip, Popconfirm, message, Tabs, Typography, Progress, Card, Alert,
 } from 'antd'
 import {
   SearchOutlined, EyeOutlined,
-  CheckOutlined, StopOutlined,
+  CheckOutlined, StopOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
-import { skillsApi, lifecycleApi } from '@/api/client'
-import type { SkillFull, SkillState, SkillSummary, SkillType } from '@/api/types'
+import { useSearchParams } from 'react-router-dom'
+import { skillsApi, lifecycleApi, evolutionApi } from '@/api/client'
+import type { HealthReport, SkillFull, SkillInterface, SkillParameter, SkillState, SkillSummary, SkillType, SkillVisibility } from '@/api/types'
+import SkillGraph from '@/pages/SkillGraph'
 
 const { Text, Paragraph } = Typography
 
@@ -25,32 +27,119 @@ const TYPE_COLOR: Record<string, string> = {
   atomic: 'blue', functional: 'purple', strategic: 'gold',
 }
 
+function schemaToParameters(schema: Record<string, unknown> | undefined, direction: 'input' | 'output'): SkillParameter[] {
+  const properties = schema?.properties && typeof schema.properties === 'object'
+    ? schema.properties as Record<string, Record<string, unknown>>
+    : {}
+  const required = new Set(Array.isArray(schema?.required) ? schema.required.map(String) : [])
+  return Object.entries(properties).map(([name, prop]) => ({
+    name,
+    type: String(prop?.type || 'unknown'),
+    description: String(prop?.description || `${direction} field`),
+    required: required.has(name),
+  }))
+}
+
+function getInterfaceInputs(skillInterface: SkillInterface): SkillParameter[] {
+  if (Array.isArray(skillInterface.inputs)) return skillInterface.inputs
+  return schemaToParameters(skillInterface.input_schema, 'input')
+}
+
+function getInterfaceOutputs(skillInterface: SkillInterface): SkillParameter[] {
+  if (Array.isArray(skillInterface.outputs)) return skillInterface.outputs
+  return schemaToParameters(skillInterface.output_schema, 'output')
+}
+
+function SchemaBlock({ title, schema }: { title: string; schema?: Record<string, unknown> }) {
+  if (!schema) return null
+  return (
+    <>
+      <h4 style={{ marginTop: 16 }}>{title}</h4>
+      <pre style={{ background: '#f7f9fc', padding: 12, borderRadius: 8, overflow: 'auto', fontSize: 12 }}>
+        {JSON.stringify(schema, null, 2)}
+      </pre>
+    </>
+  )
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 export default function SkillWiki() {
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [stateFilter, setStateFilter] = useState<SkillState | undefined>()
   const [typeFilter, setTypeFilter] = useState<SkillType | undefined>()
+  const [visibilityFilter, setVisibilityFilter] = useState<SkillVisibility | 'all'>('user')
   const [selected, setSelected] = useState<SkillFull | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [focusGraphSkillId, setFocusGraphSkillId] = useState<string | null>(null)
+  const [selectedHealth, setSelectedHealth] = useState<HealthReport | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const load = () => {
+  const load = async () => {
     setLoading(true)
-    skillsApi.list({ state: stateFilter, skill_type: typeFilter, limit: 200 })
-      .then(setSkills)
-      .finally(() => setLoading(false))
+    setLoadError(null)
+    try {
+      let data: SkillSummary[] = []
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        data = await skillsApi.list({ state: stateFilter, skill_type: typeFilter, visibility: visibilityFilter, limit: 500 })
+        if (data.length > 0 || attempt === 2) break
+        await sleep(500 * (attempt + 1))
+      }
+      setSkills(Array.isArray(data) ? data : [])
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        || (e as { message?: string })?.message
+        || 'Failed to load Skill list'
+      setLoadError(detail)
+      setSkills([])
+      message.error(detail)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [stateFilter, typeFilter])
+  useEffect(() => { load() }, [stateFilter, typeFilter, visibilityFilter])
 
-  const filtered = skills.filter(s =>
-    !search || s.name.includes(search) || s.description.includes(search) || s.tags.some(t => t.includes(search))
-  )
+  const filtered = skills.filter(s => {
+    const q = search.trim().toLowerCase()
+    return !q
+      || s.name.toLowerCase().includes(q)
+      || s.description.toLowerCase().includes(q)
+      || s.tags.some(t => t.toLowerCase().includes(q))
+  })
 
-  const openDetail = async (id: string) => {
-    const full = await skillsApi.getFull(id)
-    setSelected(full)
-    setDrawerOpen(true)
+  const openDetail = async (id: string, updateUrl = true) => {
+    try {
+      const full = await skillsApi.getFull(id)
+      setSelected(full)
+      setDrawerOpen(true)
+      if (updateUrl) setSearchParams({ skill: id })
+      evolutionApi.skillHealth(id).then(setSelectedHealth).catch(() => setSelectedHealth(null))
+    } catch (e: unknown) {
+      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to load Skill details')
+    }
+  }
+
+  useEffect(() => {
+    const skillId = searchParams.get('skill')
+    if (skillId) openDetail(skillId, false)
+  }, [searchParams])
+
+  const closeDetail = () => {
+    setDrawerOpen(false)
+    setSelected(null)
+    setSelectedHealth(null)
+    setSearchParams({})
+  }
+
+  const focusInGraph = (id: string) => {
+    setFocusGraphSkillId(id)
+    setTimeout(() => {
+      document.getElementById('skill-wiki-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
   }
 
   const handleRelease = async (id: string) => {
@@ -94,6 +183,11 @@ export default function SkillWiki() {
       render: (s: string) => <Badge color={STATE_COLOR[s] || 'default'} text={STATE_LABEL[s] || s} />,
     },
     {
+      title: 'Scope',
+      dataIndex: 'visibility',
+      render: (v: string) => <Tag color={v === 'kernel' ? 'volcano' : 'green'}>{v === 'kernel' ? 'KERNEL' : 'USER'}</Tag>,
+    },
+    {
       title: 'Version',
       dataIndex: 'version',
       render: (v: string) => <Text code>{v}</Text>,
@@ -117,20 +211,23 @@ export default function SkillWiki() {
       render: (_: unknown, r: SkillSummary) => (
         <Space>
           <Tooltip title="查看详情">
-            <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(r.skill_id)} />
+            <Button size="small" aria-label={`Open ${r.name}`} icon={<EyeOutlined />} onClick={() => openDetail(r.skill_id)} />
           </Tooltip>
           {r.state === 'S2' && (
             <Tooltip title="发布">
-              <Button size="small" icon={<CheckOutlined />} type="primary" onClick={() => handleRelease(r.skill_id)} />
+              <Button size="small" aria-label={`Release ${r.name}`} icon={<CheckOutlined />} type="primary" onClick={() => handleRelease(r.skill_id)} />
             </Tooltip>
           )}
           {r.state === 'S4' && (
             <Tooltip title="废弃">
               <Popconfirm title="确认废弃？" onConfirm={() => handleDeprecate(r.skill_id)}>
-                <Button size="small" icon={<StopOutlined />} danger />
+                <Button size="small" aria-label={`Deprecate ${r.name}`} icon={<StopOutlined />} danger />
               </Popconfirm>
             </Tooltip>
           )}
+          <Tooltip title="Show in graph">
+            <Button size="small" aria-label={`Show ${r.name} in graph`} icon={<ApartmentOutlined />} onClick={() => focusInGraph(r.skill_id)} />
+          </Tooltip>
         </Space>
       ),
     },
@@ -141,7 +238,7 @@ export default function SkillWiki() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
           <Input
-            placeholder="搜索 Skill 名称/描述/标签"
+            placeholder="Search Skill name / description / tags"
             prefix={<SearchOutlined />}
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -149,7 +246,7 @@ export default function SkillWiki() {
             allowClear
           />
           <Select
-            placeholder="状态筛选"
+            placeholder="State"
             allowClear
             style={{ width: 140 }}
             onChange={v => setStateFilter(v as SkillState)}
@@ -165,14 +262,37 @@ export default function SkillWiki() {
             ]}
           />
           <Select
-            placeholder="类型筛选"
+            placeholder="Type"
             allowClear
             style={{ width: 140 }}
             onChange={v => setTypeFilter(v as SkillType)}
             options={['atomic', 'functional', 'strategic'].map(t => ({ label: t, value: t }))}
           />
-          <Button onClick={load}>刷新</Button>
+          <Select
+            value={visibilityFilter}
+            style={{ width: 160 }}
+            onChange={v => setVisibilityFilter(v as SkillVisibility | 'all')}
+            options={[
+              { label: 'User Skills', value: 'user' },
+              { label: 'Kernel Skills', value: 'kernel' },
+              { label: 'All Skills', value: 'all' },
+            ]}
+          />
+          <Button onClick={load}>Refresh</Button>
+          <Text type="secondary" style={{ alignSelf: 'center' }}>
+            {filtered.length} shown / {skills.length} loaded
+          </Text>
         </div>
+
+        {loadError && (
+          <Alert
+            type="error"
+            showIcon
+            message="Skill list failed to load"
+            description={loadError}
+            style={{ marginBottom: 12 }}
+          />
+        )}
 
         <Table
           dataSource={filtered}
@@ -183,12 +303,28 @@ export default function SkillWiki() {
           pagination={{ pageSize: 15, showSizeChanger: true }}
           style={{ borderRadius: 12, overflow: 'hidden' }}
         />
+
+        <Card
+          id="skill-wiki-graph"
+          title="Knowledge Graph"
+          extra={focusGraphSkillId ? (
+            <Space>
+              <Tag color="red">Focused: {focusGraphSkillId.slice(0, 8)}...</Tag>
+              <Button size="small" onClick={() => setFocusGraphSkillId(null)}>Clear Focus</Button>
+            </Space>
+          ) : <Text type="secondary">Click the graph icon on any Skill row to focus its graph context.</Text>}
+          bordered={false}
+          style={{ marginTop: 16, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+          styles={{ body: { padding: 16 } }}
+        >
+          <SkillGraph embedded focusSkillId={focusGraphSkillId} visibility={visibilityFilter} />
+        </Card>
       </motion.div>
 
       <Drawer
-        title={selected?.name}
+        title={selected?.display_name || selected?.name}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDetail}
         width={600}
         extra={
           <Space>
@@ -202,53 +338,71 @@ export default function SkillWiki() {
             items={[
               {
                 key: 'info',
-                label: '基本信息',
+                label: 'Overview',
                 children: (
                   <Descriptions column={1} bordered size="small">
                     <Descriptions.Item label="ID"><Text code copyable>{selected.skill_id}</Text></Descriptions.Item>
-                    <Descriptions.Item label="版本"><Text code>{selected.version}</Text></Descriptions.Item>
-                    <Descriptions.Item label="描述"><Paragraph>{selected.description}</Paragraph></Descriptions.Item>
-                    <Descriptions.Item label="标签">{selected.tags.map(t => <Tag key={t}>{t}</Tag>)}</Descriptions.Item>
-                    <Descriptions.Item label="粒度级别">{selected.granularity_level}</Descriptions.Item>
-                    <Descriptions.Item label="创建时间">{new Date(selected.created_at).toLocaleString()}</Descriptions.Item>
-                    <Descriptions.Item label="更新时间">{new Date(selected.updated_at).toLocaleString()}</Descriptions.Item>
+                    <Descriptions.Item label="Version"><Text code>{selected.version}</Text></Descriptions.Item>
+                    <Descriptions.Item label="Scope">
+                      <Tag color={selected.visibility === 'kernel' ? 'volcano' : 'green'}>
+                        {selected.visibility === 'kernel' ? 'Kernel Skill' : 'User Skill'}
+                      </Tag>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Description"><Paragraph>{selected.description}</Paragraph></Descriptions.Item>
+                    <Descriptions.Item label="Tags">{selected.tags.map(t => <Tag key={t}>{t}</Tag>)}</Descriptions.Item>
+                    <Descriptions.Item label="Domain">{selected.domain || 'general'}</Descriptions.Item>
+                    <Descriptions.Item label="Granularity">{selected.granularity_level}</Descriptions.Item>
+                    <Descriptions.Item label="Created">{new Date(selected.created_at).toLocaleString()}</Descriptions.Item>
+                    <Descriptions.Item label="Updated">{new Date(selected.updated_at).toLocaleString()}</Descriptions.Item>
                   </Descriptions>
                 ),
               },
               {
                 key: 'interface',
-                label: '接口',
+                label: 'Interface',
                 children: selected.interface && (
                   <div>
-                    <h4>输入参数</h4>
-                    {selected.interface.inputs.map(p => (
-                      <div key={p.name} style={{ marginBottom: 8 }}>
-                        <Text code>{p.name}</Text>
-                        <Tag style={{ marginLeft: 8 }}>{p.type}</Tag>
-                        {p.required && <Tag color="red">必填</Tag>}
-                        <div style={{ color: '#666', fontSize: 12 }}>{p.description}</div>
-                      </div>
-                    ))}
-                    <h4 style={{ marginTop: 16 }}>输出参数</h4>
-                    {selected.interface.outputs.map(p => (
-                      <div key={p.name} style={{ marginBottom: 8 }}>
-                        <Text code>{p.name}</Text>
-                        <Tag style={{ marginLeft: 8 }}>{p.type}</Tag>
-                        <div style={{ color: '#666', fontSize: 12 }}>{p.description}</div>
-                      </div>
-                    ))}
+                    <h4>Inputs</h4>
+                    {getInterfaceInputs(selected.interface).length > 0
+                      ? getInterfaceInputs(selected.interface).map(p => (
+                        <div key={p.name} style={{ marginBottom: 8 }}>
+                          <Text code>{p.name}</Text>
+                          <Tag style={{ marginLeft: 8 }}>{p.type}</Tag>
+                          {p.required && <Tag color="red">required</Tag>}
+                          <div style={{ color: '#666', fontSize: 12 }}>{p.description}</div>
+                        </div>
+                      ))
+                      : <Text type="secondary">No structured input fields.</Text>}
+                    <h4 style={{ marginTop: 16 }}>Outputs</h4>
+                    {getInterfaceOutputs(selected.interface).length > 0
+                      ? getInterfaceOutputs(selected.interface).map(p => (
+                        <div key={p.name} style={{ marginBottom: 8 }}>
+                          <Text code>{p.name}</Text>
+                          <Tag style={{ marginLeft: 8 }}>{p.type}</Tag>
+                          <div style={{ color: '#666', fontSize: 12 }}>{p.description}</div>
+                        </div>
+                      ))
+                      : <Text type="secondary">No structured output fields.</Text>}
                     {selected.interface.preconditions.length > 0 && (
                       <>
-                        <h4 style={{ marginTop: 16 }}>前置条件</h4>
+                        <h4 style={{ marginTop: 16 }}>Preconditions</h4>
                         {selected.interface.preconditions.map((c, i) => <div key={i}>• {c}</div>)}
                       </>
                     )}
+                    {selected.interface.postconditions.length > 0 && (
+                      <>
+                        <h4 style={{ marginTop: 16 }}>Postconditions</h4>
+                        {selected.interface.postconditions.map((c, i) => <div key={i}>• {c}</div>)}
+                      </>
+                    )}
+                    <SchemaBlock title="Input Schema" schema={selected.interface.input_schema} />
+                    <SchemaBlock title="Output Schema" schema={selected.interface.output_schema} />
                   </div>
                 ),
               },
               {
                 key: 'impl',
-                label: '实现',
+                label: 'Implementation',
                 children: selected.implementation && (
                   <div>
                     <Tag color="blue">{selected.implementation.language}</Tag>
@@ -264,7 +418,7 @@ export default function SkillWiki() {
                     )}
                     {selected.implementation.sub_skill_ids.length > 0 && (
                       <div style={{ marginTop: 8 }}>
-                        <strong>子 Skill：</strong>
+                        <strong>Sub Skills: </strong>
                         {selected.implementation.sub_skill_ids.map(id => <Tag key={id}>{id}</Tag>)}
                       </div>
                     )}
@@ -273,18 +427,72 @@ export default function SkillWiki() {
               },
               {
                 key: 'metrics',
-                label: '指标',
+                label: 'Metrics',
                 children: (
                   <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label="总执行次数">{selected.metrics.total_executions}</Descriptions.Item>
-                    <Descriptions.Item label="成功次数">{selected.metrics.successful_executions}</Descriptions.Item>
-                    <Descriptions.Item label="失败次数">{selected.metrics.failed_executions}</Descriptions.Item>
-                    <Descriptions.Item label="成功率">
+                    <Descriptions.Item label="Total Executions">{selected.metrics.total_executions}</Descriptions.Item>
+                    <Descriptions.Item label="Successful">{selected.metrics.successful_executions}</Descriptions.Item>
+                    <Descriptions.Item label="Failed">{selected.metrics.failed_executions}</Descriptions.Item>
+                    <Descriptions.Item label="Success Rate">
                       <Progress percent={Math.round(selected.metrics.success_rate * 100)} size="small" style={{ width: 120 }} />
                     </Descriptions.Item>
-                    <Descriptions.Item label="平均延迟">{selected.metrics.avg_latency_ms.toFixed(0)}ms</Descriptions.Item>
-                    <Descriptions.Item label="使用次数">{selected.metrics.usage_count}</Descriptions.Item>
+                    <Descriptions.Item label="Average Latency">{selected.metrics.avg_latency_ms.toFixed(0)}ms</Descriptions.Item>
+                    <Descriptions.Item label="Usage Count">{selected.metrics.usage_count}</Descriptions.Item>
                   </Descriptions>
+                ),
+              },
+              {
+                key: 'evaluation',
+                label: 'Evaluation',
+                children: (
+                  <div>
+                    {selectedHealth ? (
+                      <Descriptions column={1} bordered size="small">
+                        <Descriptions.Item label="Health Status">
+                          <Badge status={selectedHealth.status === 'healthy' ? 'success' : selectedHealth.status === 'degraded' ? 'warning' : 'error'} text={selectedHealth.status} />
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Success Rate">
+                          <Progress percent={Math.round(selectedHealth.success_rate * 100)} size="small" style={{ width: 160 }} />
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Usage Count">{selectedHealth.usage_count}</Descriptions.Item>
+                        <Descriptions.Item label="Average Latency">{selectedHealth.avg_latency_ms.toFixed(0)}ms</Descriptions.Item>
+                        <Descriptions.Item label="Issues">
+                          {selectedHealth.issues.length > 0
+                            ? selectedHealth.issues.map(issue => <Tag key={issue} color="red">{issue}</Tag>)
+                            : <Tag color="green">No active issues</Tag>}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Recommendations">
+                          {selectedHealth.recommendations.length > 0
+                            ? selectedHealth.recommendations.map(item => <Tag key={item} color="blue">{item}</Tag>)
+                            : <Text type="secondary">No recommendations.</Text>}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    ) : (
+                      <Alert type="info" message="No evaluation report is available for this Skill yet." />
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: 'provenance',
+                label: 'Provenance',
+                children: (
+                  <div>
+                    <Descriptions column={1} bordered size="small">
+                      <Descriptions.Item label="Source">
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(selected.provenance || {}, null, 2)}</pre>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Tools">
+                        {(selected.tool_refs || []).length > 0 ? selected.tool_refs?.map((item, index) => <Tag key={index}>{String(item)}</Tag>) : <Text type="secondary">None</Text>}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Documents">
+                        {(selected.doc_refs || []).length > 0 ? selected.doc_refs?.map((item, index) => <Tag key={index}>{String(item)}</Tag>) : <Text type="secondary">None</Text>}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="Trajectories">
+                        {(selected.trajectory_refs || []).length > 0 ? selected.trajectory_refs?.map((item, index) => <Tag key={index}>{String(item)}</Tag>) : <Text type="secondary">None</Text>}
+                      </Descriptions.Item>
+                    </Descriptions>
+                  </div>
                 ),
               },
             ]}

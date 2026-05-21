@@ -84,6 +84,24 @@ async def get_stats() -> Dict[str, Any]
 
 第一阶段只保证基础边、子图、依赖链、执行顺序和统计可用；根据 `sub_skill_ids` 自动建边、相似关系发现、复杂图分析放到后续阶段。
 
+### Heterogeneous Graph
+
+当前开发主线已经从“只包含 Skill 节点的同质图”升级为“异构知识图”。旧的 `SkillEdge` / `SkillSubgraph` 仍保留，用来兼容执行层、治理层和已有测试；新的 demo 图会把以下实体作为一等节点保存：
+
+- `skill`：抽象出的可执行 / 可复用 Skill。
+- `task`：用户任务或历史任务。
+- `trajectory`：操作轨迹来源。
+- `document`：说明文档或操作规范。
+- `api_doc`：API 文档或接口说明。
+- `tool`：外部工具或系统能力。
+- `script`：代码脚本来源。
+- `test`：测试样例或验证结果。
+- `version`：Skill 版本节点。
+- `feedback`：执行反馈、反思或演化建议。
+- `agent`：系统内管理图和生命周期的 Agent。
+
+异构边使用独立关系类型，例如 `derived_from`、`uses`、`requires`、`composes_with`、`verified_by`、`evolves_from`、`version_of`、`feeds_back_to`。启动 demo 时会通过静态脚本 seed 一组 source → skill → version/test/tool/feedback 的图数据，后续可以逐步替换为 Extractor / Normalizer / Summarizer / Indexer Agents 的真实输出。
+
 ## API 端点
 
 现有 API 路径保持不变：

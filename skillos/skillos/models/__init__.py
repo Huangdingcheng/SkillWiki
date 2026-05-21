@@ -12,6 +12,11 @@ from .experience_model import (
 from .graph_model import (
     EdgeType,
     GraphStats,
+    GraphNodeType,
+    GraphRelationType,
+    HeterogeneousGraphEdge,
+    HeterogeneousGraphNode,
+    HeterogeneousSubgraph,
     SkillEdge,
     SkillGraphNode,
     SkillSubgraph,
@@ -41,6 +46,11 @@ __all__ = [
     "SkillProvenance",
     # graph_model
     "EdgeType",
+    "GraphNodeType",
+    "GraphRelationType",
+    "HeterogeneousGraphNode",
+    "HeterogeneousGraphEdge",
+    "HeterogeneousSubgraph",
     "SkillEdge",
     "SkillGraphNode",
     "SkillSubgraph",

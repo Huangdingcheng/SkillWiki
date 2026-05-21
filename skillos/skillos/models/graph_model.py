@@ -1,15 +1,145 @@
-"""同质图数据模型 — 仅 Skill 节点，类型化边。"""
+"""Graph data models.
+
+The original demo only modeled a homogeneous graph of Skill nodes. SkillOS now
+uses a heterogeneous graph as the system memory: raw sources, tasks, tools,
+APIs, tests, versions, feedback, and extracted Skills can all be first-class
+nodes connected by typed relationships.
+"""
 
 from __future__ import annotations
 
 import json
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .skill_model import EdgeType, SkillState, SkillType
+
+
+class GraphNodeType(str, Enum):
+    """Node types used by the SkillOS heterogeneous knowledge graph."""
+
+    SKILL = "skill"
+    TASK = "task"
+    TRAJECTORY = "trajectory"
+    DOCUMENT = "document"
+    API_DOC = "api_doc"
+    TOOL = "tool"
+    SCRIPT = "script"
+    TEST = "test"
+    VERSION = "version"
+    FEEDBACK = "feedback"
+    AGENT = "agent"
+    DATASET = "dataset"
+    HOST_INFORMATION = "host_information"
+
+
+class GraphRelationType(str, Enum):
+    """Relationship types spanning source, Skill, governance, and runtime data."""
+
+    DERIVED_FROM = "derived_from"
+    BELONGS_TO = "belongs_to"
+    USES = "uses"
+    REQUIRES = "requires"
+    COMPOSES_WITH = "composes_with"
+    VERIFIED_BY = "verified_by"
+    EVOLVES_FROM = "evolves_from"
+    SIMILAR_TO = "similar_to"
+    REPLACES = "replaces"
+    PRODUCED_BY = "produced_by"
+    TRIGGERED_BY = "triggered_by"
+    FEEDS_BACK_TO = "feeds_back_to"
+    DOCUMENTS = "documents"
+    TESTS = "tests"
+    VERSION_OF = "version_of"
+
+
+class HeterogeneousGraphNode(BaseModel):
+    """A first-class node in the SkillOS heterogeneous graph."""
+
+    node_id: str = Field(description="Globally unique graph node ID")
+    node_type: GraphNodeType
+    name: str = Field(min_length=1, description="Display name")
+    description: str = ""
+    labels: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # Skill-specific fields are optional so source/tool/test/version nodes stay
+    # lightweight while the frontend can still render lifecycle and metrics.
+    skill_id: Optional[str] = None
+    skill_type: Optional[SkillType] = None
+    state: Optional[SkillState] = None
+    version: Optional[str] = None
+    domain: str = "general"
+    granularity_level: int = Field(default=1, ge=1, le=5)
+    success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    usage_count: int = Field(default=0, ge=0)
+    source_type: Optional[str] = None
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_validator("node_id")
+    @classmethod
+    def validate_node_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("node_id cannot be empty")
+        return cleaned
+
+
+class HeterogeneousGraphEdge(BaseModel):
+    """A typed relationship between any two heterogeneous graph nodes."""
+
+    edge_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    source_id: str
+    target_id: str
+    relation_type: GraphRelationType
+    weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by: Optional[str] = None
+
+    @field_validator("source_id", "target_id")
+    @classmethod
+    def validate_endpoint_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("edge endpoint IDs cannot be empty")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_no_self_loop(self) -> "HeterogeneousGraphEdge":
+        if self.source_id == self.target_id:
+            raise ValueError(f"self-loop edges are not allowed: {self.source_id}")
+        return self
+
+
+class HeterogeneousSubgraph(BaseModel):
+    """A graph slice containing heterogeneous nodes and edges."""
+
+    subgraph_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    nodes: Dict[str, HeterogeneousGraphNode] = Field(default_factory=dict)
+    edges: List[HeterogeneousGraphEdge] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def add_node(self, node: HeterogeneousGraphNode) -> None:
+        self.nodes[node.node_id] = node
+
+    def add_edge(self, edge: HeterogeneousGraphEdge) -> None:
+        if edge.source_id not in self.nodes or edge.target_id not in self.nodes:
+            raise ValueError(
+                f"edge endpoints are not both present in the subgraph: "
+                f"{edge.source_id} -> {edge.target_id}"
+            )
+        self.edges.append(edge)
 
 
 # ---------------------------------------------------------------------------

@@ -107,6 +107,7 @@ class RepositoryWikiManager:
         state: Any = None,
         skill_type: Any = None,
         tags: Optional[list[str]] = None,
+        visibility: Any = None,
         query: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
@@ -126,6 +127,7 @@ class RepositoryWikiManager:
                 state=state,
                 skill_type=skill_type,
                 tags=tags,
+                visibility=visibility,
                 query=query,
             ):
                 continue
@@ -350,6 +352,7 @@ class RepositoryWikiManager:
         state: Any = None,
         skill_type: Any = None,
         tags: Optional[list[str]] = None,
+        visibility: Any = None,
         query: Optional[str] = None,
     ) -> bool:
         if state is not None:
@@ -365,6 +368,11 @@ class RepositoryWikiManager:
         if tags:
             skill_tags = set(getattr(skill, "tags", []) or [])
             if not set(tags).issubset(skill_tags):
+                return False
+
+        if visibility is not None and visibility != "all":
+            current_visibility = getattr(skill, "visibility", None)
+            if not self._loosely_equal(current_visibility, visibility):
                 return False
 
         if query:

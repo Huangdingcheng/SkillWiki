@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ...models.skill_model import Skill, SkillState, SkillType
+from ...models.skill_model import Skill, SkillState, SkillType, SkillVisibility
 from ..deps import AppState, get_app_state
 from ..schemas import (
     EvolutionStats,
@@ -21,6 +21,33 @@ from ..schemas import (
 router = APIRouter(prefix="/skills", tags=["skills"])
 
 
+def _normalize_enum(value: Optional[str], enum_cls, field_name: str):
+    if value is None or value == "":
+        return None
+    try:
+        return enum_cls(value)
+    except ValueError as exc:
+        valid_values = ", ".join(item.value for item in enum_cls)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid {field_name}: {value!r}. Expected one of: {valid_values}",
+        ) from exc
+
+
+def _normalize_visibility(value: str) -> str:
+    normalized = (value or "user").strip().lower()
+    if normalized == "all":
+        return normalized
+    try:
+        return SkillVisibility(normalized).value
+    except ValueError as exc:
+        valid_values = ", ".join([*(item.value for item in SkillVisibility), "all"])
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid visibility: {value!r}. Expected one of: {valid_values}",
+        ) from exc
+
+
 def _to_summary(skill: Skill) -> SkillSummary:
     return SkillSummary(
         skill_id=skill.skill_id,
@@ -29,6 +56,7 @@ def _to_summary(skill: Skill) -> SkillSummary:
         skill_type=skill.skill_type,
         state=skill.state,
         tags=skill.tags,
+        visibility=skill.visibility,
         version=skill.version,
         granularity_level=skill.granularity_level,
         metrics=skill.metrics,
@@ -52,21 +80,28 @@ async def _sync_graph_for_skill(app: AppState, skill: Skill) -> None:
 
 @router.get("", response_model=List[SkillSummary])
 async def list_skills(
-    state: Optional[SkillState] = Query(None),
-    skill_type: Optional[SkillType] = Query(None),
+    state: Optional[str] = Query(None),
+    skill_type: Optional[str] = Query(None),
     tags: Optional[str] = Query(None, description="Comma-separated tags"),
+    visibility: str = Query("user", description="user | kernel | all"),
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     app: AppState = Depends(get_app_state),
 ) -> List[SkillSummary]:
     tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()] if tags else None
+    normalized_state = _normalize_enum(state, SkillState, "state")
+    normalized_type = _normalize_enum(skill_type, SkillType, "skill_type")
+    normalized_visibility = _normalize_visibility(visibility)
     skills = await app.wiki.list(
-        state=state,
-        skill_type=skill_type,
+        state=normalized_state,
+        skill_type=normalized_type,
         tags=tag_list,
-        limit=limit,
+        limit=10000 if normalized_visibility != "all" else limit,
         offset=offset,
     )
+    if normalized_visibility != "all":
+        skills = [skill for skill in skills if skill.visibility.value == normalized_visibility]
+        skills = skills[:limit]
     return [_to_summary(skill) for skill in skills]
 
 
@@ -122,6 +157,7 @@ async def create_skill(
         description=req.description,
         skill_type=req.skill_type,
         tags=req.tags,
+        visibility=req.visibility,
         interface=req.interface,
         implementation=req.implementation,
         provenance=SkillProvenance(source_type="api", created_by_agent=req.author),
@@ -171,6 +207,8 @@ async def update_skill(
         updates["description"] = req.description
     if req.tags is not None:
         updates["tags"] = req.tags
+    if req.visibility is not None:
+        updates["visibility"] = req.visibility
     if req.interface is not None:
         updates["interface"] = req.interface
     if req.implementation is not None:
@@ -232,6 +270,7 @@ async def search_skills(
             skill_type=result.skill.skill_type,
             state=result.skill.state,
             tags=result.skill.tags,
+            visibility=result.skill.visibility,
             version=result.skill.version,
             score=result.score,
             match_reason=", ".join(result.match_reasons) if result.match_reasons else "",

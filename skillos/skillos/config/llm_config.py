@@ -32,7 +32,7 @@ class LLMConfig(BaseModel):
         description="LLM API 基础地址",
     )
     model: str = Field(
-        default="gpt-5.4-nano",
+        default="gpt-5.4",
         description="模型名称",
     )
     api_key: str = Field(

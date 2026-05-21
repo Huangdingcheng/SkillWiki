@@ -15,14 +15,21 @@ router = APIRouter(prefix="/graph", tags=["graph"])
 def _skill_to_node(skill) -> GraphNodeData:
     return GraphNodeData(
         id=skill.skill_id,
-        name=skill.name,
+        name=skill.display_name or skill.name,
+        node_type="skill",
+        description=skill.description,
         skill_type=skill.skill_type.value,
         state=skill.state.value,
         tags=skill.tags,
+        labels=skill.tags,
         version=skill.version,
+        domain=skill.domain,
         granularity_level=skill.granularity_level,
         success_rate=skill.metrics.success_rate,
         usage_count=skill.metrics.usage_count,
+        source_type=skill.provenance.source_type if skill.provenance else None,
+        metadata={"canonical_name": skill.name},
+        visibility=skill.visibility.value,
     )
 
 
@@ -33,6 +40,43 @@ def _edge_to_data(edge) -> GraphEdgeData:
         target=edge.target_id,
         edge_type=edge.edge_type.value,
         weight=edge.weight,
+        confidence=edge.confidence,
+        description=edge.description,
+        metadata=edge.metadata,
+    )
+
+
+def _hetero_node_to_data(node) -> GraphNodeData:
+    return GraphNodeData(
+        id=node.node_id,
+        name=node.name,
+        node_type=node.node_type.value,
+        description=node.description,
+        skill_type=node.skill_type.value if node.skill_type else "",
+        state=node.state.value if node.state else "",
+        tags=node.labels,
+        labels=node.labels,
+        version=node.version or "",
+        domain=node.domain,
+        granularity_level=node.granularity_level,
+        success_rate=node.success_rate,
+        usage_count=node.usage_count,
+        source_type=node.source_type,
+        metadata=node.metadata,
+        visibility=(node.metadata or {}).get("visibility"),
+    )
+
+
+def _hetero_edge_to_data(edge) -> GraphEdgeData:
+    return GraphEdgeData(
+        id=edge.edge_id,
+        source=edge.source_id,
+        target=edge.target_id,
+        edge_type=edge.metadata.get("legacy_edge_type", edge.relation_type.value),
+        weight=edge.weight,
+        confidence=edge.confidence,
+        description=edge.description,
+        metadata=edge.metadata,
     )
 
 
@@ -41,6 +85,19 @@ async def get_full_graph(
     limit: int = Query(200, ge=1, le=500),
     app: AppState = Depends(get_app_state),
 ) -> GraphData:
+    if hasattr(app.graph, "get_heterogeneous_graph"):
+        subgraph = await app.graph.get_heterogeneous_graph(limit=limit)
+        stats = await app.wiki.get_overview_stats()
+        try:
+            stats["graph_stats"] = await app.graph.get_stats()
+        except Exception:
+            pass
+        return GraphData(
+            nodes=[_hetero_node_to_data(node) for node in subgraph.nodes.values()],
+            edges=[_hetero_edge_to_data(edge) for edge in subgraph.edges],
+            stats=stats,
+        )
+
     skills = await app.wiki.list(state=None, limit=limit)
     nodes = [_skill_to_node(skill) for skill in skills]
     edges: List[GraphEdgeData] = []
@@ -69,6 +126,23 @@ async def get_subgraph(
     skill = await app.wiki.get(req.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} does not exist")
+
+    if hasattr(app.graph, "get_heterogeneous_graph"):
+        try:
+            subgraph = await app.graph.get_heterogeneous_graph([req.skill_id], depth=req.depth)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return GraphData(
+            nodes=[_hetero_node_to_data(node) for node in subgraph.nodes.values()],
+            edges=[_hetero_edge_to_data(edge) for edge in subgraph.edges],
+            stats={
+                "center_node_id": req.skill_id,
+                "depth": req.depth,
+                "node_count": len(subgraph.nodes),
+                "edge_count": len(subgraph.edges),
+            },
+        )
 
     try:
         subgraph = await app.graph.get_subgraph([req.skill_id], depth=req.depth)

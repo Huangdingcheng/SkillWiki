@@ -2,9 +2,9 @@
 
 from .auditor import AuditResult, SkillAuditorAgent
 from .builder import SkillBuilderAgent, SkillDraft
-from .librarian import LibraryUpdateResult, SkillLibrarianAgent
+from .librarian import GraphIndexResult, LibraryUpdateResult, SkillLibrarianAgent
 from .maintainer import MaintenanceAction, MaintenanceResult, SkillMaintainerAgent
-from .meta_controller import ControlAction, MetaControllerAgent, TriggerEvent
+from .meta_controller import AgentTraceStep, ControlAction, IngestManagementResult, MetaControllerAgent, TriggerEvent
 
 __all__ = [
     "SkillBuilderAgent",
@@ -16,7 +16,10 @@ __all__ = [
     "MaintenanceResult",
     "SkillLibrarianAgent",
     "LibraryUpdateResult",
+    "GraphIndexResult",
     "MetaControllerAgent",
+    "AgentTraceStep",
+    "IngestManagementResult",
     "ControlAction",
     "TriggerEvent",
 ]

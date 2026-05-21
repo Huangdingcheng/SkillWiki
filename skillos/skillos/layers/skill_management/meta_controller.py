@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from ...models.skill_model import SkillState
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,6 +30,26 @@ class ControlAction:
     priority: int = 5  # 1=最高, 10=最低
     payload: Dict[str, Any] = field(default_factory=dict)
     scheduled: bool = False
+
+
+@dataclass
+class AgentTraceStep:
+    agent: str
+    action: str
+    status: str
+    details: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IngestManagementResult:
+    success: bool
+    skill: Optional[Any] = None
+    created: bool = False
+    audit: Optional[Any] = None
+    graph_nodes_created: int = 0
+    graph_edges_created: int = 0
+    trace: List[AgentTraceStep] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
 
 class MetaControllerAgent:
@@ -70,6 +91,138 @@ class MetaControllerAgent:
             result = await self._execute_action(action, wiki)
             results.append(result)
         return results
+
+    async def manage_ingested_unit(
+        self,
+        unit: Any,
+        wiki: Any,
+        request_source_type: str,
+    ) -> IngestManagementResult:
+        """Run the internal agent chain for a fixed-pipeline experience unit.
+
+        Flow:
+        MetaController -> SkillBuilderAgent -> SkillAuditorAgent ->
+        SkillLibrarianAgent. The route layer should stay thin and only call this
+        orchestration entrypoint.
+        """
+        result = IngestManagementResult(success=False)
+        if not self._builder:
+            result.errors.append("SkillBuilderAgent is not configured.")
+            return result
+        if not self._auditor:
+            result.errors.append("SkillAuditorAgent is not configured.")
+            return result
+        if not self._librarian:
+            result.errors.append("SkillLibrarianAgent is not configured.")
+            return result
+
+        self.schedule(
+            TriggerEvent.NEW_DATA,
+            raw_data=getattr(unit, "raw_content", ""),
+            source_type=request_source_type,
+            unit_id=getattr(unit, "unit_id", None),
+        )
+
+        try:
+            draft = self._builder.build_from_experience_unit(unit)
+            skill = draft.skill
+            result.trace.append(AgentTraceStep(
+                agent="SkillBuilderAgent",
+                action="build_from_experience_unit",
+                status="success",
+                details={
+                    "skill_name": skill.name,
+                    "confidence": draft.confidence,
+                    "source_type": draft.source_type,
+                },
+            ))
+
+            existing = await wiki.get_by_name(skill.name)
+            if existing:
+                skill = existing
+                result.created = False
+                result.trace.append(AgentTraceStep(
+                    agent="MetaControllerAgent",
+                    action="deduplicate_existing_skill",
+                    status="reused",
+                    details={"skill_id": skill.skill_id, "skill_name": skill.name},
+                ))
+            else:
+                result.created = True
+                _advance_candidate_to_draft(skill)
+
+            audit = self._auditor.audit(skill)
+            result.audit = audit
+            result.trace.append(AgentTraceStep(
+                agent="SkillAuditorAgent",
+                action="audit_skill",
+                status="passed" if audit.passed else "failed",
+                details={
+                    "audit_score": audit.audit_score,
+                    "issues": audit.issues,
+                    "recommendations": audit.recommendations,
+                },
+            ))
+
+            if audit.passed and skill.state == SkillState.DRAFT:
+                skill.transition_to(SkillState.VERIFIED)
+            elif not audit.passed:
+                result.errors.extend(audit.issues)
+
+            if result.created:
+                library_result = await self._librarian.register_new(skill)
+                library_action = "register_new_skill"
+            else:
+                library_result = await self._librarian.update(
+                    skill,
+                    "Ingest pipeline refreshed source graph context.",
+                )
+                library_action = "refresh_existing_skill"
+
+            result.trace.append(AgentTraceStep(
+                agent="SkillLibrarianAgent",
+                action=library_action,
+                status="success" if not library_result.errors else "warning",
+                details={
+                    "wiki_updated": library_result.wiki_updated,
+                    "graph_updated": library_result.graph_updated,
+                    "errors": library_result.errors,
+                },
+            ))
+            result.errors.extend(library_result.errors)
+
+            graph_result = await self._librarian.index_ingested_unit_graph(
+                skill,
+                unit,
+                request_source_type,
+            )
+            result.graph_nodes_created = graph_result.nodes_created
+            result.graph_edges_created = graph_result.edges_created
+            result.trace.append(AgentTraceStep(
+                agent="SkillLibrarianAgent",
+                action="index_heterogeneous_graph",
+                status="success" if not graph_result.errors else "warning",
+                details={
+                    "nodes_created": graph_result.nodes_created,
+                    "edges_created": graph_result.edges_created,
+                    "errors": graph_result.errors,
+                },
+            ))
+            result.errors.extend(graph_result.errors)
+
+            result.skill = skill
+            result.success = audit.passed and not library_result.errors and not graph_result.errors
+            return result
+        except Exception as exc:
+            logger.error("MetaController: ingest management failed: %s", exc)
+            result.errors.append(str(exc))
+            result.trace.append(AgentTraceStep(
+                agent="MetaControllerAgent",
+                action="manage_ingested_unit",
+                status="failed",
+                details={"error": str(exc)},
+            ))
+            return result
 
     def _route_event(self, event: TriggerEvent, skill_id: Optional[str], payload: Dict) -> ControlAction:
         action_map = {
@@ -139,3 +292,8 @@ class MetaControllerAgent:
 
     async def _handle_audit_failed(self, action: ControlAction, wiki: Optional[Any]) -> Dict[str, Any]:
         return await self._handle_failure(action, wiki)
+
+
+def _advance_candidate_to_draft(skill: Any) -> None:
+    if skill.state == SkillState.SKILL_CANDIDATE:
+        skill.transition_to(SkillState.DRAFT)

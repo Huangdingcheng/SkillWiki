@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import AppState, get_app_state
 from ..schemas import (
@@ -15,6 +15,7 @@ from ..schemas import (
     SkillSummary,
     TransitionRequest,
     MergeSkillsRequest,
+    MergeUpdateRequest,
     SplitSkillRequest,
 )
 
@@ -287,6 +288,325 @@ def _get_skill_author(skill: Any) -> str:
     return "repository"
 
 
+def _merge_schema_properties(target: Dict[str, Any], sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = dict(target or {"type": "object", "properties": {}})
+    merged.setdefault("type", "object")
+    merged.setdefault("properties", {})
+    merged_required = set(merged.get("required") or [])
+    for schema in sources:
+        if not isinstance(schema, dict):
+            continue
+        for key, spec in (schema.get("properties") or {}).items():
+            merged["properties"].setdefault(key, spec)
+        merged_required.update(schema.get("required") or [])
+    if merged_required:
+        merged["required"] = sorted(merged_required)
+    return merged
+
+
+def _dedupe(items: List[Any]) -> List[Any]:
+    seen = set()
+    result = []
+    for item in items:
+        key = str(item)
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
+def _score_ratio(score: float) -> float:
+    return score / 10.0 if score > 1.0 else score
+
+
+def _merged_description(target: Any, sources: List[Any], manual_description: Optional[str]) -> str:
+    if manual_description:
+        return manual_description
+    source_lines = [
+        f"- {source.name}: {source.description}"
+        for source in sources
+        if getattr(source, "description", "")
+    ]
+    if not source_lines:
+        return target.description
+    return (
+        f"{target.description}\n\n"
+        "Merged workflow knowledge:\n"
+        + "\n".join(source_lines)
+    )
+
+
+def _skill_tool_calls(skill: Any) -> List[str]:
+    implementation = getattr(skill, "implementation", None)
+    return list(getattr(implementation, "tool_calls", []) or [])
+
+
+def _extract_default_from_schema(skill: Any, field_name: str) -> Any:
+    interface = getattr(skill, "interface", None)
+    if not interface:
+        return None
+    schema = getattr(interface, "input_schema", {}) or {}
+    props = schema.get("properties") or {}
+    value = props.get(field_name, {}).get("default")
+    if value:
+        return value
+    implementation = getattr(skill, "implementation", None)
+    code = getattr(implementation, "code", "") if implementation else ""
+    if not code:
+        return None
+    import re
+
+    pattern = rf'input_data\.get\("{re.escape(field_name)}"\)\s+or\s+"([^"]+)"'
+    match = re.search(pattern, code)
+    return match.group(1) if match else None
+
+
+def _generic_merge_for_common_tool(target: Any, sources: List[Any], req: MergeUpdateRequest) -> Optional[Dict[str, Any]]:
+    """Generalize common host-tool Skills into parameterized workflows.
+
+    This is intentionally more opinionated than a raw field union. Merging
+    `open_chatgpt` and `open_hitwh` should produce a reusable URL-opening Skill
+    with `url` as input, not a bag of two hard-coded websites.
+    """
+    from ...models.skill_model import SkillImplementation, SkillInterface
+
+    all_skills = [target] + sources
+    tool_sets = [set(_skill_tool_calls(skill)) for skill in all_skills]
+    common_tools = set.intersection(*tool_sets) if tool_sets and all(tool_sets) else set()
+    if not common_tools:
+        return None
+
+    if "host.open_url_in_chrome" in common_tools:
+        examples = _dedupe(
+            [
+                value
+                for skill in all_skills
+                for value in [_extract_default_from_schema(skill, "url")]
+                if value
+            ]
+        )
+        example_text = f" Examples seen during merge: {', '.join(map(str, examples[:4]))}." if examples else ""
+        description = req.description or (
+            "Open Google Chrome and navigate to a target URL chosen by the execution agent from the user's task."
+            + example_text
+        )
+        interface = SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Target URL generated or verified by the execution agent from the user task.",
+                    },
+                    "goal": {
+                        "type": "string",
+                        "description": "Original user task, used by the agent to resolve the URL when it is not provided.",
+                    },
+                },
+                "required": [],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "launched": {"type": "boolean", "description": "Whether Chrome accepted the open request."},
+                    "url": {"type": "string", "description": "The URL opened in Chrome."},
+                    "host_action": {"type": "string", "description": "Host tool action that was executed."},
+                },
+            },
+            preconditions=[
+                "The execution agent has resolved or generated the target URL from the task.",
+                "The selected Skill is used as an execution pattern, not as a hard-coded destination.",
+            ],
+            postconditions=[
+                "Chrome is open on the agent-selected URL.",
+                "The runtime records the actual URL for validation and future learning.",
+            ],
+            side_effects=["Opens or focuses Google Chrome."],
+        )
+        implementation = SkillImplementation(
+            language="python",
+            code='output["launched"] = True\noutput["url"] = input_data.get("url") or input_data.get("resolved_url")',
+            prompt_template=(
+                "Use this Skill only after the agent resolves a concrete target URL. "
+                "Do not reuse example URLs unless the current task asks for that same site."
+            ),
+            tool_calls=["host.open_url_in_chrome"],
+        )
+        return {
+            "description": description,
+            "tags": _dedupe(target.tags + [tag for source in sources for tag in source.tags] + ["generic", "parameterized", "agent-generalized", "url"]),
+            "interface": interface,
+            "implementation": implementation,
+            "domain": "web",
+            "granularity_level": 1,
+        }
+
+    if "host.open_file" in common_tools:
+        description = req.description or "Open a target local file or folder selected by the execution agent from the user's task."
+        interface = SkillInterface(
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute, home-relative, or agent-resolved file/folder path.",
+                    },
+                    "goal": {"type": "string", "description": "Original user task used to infer the path."},
+                },
+                "required": [],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "launched": {"type": "boolean"},
+                    "path": {"type": "string"},
+                    "host_action": {"type": "string"},
+                },
+            },
+            preconditions=["The execution agent has resolved the requested file/folder path."],
+            postconditions=["The host OS receives an open request for the resolved path."],
+            side_effects=["Opens a local file or folder with the default application."],
+        )
+        implementation = SkillImplementation(
+            language="python",
+            code='output["launched"] = True\noutput["path"] = input_data.get("path") or input_data.get("resolved_path")',
+            prompt_template="Use the current task to resolve the path; do not hard-code example paths from prior imports.",
+            tool_calls=["host.open_file"],
+        )
+        return {
+            "description": description,
+            "tags": _dedupe(target.tags + [tag for source in sources for tag in source.tags] + ["generic", "parameterized", "agent-generalized", "file"]),
+            "interface": interface,
+            "implementation": implementation,
+            "domain": "file",
+            "granularity_level": 1,
+        }
+
+    return None
+
+
+def _merge_skill_content(target: Any, sources: List[Any], req: MergeUpdateRequest) -> Dict[str, Any]:
+    from ...models.skill_model import SkillImplementation, SkillInterface, SkillProvenance
+
+    input_schemas = [source.interface.input_schema for source in sources if getattr(source, "interface", None)]
+    output_schemas = [source.interface.output_schema for source in sources if getattr(source, "interface", None)]
+    generalized = _generic_merge_for_common_tool(target, sources, req) if req.merge_strategy == "agent_generalize" else None
+    interface = SkillInterface(
+        input_schema=_merge_schema_properties(target.interface.input_schema, input_schemas),
+        output_schema=_merge_schema_properties(target.interface.output_schema, output_schemas),
+        preconditions=_dedupe(target.interface.preconditions + [item for source in sources for item in source.interface.preconditions]),
+        postconditions=_dedupe(target.interface.postconditions + [item for source in sources for item in source.interface.postconditions]),
+        side_effects=_dedupe(target.interface.side_effects + [item for source in sources for item in source.interface.side_effects]),
+    )
+
+    target_impl = target.implementation
+    tool_calls = _dedupe(
+        (target_impl.tool_calls if target_impl else [])
+        + [tool for source in sources if source.implementation for tool in source.implementation.tool_calls]
+    )
+    sub_skill_ids = _dedupe(
+        (target_impl.sub_skill_ids if target_impl else [])
+        + [source.skill_id for source in sources]
+    )
+    implementation = SkillImplementation(
+        language=(target_impl.language if target_impl else "python"),
+        code=(target_impl.code if target_impl else None),
+        prompt_template=(target_impl.prompt_template if target_impl else None) or _merged_description(target, sources, req.description),
+        tool_calls=tool_calls,
+        sub_skill_ids=sub_skill_ids,
+        execution_order=(target_impl.execution_order if target_impl else None),
+    )
+    if generalized:
+        interface = generalized["interface"]
+        implementation = generalized["implementation"]
+
+    parent_ids = _dedupe([target.skill_id] + [source.skill_id for source in sources])
+    provenance = target.provenance.model_copy(deep=True) if target.provenance else SkillProvenance(source_type="merge_update")
+    provenance.source_type = "merge_update"
+    provenance.parent_skill_ids = _dedupe((provenance.parent_skill_ids or []) + parent_ids)
+    provenance.creation_context.update({
+        "merged_skill_ids": [source.skill_id for source in sources],
+        "merged_skill_names": [source.name for source in sources],
+    })
+
+    overrides = {
+        "description": generalized.get("description") if generalized else _merged_description(target, sources, req.description),
+        "tags": generalized.get("tags") if generalized else _dedupe(target.tags + [tag for source in sources for tag in source.tags] + ["merged", "workflow"]),
+        "interface": interface,
+        "implementation": implementation,
+        "domain": generalized.get("domain") if generalized else target.domain,
+        "granularity_level": generalized.get("granularity_level") if generalized else max([target.granularity_level] + [source.granularity_level for source in sources]),
+        "provenance": provenance,
+        "dependency_ids": _dedupe(target.dependency_ids + [source.skill_id for source in sources]),
+        "component_ids": _dedupe(target.component_ids + [source.skill_id for source in sources]),
+        "tool_refs": _dedupe(target.tool_refs + [ref for source in sources for ref in source.tool_refs]),
+        "doc_refs": _dedupe(target.doc_refs + [ref for source in sources for ref in source.doc_refs]),
+        "trajectory_refs": _dedupe(target.trajectory_refs + [ref for source in sources for ref in source.trajectory_refs]),
+    }
+    if req.description is not None:
+        overrides["description"] = req.description
+    if req.tags is not None:
+        overrides["tags"] = req.tags
+    if req.interface is not None:
+        overrides["interface"] = req.interface
+    if req.implementation is not None:
+        overrides["implementation"] = req.implementation
+    if req.test_cases is not None:
+        overrides["test_cases"] = req.test_cases
+    else:
+        overrides["test_cases"] = target.test_cases + [case for source in sources for case in source.test_cases]
+    return overrides
+
+
+async def _sync_skill_after_lifecycle(app: AppState, skill: Any) -> None:
+    if app.graph:
+        try:
+            await app.graph.sync_skill(skill)
+            if hasattr(app.graph, "sync_auto_edges"):
+                skills = await app.wiki.list(limit=10000)
+                await app.graph.sync_auto_edges(skill, [item.skill_id for item in skills])
+        except Exception:
+            pass
+    if hasattr(app.wiki, "invalidate"):
+        await app.wiki.invalidate(skill.skill_id)
+
+
+@router.post("/{skill_id}/merge-update", response_model=Dict[str, Any])
+async def merge_update_skill(
+    skill_id: str,
+    req: MergeUpdateRequest,
+    app: AppState = Depends(get_app_state),
+) -> Dict[str, Any]:
+    target = await app.wiki.get(skill_id)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+    source_ids = [source_id for source_id in req.source_skill_ids if source_id != skill_id]
+    if not source_ids:
+        raise HTTPException(status_code=400, detail="At least one source Skill is required for merge update")
+    source_map = await app.wiki.get_many(source_ids)
+    sources = [source_map[source_id] for source_id in source_ids if source_map.get(source_id)]
+    if len(sources) != len(source_ids):
+        missing = [source_id for source_id in source_ids if not source_map.get(source_id)]
+        raise HTTPException(status_code=404, detail=f"Source Skills do not exist: {missing}")
+
+    overrides = _merge_skill_content(target, sources, req)
+    try:
+        new_skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await _sync_skill_after_lifecycle(app, new_skill)
+    diff_lines = _business_skill_diff(target, new_skill)
+    return {
+        "success": True,
+        "updated_skill": _to_summary(new_skill),
+        "merged_skills": [_to_summary(source) for source in sources],
+        "rationale": "Merged selected Skills into a new version of the target Skill.",
+        "diff": diff_lines,
+        "summary": _summarize_diff(target.version, new_skill.version, diff_lines),
+    }
+
+
 
 @router.post("/{skill_id}/transition", response_model=SkillSummary)
 async def transition_state(
@@ -360,6 +680,8 @@ async def create_new_version(
         overrides["interface"] = req.interface
     if req.implementation is not None:
         overrides["implementation"] = req.implementation
+    if req.test_cases is not None:
+        overrides["test_cases"] = req.test_cases
     if req.domain is not None:
         overrides["domain"] = req.domain
     if req.granularity_level is not None:
@@ -397,6 +719,7 @@ async def create_new_version(
 @router.post("/{skill_id}/review", response_model=dict)
 async def review_skill(
     skill_id: str,
+    auto_apply: bool = Query(False, description="When true, degrade unqualified Skills according to review result."),
     app: AppState = Depends(get_app_state),
 ) -> dict:
     if not app.reviewer:
@@ -407,10 +730,38 @@ async def review_skill(
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
 
     result = await app.reviewer.review(skill)
+    updated_skill = None
+    lifecycle_action = "none"
+    score_ratio = _score_ratio(float(result.overall_score))
+    if auto_apply and not result.is_approved:
+        from ...models.skill_model import SkillState
+
+        degrade_target = None
+        if skill.state == SkillState.RELEASED:
+            degrade_target = SkillState.DEGRADED
+        elif skill.state == SkillState.VERIFIED:
+            degrade_target = SkillState.DRAFT
+        elif skill.state == SkillState.DRAFT:
+            degrade_target = SkillState.SKILL_CANDIDATE
+        elif skill.state == SkillState.DEGRADED and score_ratio < 0.45:
+            degrade_target = SkillState.DEPRECATED
+        if degrade_target:
+            try:
+                updated_skill = await app.wiki.transition_state(
+                    skill_id,
+                    degrade_target,
+                    reason=f"Review downgrade: {result.summary}",
+                )
+                lifecycle_action = f"downgraded_to_{degrade_target.value}"
+                await _sync_skill_after_lifecycle(app, updated_skill)
+            except ValueError:
+                lifecycle_action = "downgrade_not_allowed"
+
     return {
         "review_id": result.review_id,
         "status": result.status.value,
         "overall_score": result.overall_score,
+        "score_ratio": score_ratio,
         "summary": result.summary,
         "comments": [
             {
@@ -423,6 +774,8 @@ async def review_skill(
         ],
         "auto_fix_suggestions": result.auto_fix_suggestions,
         "is_approved": result.is_approved,
+        "lifecycle_action": lifecycle_action,
+        "updated_skill": _to_summary(updated_skill) if updated_skill else None,
     }
 
 @router.post("/{skill_id}/review-and-release", response_model=SkillSummary)

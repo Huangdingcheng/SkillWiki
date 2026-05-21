@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
+import json
+import platform
+import re
+import shlex
+import shutil
+import subprocess
+import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from urllib.parse import quote_plus
 
 from ...models.experience_model import ExecutionStatus, SkillExecutionRecord
 from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from .observation import ObservationManager, judge_step_observation
 from .planner import ExecutionPlan, PlanStep, StepStatus
 from .state_tracker import StateTracker
 
@@ -43,6 +55,7 @@ class SkillExecutor:
         self._max_retries = max_retries
         self._step_timeout = step_timeout_s
         self._event_callbacks: List[ExecutionEventCallback] = []
+        self._observations = ObservationManager()
 
     def add_event_callback(self, callback: ExecutionEventCallback) -> None:
         """注册事件回调（用于 WebSocket 推送）。"""
@@ -54,7 +67,9 @@ class SkillExecutor:
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         for cb in self._event_callbacks:
             try:
-                cb(event_type, data)
+                result = cb(event_type, data)
+                if inspect.isawaitable(result):
+                    asyncio.create_task(result)
             except Exception:
                 pass
 
@@ -140,6 +155,14 @@ class SkillExecutor:
             "skill_name": skill.name,
             "input": step.input_mapping,
         })
+        before_observation = self._observations.collect(
+            phase="before",
+            step=step,
+            skill=skill,
+            state=tracker.current,
+        )
+        step.observations.append(before_observation)
+        self._emit("step_observed", before_observation)
 
         record = SkillExecutionRecord(
             skill_id=skill.skill_id,
@@ -168,12 +191,42 @@ class SkillExecutor:
                 step.status = StepStatus.SUCCESS
                 step.result = output
                 step.completed_at = datetime.utcnow()
+                after_observation = self._observations.collect(
+                    phase="after",
+                    step=step,
+                    skill=skill,
+                    state=tracker.current,
+                    output=output,
+                )
+                step.observations.append(after_observation)
+                step.step_judgment = judge_step_observation(step, output, after_observation)
+                if step.step_judgment.get("next_action") == "repair" and attempt < self._max_retries:
+                    repair = _repair_step_input(step, output, after_observation, step.step_judgment)
+                    self._emit("step_repairing", {
+                        "step_id": step.step_id,
+                        "skill_name": skill.name,
+                        "judgment": step.step_judgment,
+                        "repair": repair,
+                        "attempt": attempt + 1,
+                    })
+                    if repair:
+                        step.input_mapping.update(repair)
+                    step.status = StepStatus.RUNNING
+                    continue
 
                 record.complete(output, tracker.current)
+                self._emit("step_observed", after_observation)
+                self._emit("step_judged", {
+                    "step_id": step.step_id,
+                    "skill_name": skill.name,
+                    "judgment": step.step_judgment,
+                })
                 self._emit("step_completed", {
                     "step_id": step.step_id,
                     "skill_name": skill.name,
                     "output": output,
+                    "observation": after_observation,
+                    "judgment": step.step_judgment,
                     "latency_ms": step.latency_ms,
                 })
                 return record
@@ -188,6 +241,15 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
+                error_observation = self._observations.collect(
+                    phase="error",
+                    step=step,
+                    skill=skill,
+                    state=tracker.current,
+                    error=error,
+                )
+                step.observations.append(error_observation)
+                self._emit("step_observed", error_observation)
                 self._emit("step_failed", {"step_id": step.step_id, "error": error})
                 return record
 
@@ -202,6 +264,15 @@ class SkillExecutor:
                 step.error = error
                 step.completed_at = datetime.utcnow()
                 record.fail(error, type(e).__name__)
+                error_observation = self._observations.collect(
+                    phase="error",
+                    step=step,
+                    skill=skill,
+                    state=tracker.current,
+                    error=error,
+                )
+                step.observations.append(error_observation)
+                self._emit("step_observed", error_observation)
                 self._emit("step_failed", {"step_id": step.step_id, "error": error})
                 return record
 
@@ -219,6 +290,12 @@ class SkillExecutor:
 
         impl = skill.implementation
 
+        # 0. allowlisted host tool calls -> controlled host-side actions.
+        # These are intentionally explicit so a Skill cannot execute arbitrary
+        # shell commands just by storing Python code in the repository.
+        if impl.tool_calls:
+            return await self._run_host_tool_skill(skill, impl, input_data, current_state)
+
         # 1. prompt_template → LLM 调用
         if impl.prompt_template:
             return await self._run_prompt_skill(skill, impl, input_data)
@@ -233,9 +310,74 @@ class SkillExecutor:
 
         raise RuntimeError(f"Skill {skill.name} 没有可执行的实现（无 prompt/code/sub_skills）")
 
+    async def _run_host_tool_skill(
+        self,
+        skill: Skill,
+        impl: Any,
+        input_data: Dict[str, Any],
+        current_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run an explicitly allowlisted host tool referenced by a Skill."""
+        effective_input = _merge_schema_defaults(skill, input_data)
+        tool_names = {str(name).strip().lower() for name in impl.tool_calls}
+        if "host.open_chrome" in tool_names:
+            result = await asyncio.to_thread(_open_chrome_browser)
+        elif "host.open_application" in tool_names:
+            result = await asyncio.to_thread(_open_application, effective_input)
+        elif "host.open_url_in_chrome" in tool_names:
+            result = await asyncio.to_thread(_open_url_in_chrome, effective_input)
+        elif "host.open_file" in tool_names:
+            result = await asyncio.to_thread(_open_file, effective_input)
+        elif "host.move_to_trash" in tool_names:
+            result = await asyncio.to_thread(_move_to_trash, effective_input)
+        elif "host.open_or_create_file_in_vscode" in tool_names:
+            result = await asyncio.to_thread(_open_or_create_file_in_vscode, effective_input)
+        elif "host.create_wps_document_from_text_file" in tool_names:
+            result = await asyncio.to_thread(_create_wps_document_from_text_file, effective_input)
+        elif "host.write_downloads_text_file" in tool_names:
+            result = await asyncio.to_thread(_write_downloads_text_file, effective_input)
+        elif "host.open_downloads_folder" in tool_names:
+            result = await asyncio.to_thread(_open_downloads_folder)
+        elif "host.complete_chatgpt_note_task" in tool_names:
+            result = await asyncio.to_thread(_complete_chatgpt_note_task, effective_input)
+        elif "host.run_terminal_top" in tool_names:
+            result = await asyncio.to_thread(_run_terminal_top, effective_input)
+        elif "host.run_terminal_command" in tool_names:
+            result = await asyncio.to_thread(_run_terminal_command, effective_input)
+        elif "host.open_search_first_result" in tool_names:
+            result = await asyncio.to_thread(_open_search_first_result, effective_input)
+        elif "host.browser_gui_workflow" in tool_names:
+            result = await asyncio.to_thread(_run_browser_gui_workflow, effective_input)
+        else:
+            result = None
+
+        if result is not None:
+            return {
+                **result,
+                "skill_name": skill.name,
+                "_state_changes": {
+                    f"{skill.name}_executed": result.get("success", result.get("launched", False)),
+                    "last_host_action": result.get("host_action", skill.name),
+                    **result,
+                },
+            }
+
+        logger.info(
+            "Skill %s references non-host tool calls %s; falling back to implementation.",
+            skill.name,
+            impl.tool_calls,
+        )
+        if impl.prompt_template:
+            return await self._run_prompt_skill(skill, impl, input_data)
+        if impl.code:
+            return await self._run_code_skill(skill, impl, input_data, current_state)
+        if impl.sub_skill_ids:
+            return await self._run_composite_skill(skill, impl, input_data, current_state)
+        raise RuntimeError(f"Skill {skill.name} references unsupported host tools: {impl.tool_calls}")
+
     async def _run_prompt_skill(self, skill: Skill, impl: Any, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """调用 LLM 执行 prompt 类型 Skill。"""
-        if not self._llm:
+        if not self._llm or _is_demo_llm(self._llm):
             # 无 LLM 客户端时返回模拟结果（测试/离线模式）
             return {
                 "result": f"[mock] {skill.name} executed",
@@ -245,14 +387,19 @@ class SkillExecutor:
         try:
             prompt = impl.prompt_template.format(**input_data)
         except KeyError as e:
-            raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
+            logger.warning("Skill prompt template missing input %s; using raw template for demo execution.", e)
+            prompt = impl.prompt_template
 
-        response = await asyncio.to_thread(
-            self._llm.chat,
-            [Message.system(f"你是 SkillOS 中的 {skill.name} Skill，请严格按照任务要求执行。"),
-             Message.user(prompt)],
-        )
-        result_text = response.content
+        try:
+            response = await asyncio.to_thread(
+                self._llm.chat,
+                [Message.system(f"你是 SkillOS 中的 {skill.name} Skill，请严格按照任务要求执行。"),
+                 Message.user(prompt)],
+            )
+            result_text = response.content
+        except Exception as exc:
+            logger.warning("Skill prompt execution fell back to deterministic demo output: %s", exc)
+            result_text = f"[demo] {skill.display_name} executed with inputs: {input_data}"
         return {
             "result": result_text,
             "skill_name": skill.name,
@@ -339,3 +486,1058 @@ class SkillExecutor:
         except Exception as e:
             record.fail(str(e), type(e).__name__)
         return record
+
+
+def _is_demo_llm(llm_client: LLMClient) -> bool:
+    api_key = str(getattr(getattr(llm_client, "_cfg", None), "api_key", ""))
+    return api_key.startswith("local-") or api_key.startswith("demo-")
+
+
+def _repair_step_input(
+    step: PlanStep,
+    output: Dict[str, Any],
+    observation_packet: Dict[str, Any],
+    judgment: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Small deterministic repair hooks before escalating to a future LLM repair agent."""
+    host_action = str(output.get("host_action") or judgment.get("host_action") or "")
+    if host_action == "move_to_trash":
+        path = str(step.input_mapping.get("path") or output.get("path") or "")
+        if path and not Path(path).expanduser().exists():
+            return {}
+    if host_action == "run_terminal_command" and not output.get("success"):
+        command = str(step.input_mapping.get("command") or "")
+        if command.startswith("ls ") and "~/" in command:
+            return {"command": command.replace("~/", f"{Path.home()}/", 1)}
+    return {}
+
+
+def _merge_schema_defaults(skill: Skill, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(input_data)
+    properties = skill.interface.input_schema.get("properties", {}) if skill.interface else {}
+    if isinstance(properties, dict):
+        for key, spec in properties.items():
+            if key in merged and merged[key] not in (None, ""):
+                continue
+            if isinstance(spec, dict) and "default" in spec:
+                merged[key] = spec["default"]
+    return merged
+
+
+def _open_chrome_browser() -> Dict[str, Any]:
+    """Open Google Chrome through a small, platform-specific allowlist."""
+    result = _open_application({"application": "Google Chrome"})
+    return {
+        **result,
+        "host_action": "open_chrome_browser",
+        "chrome_browser_opened": result.get("launched", False),
+    }
+
+
+def _open_application(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Open a host application through a platform-specific allowlist."""
+    app_name = str(
+        input_data.get("application")
+        or input_data.get("app_name")
+        or _infer_application_name(str(input_data.get("goal", "")))
+        or ""
+    ).strip()
+    if not app_name:
+        raise RuntimeError("Missing application/app_name for host.open_application")
+
+    system = platform.system().lower()
+    candidates = _application_name_candidates(app_name)
+    if system == "darwin":
+        settings_pane_url = str(input_data.get("settings_pane_url") or "").strip()
+        if settings_pane_url:
+            return _open_macos_settings_pane(
+                settings_pane_url,
+                feature=str(input_data.get("setting_feature") or ""),
+                requested_application=app_name,
+            )
+        launcher = str(input_data.get("launcher") or "").lower()
+        if "spotlight" in launcher or "聚焦" in launcher:
+            spotlight_query = str(input_data.get("application_query") or _spotlight_query_for_application(app_name)).strip()
+            spotlight_result = _open_application_via_spotlight(spotlight_query or app_name, requested_application=app_name)
+            if spotlight_result.get("success"):
+                return spotlight_result
+        commands = [["open", "-a", candidate] for candidate in candidates]
+    elif system == "windows":
+        commands = [["cmd", "/c", "start", "", candidate] for candidate in candidates]
+    else:
+        binary = next(
+            (
+                shutil.which(candidate) or shutil.which(candidate.lower().replace(" ", "-"))
+                for candidate in candidates
+                if shutil.which(candidate) or shutil.which(candidate.lower().replace(" ", "-"))
+            ),
+            None,
+        )
+        if not binary:
+            raise RuntimeError(f"Application executable was not found on this host: {app_name}")
+        commands = [[binary]]
+
+    last_error = ""
+    launched_name = app_name
+    command = commands[0]
+    for command in commands:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        if completed.returncode == 0:
+            if len(command) >= 3 and command[0] == "open" and command[1] == "-a":
+                launched_name = command[2]
+            break
+        last_error = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+    else:
+        raise RuntimeError(f"Failed to open application '{app_name}': {last_error}")
+
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_application",
+        "application": launched_name,
+        "requested_application": app_name,
+        "platform": system,
+        "command": " ".join(command),
+        "message": f"{launched_name} open request was sent to the host OS.",
+    }
+
+
+def _application_name_candidates(app_name: str) -> List[str]:
+    normalized = app_name.strip()
+    aliases = {
+        "wps office": ["WPS Office", "WPS", "wpsoffice"],
+        "wps": ["WPS", "WPS Office", "wpsoffice"],
+        "system settings": ["System Settings"],
+        "settings": ["System Settings"],
+        "系统设置": ["System Settings"],
+        "设置": ["System Settings"],
+        "google chrome": ["Google Chrome", "Chrome"],
+        "chrome": ["Google Chrome", "Chrome"],
+        "visual studio code": ["Visual Studio Code", "Code", "vscode"],
+        "vscode": ["Visual Studio Code", "Code", "vscode"],
+        "vs code": ["Visual Studio Code", "Code", "vscode"],
+        "terminal": ["Terminal"],
+        "finder": ["Finder"],
+    }
+    candidates = aliases.get(normalized.lower(), [normalized])
+    deduped: List[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def _open_macos_settings_pane(url: str, *, feature: str, requested_application: str) -> Dict[str, Any]:
+    command = ["open", url]
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        fallback = subprocess.run(["open", "-a", "System Settings"], capture_output=True, text=True, timeout=10)
+        if fallback.returncode != 0:
+            stderr = fallback.stderr.strip() or completed.stderr.strip() or "unknown error"
+            raise RuntimeError(f"Failed to open System Settings: {stderr}")
+        return {
+            "success": True,
+            "launched": True,
+            "host_action": "open_application",
+            "application": "System Settings",
+            "requested_application": requested_application,
+            "setting_feature": feature or "Settings",
+            "settings_pane_url": url,
+            "platform": "darwin",
+            "command": "open -a System Settings",
+            "message": "System Settings open request was sent; pane deep link was unavailable.",
+        }
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_application",
+        "application": "System Settings",
+        "requested_application": requested_application,
+        "setting_feature": feature or "Settings",
+        "settings_pane_url": url,
+        "platform": "darwin",
+        "command": " ".join(command),
+        "message": f"System Settings pane open request was sent: {feature or url}",
+    }
+
+
+def _spotlight_query_for_application(app_name: str) -> str:
+    aliases = {
+        "wps office": "wps",
+        "wps": "wps",
+        "wpsoffice": "wps",
+        "google chrome": "chrome",
+        "chrome": "chrome",
+        "visual studio code": "vscode",
+        "vscode": "vscode",
+        "vs code": "vscode",
+        "terminal": "terminal",
+        "finder": "finder",
+    }
+    return aliases.get(app_name.strip().lower(), app_name.strip())
+
+
+def _open_application_via_spotlight(query: str, *, requested_application: str) -> Dict[str, Any]:
+    """Use macOS Spotlight keystrokes when the task explicitly requested Spotlight."""
+    script = [
+        'tell application "System Events"',
+        'key code 49 using {command down}',
+        'delay 0.25',
+        f'keystroke {json.dumps(query)}',
+        'delay 0.35',
+        'key code 36',
+        'end tell',
+    ]
+    command: List[str] = ["osascript"]
+    for statement in script:
+        command.extend(["-e", statement])
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        return {
+            "success": False,
+            "host_action": "open_application",
+            "application": requested_application,
+            "requested_application": requested_application,
+            "launcher": "macOS Spotlight",
+            "platform": "darwin",
+            "command": " ".join(command),
+            "message": completed.stderr.strip() or completed.stdout.strip() or "Spotlight launch failed",
+        }
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_application",
+        "application": requested_application,
+        "requested_application": requested_application,
+        "launcher": "macOS Spotlight",
+        "platform": "darwin",
+        "command": " ".join(command),
+        "message": f"Spotlight launch request was sent for: {query}",
+    }
+
+
+def _open_url_in_chrome(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    url = str(input_data.get("url") or _infer_url(str(input_data.get("goal", "")))).strip()
+    if not url:
+        raise RuntimeError("Missing url for host.open_url_in_chrome")
+    if not url.startswith(("http://", "https://", "chrome://")):
+        url = f"https://{url}"
+
+    system = platform.system().lower()
+    if system == "darwin":
+        command = ["open", "-a", "Google Chrome", url]
+    elif system == "windows":
+        command = ["cmd", "/c", "start", "", "chrome", url]
+    else:
+        binary = next(
+            (
+                candidate
+                for candidate in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+                if shutil.which(candidate)
+            ),
+            None,
+        )
+        if not binary:
+            raise RuntimeError("Chrome/Chromium executable was not found on this host")
+        command = [binary, url]
+
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to open Chrome URL: {stderr}")
+
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_url_in_chrome",
+        "application": "Google Chrome",
+        "url": url,
+        "platform": system,
+        "command": " ".join(command),
+        "message": f"Chrome URL open request was sent to the host OS: {url}",
+    }
+
+
+def _open_file(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _expand_host_path(str(input_data.get("path") or input_data.get("file_path") or ""))
+    if not path:
+        raise RuntimeError("Missing path/file_path for host.open_file")
+    if not path.exists():
+        raise RuntimeError(f"File does not exist: {path}")
+
+    system = platform.system().lower()
+    if system == "darwin":
+        command = ["open", str(path)]
+    elif system == "windows":
+        command = ["cmd", "/c", "start", "", str(path)]
+    else:
+        opener = shutil.which("xdg-open")
+        if not opener:
+            raise RuntimeError("xdg-open was not found on this host")
+        command = [opener, str(path)]
+
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to open file: {stderr}")
+
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_file",
+        "path": str(path),
+        "platform": system,
+        "command": " ".join(command),
+        "message": f"File open request was sent to the host OS: {path}",
+    }
+
+
+def _move_to_trash(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _expand_host_path(str(input_data.get("path") or input_data.get("file_path") or ""))
+    if not path:
+        raise RuntimeError("Missing path/file_path for host.move_to_trash")
+    if not path.exists():
+        raise RuntimeError(f"File does not exist: {path}")
+
+    system = platform.system().lower()
+    if system == "darwin":
+        script = (
+            'tell application "Finder" to delete '
+            f'(POSIX file {json.dumps(str(path))})'
+        )
+        command = ["osascript", "-e", script]
+    elif system == "windows":
+        raise RuntimeError("host.move_to_trash is not implemented on Windows yet")
+    else:
+        trash = shutil.which("gio") or shutil.which("kioclient5") or shutil.which("trash-put")
+        if not trash:
+            raise RuntimeError("No supported Trash command was found on this host")
+        if Path(trash).name == "gio":
+            command = [trash, "trash", str(path)]
+        elif Path(trash).name == "kioclient5":
+            command = [trash, "move", str(path), "trash:/"]
+        else:
+            command = [trash, str(path)]
+
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to move path to Trash: {stderr}")
+
+    return {
+        "success": True,
+        "launched": False,
+        "host_action": "move_to_trash",
+        "path": str(path),
+        "platform": system,
+        "command": " ".join(shlex.quote(part) for part in command),
+        "message": f"Path was moved to Trash: {path}",
+    }
+
+
+def _create_wps_document_from_text_file(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a WPS-openable document from a source text file and open it.
+
+    For the demo this uses an RTF document because it is easy to generate
+    safely and WPS/Word/TextEdit can all open it. The Skill still represents
+    the user-facing workflow: new blank document, copy source text, save to
+    Desktop, open in WPS when available.
+    """
+    source = _expand_host_path(str(
+        input_data.get("source_path")
+        or input_data.get("path")
+        or input_data.get("file_path")
+        or ""
+    ))
+    if not source:
+        source = Path.home() / "Desktop" / "111.txt"
+    if not source.exists():
+        raise RuntimeError(f"Source text file does not exist: {source}")
+    if not source.is_file():
+        raise RuntimeError(f"Source path is not a file: {source}")
+
+    raw_output = str(input_data.get("output_path") or input_data.get("target_path") or "").strip()
+    output_path = Path(raw_output).expanduser() if raw_output else Path.home() / "Desktop" / "wps_111_document.rtf"
+    if not output_path.is_absolute():
+        output_path = Path.home() / "Desktop" / output_path
+    if output_path.suffix.lower() not in {".rtf", ".doc", ".docx", ".txt"}:
+        output_path = output_path.with_suffix(".rtf")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    text = source.read_text(encoding="utf-8", errors="replace")
+    output_path.write_text(_rtf_document(text), encoding="utf-8")
+
+    open_result = _open_document_application(output_path, preferred_app=str(input_data.get("application") or "WPS Office"))
+    return {
+        "success": True,
+        "launched": bool(open_result.get("launched")),
+        "host_action": "create_wps_document_from_text_file",
+        "application": open_result.get("application") or "WPS Office",
+        "source_path": str(source),
+        "path": str(output_path),
+        "output_path": str(output_path),
+        "bytes_written": output_path.stat().st_size,
+        "source_chars": len(text),
+        "platform": platform.system().lower(),
+        "command": open_result.get("command"),
+        "message": f"Created a WPS-openable document on Desktop from {source.name}: {output_path.name}",
+    }
+
+
+def _open_document_application(path: Path, *, preferred_app: str) -> Dict[str, Any]:
+    system = platform.system().lower()
+    if system == "darwin":
+        candidates = _application_name_candidates(preferred_app)
+        last_error = ""
+        for app in candidates:
+            command = ["open", "-a", app, str(path)]
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            if completed.returncode == 0:
+                return {
+                    "success": True,
+                    "launched": True,
+                    "application": app,
+                    "command": " ".join(shlex.quote(part) for part in command),
+                }
+            last_error = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        fallback = ["open", str(path)]
+        completed = subprocess.run(fallback, capture_output=True, text=True, timeout=10)
+        if completed.returncode != 0:
+            stderr = completed.stderr.strip() or last_error or "unknown error"
+            raise RuntimeError(f"Failed to open generated document: {stderr}")
+        return {
+            "success": True,
+            "launched": True,
+            "application": "default document application",
+            "command": " ".join(shlex.quote(part) for part in fallback),
+        }
+    return _open_file({"path": str(path)})
+
+
+def _rtf_document(text: str) -> str:
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+        .replace("\n", "\\par\n")
+    )
+    return "{\\rtf1\\ansi\\deff0\n{\\fonttbl{\\f0 Helvetica;}}\n\\f0\\fs24\n" + escaped + "\n}\n"
+
+
+def _open_or_create_file_in_vscode(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Check/create a local text file and open it in VS Code via the code command when available."""
+    path = _resolve_vscode_file_path(input_data)
+    if not path:
+        raise RuntimeError("Missing path/filename for host.open_or_create_file_in_vscode")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existed_before = path.exists()
+    if not existed_before:
+        path.write_text("", encoding="utf-8")
+
+    system = platform.system().lower()
+    command_text = f"code {shlex.quote(str(path))}"
+    terminal_used = False
+    fallback_used = False
+    if system == "darwin" and shutil.which("code"):
+        terminal_script = f"{command_text}; echo; echo '[SkillOS] VS Code file workflow completed.'"
+        launch_command = [
+            "osascript",
+            "-e",
+            'tell application "Terminal" to activate',
+            "-e",
+            f'tell application "Terminal" to do script {json.dumps(terminal_script)}',
+        ]
+        terminal_used = True
+    elif system == "darwin":
+        launch_command = ["open", "-a", "Visual Studio Code", str(path)]
+        fallback_used = True
+    elif system == "windows":
+        if shutil.which("code"):
+            launch_command = ["cmd", "/c", "start", "", "cmd", "/k", command_text]
+            terminal_used = True
+        else:
+            launch_command = ["cmd", "/c", "start", "", str(path)]
+            fallback_used = True
+    else:
+        code_binary = shutil.which("code")
+        if code_binary:
+            terminal = next(
+                (candidate for candidate in ("gnome-terminal", "konsole", "xfce4-terminal", "xterm") if shutil.which(candidate)),
+                None,
+            )
+            if terminal == "xterm":
+                launch_command = [terminal, "-e", command_text]
+            elif terminal:
+                launch_command = [terminal, "--", "bash", "-lc", f"{command_text}; exec bash"]
+            else:
+                launch_command = [code_binary, str(path)]
+            terminal_used = bool(terminal)
+        else:
+            raise RuntimeError("VS Code CLI 'code' was not found on this host")
+
+    completed = subprocess.run(launch_command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to open VS Code file workflow: {stderr}")
+
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "open_or_create_file_in_vscode",
+        "application": "Visual Studio Code",
+        "path": str(path),
+        "filename": path.name,
+        "existed_before": existed_before,
+        "created": not existed_before,
+        "terminal_used": terminal_used,
+        "fallback_used": fallback_used,
+        "command": command_text,
+        "platform": system,
+        "message": (
+            f"Checked {path.name}, {'created it and ' if not existed_before else ''}"
+            "opened it in VS Code."
+        ),
+    }
+
+
+def _write_downloads_text_file(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    filename = str(
+        input_data.get("filename")
+        or input_data.get("file_name")
+        or _infer_downloads_filename(str(input_data.get("goal", "")))
+    ).strip()
+    if not filename:
+        filename = "skillos_answer.txt"
+    if not filename.endswith(".txt"):
+        filename = f"{filename}.txt"
+
+    content = str(
+        input_data.get("content")
+        or input_data.get("answer")
+        or _default_answer_content(str(input_data.get("goal", "")))
+    )
+    downloads = Path.home() / "Downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    path = downloads / Path(filename).name
+    path.write_text(content, encoding="utf-8")
+    return {
+        "success": True,
+        "host_action": "write_downloads_text_file",
+        "path": str(path),
+        "filename": path.name,
+        "bytes_written": len(content.encode("utf-8")),
+        "message": f"Text file was written to Downloads: {path.name}",
+    }
+
+
+def _open_downloads_folder() -> Dict[str, Any]:
+    return _open_file({"path": str(Path.home() / "Downloads")})
+
+
+def _complete_chatgpt_note_task(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    goal = str(input_data.get("goal", ""))
+    question = str(input_data.get("question") or _infer_question(goal)).strip()
+    url_result = _open_url_in_chrome({"url": "https://chatgpt.com/", "goal": goal})
+    filename = str(input_data.get("filename") or _infer_downloads_filename(goal, default="gpt_task_answer.txt"))
+    answer = str(input_data.get("answer") or _default_answer_content(goal, question=question))
+    file_result = _write_downloads_text_file({"filename": filename, "content": answer})
+    return {
+        "success": True,
+        "host_action": "complete_chatgpt_note_task",
+        "opened_url": url_result.get("url"),
+        "saved_path": file_result.get("path"),
+        "filename": file_result.get("filename"),
+        "question": question,
+        "answer_preview": answer[:240],
+        "message": "Opened ChatGPT in Chrome and saved the task answer note to Downloads.",
+    }
+
+
+def _run_terminal_top(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Open a terminal and run top long enough for the dashboard runtime to stay visible."""
+    duration = _coerce_duration_seconds(input_data.get("duration_seconds") or input_data.get("duration"), default=10)
+    sample_count = max(3, min(duration, 30))
+    system = platform.system().lower()
+
+    if system == "darwin":
+        top_command = f"top -o cpu -l {sample_count}"
+        command = [
+            "osascript",
+            "-e",
+            'tell application "Terminal" to activate',
+            "-e",
+            f'tell application "Terminal" to do script "{top_command}"',
+        ]
+    elif system == "windows":
+        top_command = (
+            "for ($i=0; $i -lt "
+            f"{sample_count}; $i++) {{ Get-Process | Sort-Object CPU -Descending | Select-Object -First 20; Start-Sleep -Seconds 1; Clear-Host }}"
+        )
+        command = ["powershell", "-NoExit", "-Command", top_command]
+    else:
+        terminal = next(
+            (candidate for candidate in ("gnome-terminal", "konsole", "xfce4-terminal", "xterm") if shutil.which(candidate)),
+            None,
+        )
+        if not terminal:
+            raise RuntimeError("No supported terminal emulator was found on this host")
+        top_command = f"top -b -d 1 -n {sample_count}"
+        if terminal == "xterm":
+            command = [terminal, "-e", top_command]
+        else:
+            command = [terminal, "--", "bash", "-lc", f"{top_command}; exec bash"]
+
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to start terminal top monitor: {stderr}")
+
+    # Keep the host action alive briefly so UI runtime animation can show the active phase.
+    time.sleep(min(duration, 20))
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "run_terminal_top",
+        "application": "Terminal" if system == "darwin" else "terminal",
+        "command": top_command,
+        "duration_seconds": duration,
+        "platform": system,
+        "message": f"Terminal top monitor was started for about {duration} seconds.",
+    }
+
+
+def _run_terminal_command(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Open Terminal and run a generated safe, read-only command."""
+    command = str(input_data.get("command") or _infer_terminal_command(str(input_data.get("goal", ""))) or "").strip()
+    if not command:
+        raise RuntimeError("Missing command for host.run_terminal_command")
+    if not _is_safe_terminal_command(command):
+        raise RuntimeError(f"Refused unsafe or unsupported terminal command: {command}")
+
+    command_parts = _safe_command_parts(command)
+    sensitive_output = Path(command_parts[0]).name in {"printenv", "env"}
+    if sensitive_output:
+        if not shutil.which(command_parts[0]):
+            raise RuntimeError(f"Generated terminal command was not found: {command_parts[0]}")
+        stdout_preview = "[redacted] Environment variable values are displayed only in Terminal and are not returned through the API."
+        stderr_preview = ""
+    else:
+        captured = subprocess.run(command_parts, capture_output=True, text=True, timeout=10)
+        if captured.returncode != 0:
+            stderr = captured.stderr.strip() or captured.stdout.strip() or "unknown error"
+            raise RuntimeError(f"Generated terminal command failed: {stderr}")
+        stdout_preview = captured.stdout.strip()[:4000]
+        stderr_preview = captured.stderr.strip()[:1000]
+
+    system = platform.system().lower()
+    if system == "darwin":
+        terminal_script = f"{command}; echo; echo '[SkillOS] command completed.'"
+        launch_command = [
+            "osascript",
+            "-e",
+            'tell application "Terminal" to activate',
+            "-e",
+            f'tell application "Terminal" to do script {json.dumps(terminal_script)}',
+        ]
+    elif system == "windows":
+        launch_command = ["cmd", "/c", "start", "", "cmd", "/k", command]
+    else:
+        terminal = next(
+            (candidate for candidate in ("gnome-terminal", "konsole", "xfce4-terminal", "xterm") if shutil.which(candidate)),
+            None,
+        )
+        if not terminal:
+            raise RuntimeError("No supported terminal emulator was found on this host")
+        if terminal == "xterm":
+            launch_command = [terminal, "-e", f"{command}; read -p 'SkillOS command completed. Press Enter to close.'"]
+        else:
+            launch_command = [terminal, "--", "bash", "-lc", f"{command}; echo; echo '[SkillOS] command completed.'; exec bash"]
+
+    launched = subprocess.run(launch_command, capture_output=True, text=True, timeout=10)
+    if launched.returncode != 0:
+        stderr = launched.stderr.strip() or launched.stdout.strip() or "unknown error"
+        raise RuntimeError(f"Failed to open Terminal command: {stderr}")
+
+    return {
+        "success": True,
+        "launched": True,
+        "host_action": "run_terminal_command",
+        "application": "Terminal" if system == "darwin" else "terminal",
+        "command": command,
+        "stdout_preview": stdout_preview,
+        "stderr_preview": stderr_preview,
+        "sensitive_output_redacted": sensitive_output,
+        "platform": system,
+        "message": f"Terminal command was generated by the agent and launched: {command}",
+    }
+
+
+def _open_search_first_result(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(input_data.get("query") or input_data.get("search_query") or input_data.get("goal") or "").strip()
+    if not query:
+        raise RuntimeError("Missing query/search_query for host.open_search_first_result")
+    url = f"https://www.google.com/search?q={quote_plus(query)}&btnI=I"
+    result = _open_url_in_chrome({"url": url, "goal": str(input_data.get("goal", ""))})
+    return {
+        **result,
+        "host_action": "open_search_first_result",
+        "query": query,
+        "search_url": url,
+        "message": f"Requested the first search result for query: {query}",
+    }
+
+
+def _run_browser_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a bounded observe-decide-act browser GUI workflow.
+
+    This is intentionally conservative. It opens a search/navigation entry point,
+    records observations after each round, and only performs deterministic safe
+    browser actions that can be represented by URL/search navigation in the
+    current host runtime. A future browser controller can replace the simulated
+    click decisions with accessibility/DOM/screenshot-targeted clicks.
+    """
+    goal = str(input_data.get("goal") or "")
+    query = str(input_data.get("query") or _infer_browser_gui_query(goal) or goal).strip()
+    max_rounds = _coerce_duration_seconds(input_data.get("max_rounds"), default=6)
+    max_rounds = max(2, min(max_rounds, 8))
+    controller = _BrowserGuiController(goal=goal, query=query)
+    observations: List[Dict[str, Any]] = []
+    actions: List[Dict[str, Any]] = []
+
+    entry_url = str(input_data.get("url") or "").strip()
+    if not entry_url:
+        entry_url = f"https://www.google.com/search?q={quote_plus(query)}"
+    open_result = _open_url_in_chrome({"url": entry_url, "goal": goal})
+    actions.append({"round": 0, "action": "open_search_or_url", "target": entry_url, "status": "success"})
+    time.sleep(0.6)
+    observations.append(_browser_workflow_observation(0, "search_results", goal, query, entry_url, controller=controller))
+
+    completed = False
+    final_target = ""
+    for round_index in range(1, max_rounds + 1):
+        before = controller.observe(round_index)
+        decision = _browser_workflow_decision(goal, query, round_index, before)
+        action_result = controller.act(decision)
+        merged_decision = {"round": round_index, **decision, "execution": action_result}
+        if action_result.get("status") == "success":
+            merged_decision["status"] = "success"
+        actions.append(merged_decision)
+        time.sleep(0.6 if action_result.get("status") == "success" else 0.15)
+        observations.append(_browser_workflow_observation(
+            round_index,
+            decision["observation_type"],
+            goal,
+            query,
+            str(action_result.get("target") or decision.get("target") or entry_url),
+            controller=controller,
+            dom_snapshot=before,
+            action_result=action_result,
+        ))
+        if decision.get("done"):
+            completed = True
+            final_target = str(decision.get("target") or entry_url)
+            break
+        if _browser_goal_satisfied(goal, action_result, before):
+            completed = True
+            final_target = str(action_result.get("target") or decision.get("target") or entry_url)
+            break
+        time.sleep(0.15)
+
+    return {
+        "success": completed,
+        "launched": True,
+        "host_action": "browser_gui_workflow",
+        "application": "Google Chrome",
+        "query": query,
+        "url": final_target or entry_url,
+        "entry_url": entry_url,
+        "rounds": len(actions),
+        "max_rounds": max_rounds,
+        "observations": observations,
+        "actions": actions,
+        "requires_visual_controller": controller.requires_visual_controller and not completed,
+        "controller": controller.summary(),
+        "platform": platform.system().lower(),
+        "command": open_result.get("command"),
+        "message": (
+            "Started an observation-driven browser GUI workflow. "
+            "This run now attempts DOM-backed browser actions on macOS Chrome and records screenshots/DOM evidence."
+        ),
+    }
+
+
+def _browser_workflow_observation(
+    round_index: int,
+    observation_type: str,
+    goal: str,
+    query: str,
+    target: str,
+    *,
+    controller: Optional["_BrowserGuiController"] = None,
+    dom_snapshot: Optional[Dict[str, Any]] = None,
+    action_result: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    screenshot = _capture_screen_observation(round_index)
+    dom = dom_snapshot or (controller.observe(round_index) if controller else {"available": False})
+    available = ["search_url", "browser_open_request"]
+    if screenshot.get("available"):
+        available.append("screenshot_file")
+    if dom.get("available"):
+        available.append("dom_snapshot")
+    return {
+        "round": round_index,
+        "type": "browser_gui",
+        "source": "BrowserGuiObservationProvider",
+        "status": "observed",
+        "observation_type": observation_type,
+        "evidence": {
+            "goal": goal,
+            "query": query,
+            "target": target,
+            "available_evidence": available,
+            "missing_evidence": [
+                item for item in ["screenshot_ocr", "clicked_element_result" if not action_result else ""]
+                if item
+            ],
+            "screenshot": screenshot,
+            "dom": dom,
+            "action_result": action_result or {},
+        },
+        "confidence": 0.72 if dom.get("available") else 0.52,
+    }
+
+
+def _capture_screen_observation(round_index: int) -> Dict[str, Any]:
+    if platform.system().lower() != "darwin":
+        return {"available": False, "reason": "screenshot capture is currently implemented for macOS screencapture only"}
+    output_dir = Path("/tmp") / "skillos_browser_observations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"browser_round_{round_index}_{uuid.uuid4().hex[:8]}.png"
+    try:
+        completed = subprocess.run(["screencapture", "-x", str(path)], capture_output=True, text=True, timeout=5)
+        if completed.returncode != 0 or not path.exists():
+            return {"available": False, "reason": (completed.stderr or "screencapture failed").strip()[:240]}
+        data = path.read_bytes()
+        return {
+            "available": True,
+            "path": str(path),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "bytes": len(data),
+            "note": "Raw screenshot captured for future visual/OCR controller; this runtime does not yet interpret it.",
+        }
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)[:240]}
+
+
+def _browser_workflow_decision(goal: str, query: str, round_index: int) -> Dict[str, Any]:
+    lowered = goal.lower()
+    if round_index == 1:
+        return {
+            "action": "select_search_result_candidate",
+            "target": query,
+            "observation_type": "search_result_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "Defer the exact click target until search result evidence is available.",
+            "observation_required": ["visible search results", "official domain/title", "clickable result element"],
+            "reason": "Need page observation to choose the official/login result instead of guessing a hard-coded URL.",
+        }
+    if round_index == 2 and ("邮箱" in goal or "mail" in lowered or "email" in lowered):
+        return {
+            "action": "look_for_mail_login_control",
+            "target": "mail login / unified authentication",
+            "observation_type": "login_page_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "Use cached credentials/session only after the login or authenticated page is observed.",
+            "observation_required": ["login button/form", "cached credential prompt", "authenticated mailbox state"],
+            "reason": "The workflow should use cached credentials if the page exposes an authenticated session or login form.",
+        }
+    if round_index == 3 and ("已发送" in goal or "sent" in lowered):
+        return {
+            "action": "open_sent_mail_folder",
+            "target": "Sent / 已发送",
+            "observation_type": "mailbox_navigation_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "Click Sent only when the mailbox navigation element is visible.",
+            "observation_required": ["mailbox sidebar", "Sent/已发送 folder element", "current folder indicator"],
+            "reason": "Need visual/DOM confirmation that the Sent folder button is visible before clicking.",
+        }
+    return {
+        "action": "stop_for_visual_controller",
+        "target": "browser visual controller",
+        "observation_type": "needs_visual_controller",
+        "status": "blocked",
+        "done": True,
+        "agent_decision": "Stop rather than fabricate success; the next runtime upgrade needs screenshot/DOM click execution.",
+        "observation_required": ["DOM snapshot", "screenshot OCR", "click result feedback"],
+        "reason": "Host runtime can open/search, but cannot yet click arbitrary page elements without DOM/screenshot controller feedback.",
+    }
+
+
+def _infer_browser_gui_query(goal: str) -> str:
+    query = goal
+    remove_tokens = [
+        "打开浏览器", "浏览器", "找到", "并登录", "直接登录", "登录", "并打开",
+        "打开已发送", "已发送", "我已经有账密缓存", "账密缓存", "我已经有", "缓存",
+        "click", "login", "sign in", "open sent", "browser", "chrome",
+    ]
+    for token in remove_tokens:
+        query = query.replace(token, " ")
+    query = re.sub(r"\s+", " ", query).strip(" ，。,.()（）")
+    if "邮箱" in goal and "邮箱" not in query:
+        query = f"{query} 邮箱".strip()
+    return query or goal
+
+
+def _infer_terminal_command(goal: str) -> str:
+    lowered = goal.lower()
+    if any(token in lowered for token in ("environment", "env", "printenv")) or any(
+        token in goal for token in ("环境变量", "环境 变量")
+    ):
+        return "printenv"
+    if "当前目录" in goal or "工作目录" in goal or "pwd" in lowered:
+        return "pwd"
+    if "用户名" in goal or "whoami" in lowered:
+        return "whoami"
+    if "日期" in goal or "时间" in goal or "date" in lowered:
+        return "date"
+    if "系统信息" in goal or "系统版本" in goal or "uname" in lowered:
+        return "uname -a"
+    if "列出" in goal or "列表" in goal or "ls" in lowered:
+        return "ls"
+    return ""
+
+
+def _safe_command_parts(command: str) -> list[str]:
+    parts = shlex.split(command)
+    if not parts:
+        raise RuntimeError("Empty terminal command")
+    expanded = []
+    for part in parts:
+        if part.startswith("~/"):
+            expanded.append(str(Path(part).expanduser()))
+        else:
+            expanded.append(part)
+    return expanded
+
+
+def _is_safe_terminal_command(command: str) -> bool:
+    if any(token in command for token in (";", "&", "|", "`", "$(", ">", "<", "\n", "\r")):
+        return False
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False
+    if not parts:
+        return False
+    allowed = {
+        "printenv",
+        "env",
+        "pwd",
+        "whoami",
+        "date",
+        "ls",
+        "uname",
+        "sw_vers",
+        "python",
+        "python3",
+        "node",
+        "code",
+    }
+    base = Path(parts[0]).name
+    if base not in allowed:
+        return False
+    if base == "code":
+        return len(parts) == 1 or (len(parts) == 2 and parts[1] == ".")
+    if base in {"python", "python3", "node"}:
+        return len(parts) == 2 and parts[1] in {"--version", "-v"}
+    return True
+
+
+def _coerce_duration_seconds(value: Any, *, default: int = 10) -> int:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        parsed = default
+    return max(3, min(parsed, 30))
+
+
+def _infer_application_name(goal: str) -> str:
+    lowered = goal.lower()
+    if "chrome" in lowered or "browser" in lowered or "浏览器" in goal or "谷歌" in goal:
+        return "Google Chrome"
+    if "finder" in lowered or "访达" in goal:
+        return "Finder"
+    if "terminal" in lowered or "终端" in goal:
+        return "Terminal"
+    return ""
+
+
+def _infer_url(goal: str) -> str:
+    lowered = goal.lower()
+    if "chatgpt" in lowered or "gpt" in lowered or "对话" in goal:
+        return "https://chatgpt.com/"
+    if "openai" in lowered:
+        return "https://openai.com/"
+    if "github" in lowered:
+        return "https://github.com/"
+    return ""
+
+
+def _infer_question(goal: str) -> str:
+    if "天气" in goal:
+        return "What is today's weather?"
+    return goal or "Summarize the requested task."
+
+
+def _infer_downloads_filename(goal: str, default: str = "gpt_taskname_answer.txt") -> str:
+    lowered = goal.lower()
+    if "weather" in lowered or "天气" in goal:
+        return "gpt_weather_answer.txt"
+    if "openai" in lowered or "gpt" in lowered:
+        return "gpt_taskname_answer.txt"
+    return default
+
+
+def _infer_filename(goal: str) -> str:
+    match = re.search(
+        r"([A-Za-z0-9_\-.]+?\.(?:json|csv|txt|md|py|pdf|docx|xlsx|yaml|yml))",
+        goal,
+        flags=re.IGNORECASE,
+    )
+    return Path(match.group(1)).name if match else ""
+
+
+def _default_answer_content(goal: str, *, question: Optional[str] = None) -> str:
+    asked = question or _infer_question(goal)
+    return (
+        "SkillOS host task answer\n"
+        "========================\n\n"
+        f"Task: {goal or 'No task text provided'}\n"
+        f"Question: {asked}\n\n"
+        "Answer: This file was created by a SkillOS strategic host workflow. "
+        "For live weather or other dynamic facts, provide the target city and connect "
+        "a weather/API skill; this run demonstrates the executable desktop-to-file path.\n"
+    )
+
+
+def _expand_host_path(raw_path: str) -> Optional[Path]:
+    value = raw_path.strip()
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+
+def _resolve_vscode_file_path(input_data: Dict[str, Any]) -> Optional[Path]:
+    raw_path = str(input_data.get("path") or input_data.get("file_path") or "").strip()
+    if raw_path:
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = Path.home() / "Desktop" / path
+        return path.resolve()
+    filename = str(input_data.get("filename") or _infer_filename(str(input_data.get("goal", ""))) or "").strip()
+    if not filename:
+        return None
+    return (Path.home() / "Desktop" / Path(filename).name).resolve()

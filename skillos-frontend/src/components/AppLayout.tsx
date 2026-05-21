@@ -1,63 +1,31 @@
 import { useState } from 'react'
-import { Layout, Menu, Switch, Badge, Tooltip, Avatar, Tag } from 'antd'
+import { Layout, Menu, Switch, Badge, Tooltip, Avatar } from 'antd'
 import {
   DashboardOutlined,
   BookOutlined,
-  ApartmentOutlined,
   PlayCircleOutlined,
-  SyncOutlined,
   ExperimentOutlined,
   CloudUploadOutlined,
-  BranchesOutlined,
   BulbOutlined,
   BulbFilled,
   WifiOutlined,
-  RocketOutlined,
+  ControlOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAppStore } from '@/store/appStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import AgentRuntimeMini from './AgentRuntimeMini'
 
 const { Header, Sider, Content } = Layout
 
 const menuItems = [
-  {
-    type: 'group' as const,
-    label: 'Overview',
-    children: [
-      { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-    ],
-  },
-  {
-    type: 'group' as const,
-    label: 'Skill Management',
-    children: [
-      { key: '/wiki', icon: <BookOutlined />, label: 'Skill Wiki' },
-      { key: '/graph', icon: <ApartmentOutlined />, label: 'Knowledge Graph' },
-      { key: '/versions', icon: <BranchesOutlined />, label: 'Version Control' },
-      { key: '/lifecycle', icon: <ExperimentOutlined />, label: 'Lifecycle' },
-    ],
-  },
-  {
-    type: 'group' as const,
-    label: 'Agent & Evolution',
-    children: [
-      {
-        key: '/demo',
-        icon: <RocketOutlined />,
-        label: (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            Self-Evolution Demo
-            <Tag color="red" style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px', marginLeft: 2 }}>DEMO</Tag>
-          </span>
-        ),
-      },
-      { key: '/execution', icon: <PlayCircleOutlined />, label: 'Agent Execution' },
-      { key: '/evolution', icon: <SyncOutlined />, label: 'Evolution' },
-      { key: '/ingest', icon: <CloudUploadOutlined />, label: 'Knowledge Import' },
-    ],
-  },
+  { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '/ingest', icon: <CloudUploadOutlined />, label: 'Knowledge Import' },
+  { key: '/wiki', icon: <BookOutlined />, label: 'Skill Wiki' },
+  { key: '/manage', icon: <ControlOutlined />, label: 'Skill Manage' },
+  { key: '/evaluation', icon: <ExperimentOutlined />, label: 'Evaluation' },
+  { key: '/execution', icon: <PlayCircleOutlined />, label: 'Execution' },
 ]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -118,6 +86,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           onClick={({ key }) => navigate(key)}
           style={{ borderRight: 0, marginTop: 8 }}
         />
+        <AgentRuntimeMini collapsed={collapsed} />
       </Sider>
 
       <Layout>

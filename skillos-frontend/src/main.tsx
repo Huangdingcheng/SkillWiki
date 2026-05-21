@@ -7,13 +7,10 @@ import { useAppStore } from '@/store/appStore'
 import AppLayout from '@/components/AppLayout'
 import Dashboard from '@/pages/Dashboard'
 import SkillWiki from '@/pages/SkillWiki'
-import SkillGraph from '@/pages/SkillGraph'
 import AgentExecution from '@/pages/AgentExecution'
-import Evolution from '@/pages/Evolution'
-import LifecycleDemo from '@/pages/LifecycleDemo'
 import KnowledgeImport from '@/pages/KnowledgeImport'
-import VersionControl from '@/pages/VersionControl'
-import SelfEvolutionDemo from '@/pages/SelfEvolutionDemo'
+import SkillManage from '@/pages/SkillManage'
+import Evaluation from '@/pages/Evaluation'
 import './index.css'
 
 function App() {
@@ -35,14 +32,11 @@ function App() {
         <AppLayout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/wiki" element={<SkillWiki />} />
-            <Route path="/graph" element={<SkillGraph />} />
-            <Route path="/execution" element={<AgentExecution />} />
-            <Route path="/evolution" element={<Evolution />} />
-            <Route path="/lifecycle" element={<LifecycleDemo />} />
             <Route path="/ingest" element={<KnowledgeImport />} />
-            <Route path="/versions" element={<VersionControl />} />
-            <Route path="/demo" element={<SelfEvolutionDemo />} />
+            <Route path="/wiki" element={<SkillWiki />} />
+            <Route path="/manage" element={<SkillManage />} />
+            <Route path="/evaluation" element={<Evaluation />} />
+            <Route path="/execution" element={<AgentExecution />} />
           </Routes>
         </AppLayout>
       </BrowserRouter>

@@ -38,6 +38,8 @@ class PlanStep:
     status: StepStatus = StepStatus.PENDING
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    observations: List[Dict[str, Any]] = field(default_factory=list)
+    step_judgment: Dict[str, Any] = field(default_factory=dict)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
@@ -121,6 +123,9 @@ _PLAN_PROMPT = """
 ## 当前状态
 {current_state}
 
+## 用户任务预期输出
+{expected_outcome}
+
 ## 可用 Skill
 {available_skills}
 
@@ -128,8 +133,9 @@ _PLAN_PROMPT = """
 1. 将任务分解为有序的执行步骤
 2. 每个步骤对应一个 Skill
 3. 明确步骤间的依赖关系
-4. 为每个步骤提供参数映射（从任务描述或前序步骤结果中提取）
+4. 为每个步骤提供参数映射（从任务描述、预期输出或前序步骤结果中提取）
 5. 如果某个步骤可以并行执行，在 depends_on 中不列出其他步骤
+6. 不要因为 Skill 名称相似就偏离用户任务；最终步骤输出必须匹配“用户任务预期输出”
 
 ## 输出格式（严格 JSON）
 {{
@@ -187,16 +193,25 @@ class SkillPlanner:
         prompt = _PLAN_PROMPT.format(
             task_description=task_description,
             current_state=json.dumps(current_state or {}, ensure_ascii=False)[:300],
+            expected_outcome=json.dumps((current_state or {}).get("expected_outcome", {}), ensure_ascii=False)[:500],
             available_skills=skills_info,
         )
 
-        response = self._llm.chat([
-            Message.system(
-                "你是 SkillOS 的任务规划专家，擅长将复杂任务分解为有序的 Skill 执行步骤。"
-                "严格按照 JSON 格式输出。"
-            ),
-            Message.user(prompt),
-        ])
+        if _is_demo_llm(self._llm):
+            logger.info("规划器检测到本地 demo key，使用顺序执行降级计划")
+            return self._fallback_plan(plan, available_skills)
+
+        try:
+            response = self._llm.chat([
+                Message.system(
+                    "你是 SkillOS 的任务规划专家，擅长将复杂任务分解为有序的 Skill 执行步骤。"
+                    "严格按照 JSON 格式输出。"
+                ),
+                Message.user(prompt),
+            ])
+        except Exception as exc:
+            logger.warning("规划器 LLM 调用失败，使用顺序执行降级计划: %s", exc)
+            return self._fallback_plan(plan, available_skills)
 
         data = self._extract_json(response.content)
         if not data or "steps" not in data:
@@ -273,3 +288,8 @@ class SkillPlanner:
             except json.JSONDecodeError:
                 pass
         return None
+
+
+def _is_demo_llm(llm_client: LLMClient) -> bool:
+    api_key = str(getattr(getattr(llm_client, "_cfg", None), "api_key", ""))
+    return api_key.startswith("local-") or api_key.startswith("demo-")

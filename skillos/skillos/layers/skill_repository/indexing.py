@@ -1,12 +1,16 @@
-"""Rule-based Skill search and ranking utilities."""
+"""Skill search and ranking utilities."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
-from ...models.skill_model import Skill, SkillState, SkillType
+from ...models.skill_model import Skill, SkillState, SkillType, SkillVisibility
 from ...storage.postgres_db import PostgresConnection, SkillRepository
 from ...utils.logger import get_logger
 
@@ -37,6 +41,7 @@ class SearchQuery:
     min_success_rate: float = 0.0
     max_results: int = 20
     include_deprecated: bool = False
+    visibility: str = SkillVisibility.USER.value
 
 
 class SkillSearchEngine:
@@ -148,6 +153,178 @@ class SkillSearchEngine:
         return results[:10]
 
 
+class SemanticSkillSearchEngine:
+    """Wiki-backed semantic search with rule-based fallback.
+
+    The embedding layer ranks by task meaning first. The existing deterministic
+    scorer remains as a stabilizer for lifecycle, quality, and exact-name hints.
+    """
+
+    def __init__(
+        self,
+        wiki: Any,
+        llm_client: Any,
+        *,
+        embedding_model: str = "text-embedding-3-small",
+        cache_path: Optional[Path] = None,
+        semantic_candidate_limit: int = 12,
+        graph_candidate_limit: int = 40,
+    ) -> None:
+        self._wiki = wiki
+        self._llm = llm_client
+        self._embedding_model = embedding_model
+        self._cache_path = Path(cache_path) if cache_path else None
+        self._cache: Dict[str, List[float]] = self._load_cache()
+        self._disabled = _is_demo_llm(llm_client)
+        self._semantic_candidate_limit = semantic_candidate_limit
+        self._graph_candidate_limit = graph_candidate_limit
+
+    async def search(self, query: SearchQuery) -> List[SearchResult]:
+        skills = await self._wiki.list(
+            skill_type=query.skill_type,
+            state=query.state,
+            tags=query.tags,
+            domain=query.domain,
+            visibility=query.visibility,
+            limit=10000,
+        )
+        skills = [skill for skill in skills if skill_matches_filters(skill, query)]
+        if not query.text or self._disabled:
+            return rank_search_results(skills, query)
+
+        candidates = _coarse_skill_candidates(skills, query, limit=max(query.max_results, self._semantic_candidate_limit))
+        if not candidates:
+            candidates = _dedupe_results([score_skill_match(skill, query) for skill in skills])[:max(query.max_results, self._semantic_candidate_limit)]
+        skills = [result.skill for result in candidates]
+
+        query_embedding = self._embed_one(f"User task: {query.text}")
+        if query_embedding is None:
+            return rank_search_results(skills, query)
+
+        semantic_texts = [skill_semantic_text(skill) for skill in skills]
+        skill_embeddings = self._embed_many(semantic_texts)
+        if skill_embeddings is None:
+            return rank_search_results(skills, query)
+
+        results: List[SearchResult] = []
+        for skill, skill_embedding in zip(skills, skill_embeddings):
+            semantic_score = _cosine_similarity(query_embedding, skill_embedding)
+            rule_result = score_skill_match(skill, query)
+            combined = max(0.0, min(1.0, semantic_score * 0.74 + rule_result.score * 0.18 + _state_score(skill.state) * 0.08))
+            reasons = ["embedding semantic match"]
+            if rule_result.match_reasons:
+                reasons.extend(rule_result.match_reasons)
+            if combined <= 0.10:
+                continue
+            results.append(SearchResult(skill=skill, score=round(combined, 6), match_reasons=_unique_reasons(reasons)))
+
+        results.sort(reverse=True)
+        return _dedupe_results(results)[: query.max_results]
+
+    async def search_text(self, text: str, limit: int = 10) -> List[SearchResult]:
+        return await self.search(SearchQuery(text=text, max_results=limit))
+
+    def rank_graph_nodes(self, nodes: Iterable[Any], query_text: str, *, limit: int = 12) -> List[dict[str, Any]]:
+        if not query_text or self._disabled:
+            return []
+        query_embedding = self._embed_one(f"User task graph query: {query_text}")
+        if query_embedding is None:
+            return []
+        node_list = _coarse_graph_nodes(nodes, query_text, limit=max(limit * 3, self._graph_candidate_limit))
+        if not node_list:
+            return []
+        texts = [graph_node_semantic_text(node) for node in node_list]
+        node_embeddings = self._embed_many(texts)
+        if node_embeddings is None:
+            return []
+        ranked: List[tuple[float, dict[str, Any]]] = []
+        for node, node_embedding in zip(node_list, node_embeddings):
+            score = _cosine_similarity(query_embedding, node_embedding)
+            if score <= 0.10:
+                continue
+            ranked.append((score, graph_node_to_public_dict(node, score=score)))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [item for _, item in ranked[:limit]]
+
+    def _embed_one(self, text: str) -> Optional[List[float]]:
+        key = _embedding_cache_key(self._embedding_model, text)
+        if key in self._cache:
+            return self._cache[key]
+        try:
+            vectors = self._llm.embed([text], model=self._embedding_model)
+        except Exception as exc:
+            logger.warning("Embedding search disabled after provider failure: %s", exc)
+            self._disabled = True
+            return None
+        if not vectors:
+            return None
+        self._cache[key] = vectors[0]
+        return vectors[0]
+
+    def _embed_many(self, texts: List[str]) -> Optional[List[List[float]]]:
+        keys = [_embedding_cache_key(self._embedding_model, text) for text in texts]
+        missing: List[str] = []
+        missing_keys: List[str] = []
+        for key, text in zip(keys, texts):
+            if key not in self._cache:
+                missing.append(text)
+                missing_keys.append(key)
+        if missing:
+            try:
+                vectors = self._llm.embed(missing, model=self._embedding_model)
+            except Exception as exc:
+                logger.warning("Embedding search disabled after provider failure: %s", exc)
+                self._disabled = True
+                return None
+            for key, vector in zip(missing_keys, vectors):
+                self._cache[key] = vector
+            self._persist_cache()
+        return [self._cache[key] for key in keys]
+
+    async def warmup(self, *, include_graph_nodes: Optional[Iterable[Any]] = None) -> None:
+        """Pre-compute stable Skill and graph embeddings so execution only embeds queries."""
+        if self._disabled:
+            return
+        skills = await self._wiki.list(visibility=SkillVisibility.USER.value, limit=10000)
+        texts = [skill_semantic_text(skill) for skill in skills]
+        if include_graph_nodes:
+            texts.extend(graph_node_semantic_text(node) for node in _coarse_graph_nodes(include_graph_nodes, "", limit=80))
+        if texts:
+            self._embed_many(texts)
+
+    def _load_cache(self) -> Dict[str, List[float]]:
+        if not self._cache_path or not self._cache_path.exists():
+            return {}
+        try:
+            with self._cache_path.open("r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except Exception as exc:
+            logger.warning("Failed to load embedding cache %s: %s", self._cache_path, exc)
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        vectors: Dict[str, List[float]] = {}
+        for key, value in raw.items():
+            if isinstance(key, str) and isinstance(value, list):
+                try:
+                    vectors[key] = [float(item) for item in value]
+                except (TypeError, ValueError):
+                    continue
+        return vectors
+
+    def _persist_cache(self) -> None:
+        if not self._cache_path:
+            return
+        try:
+            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self._cache_path.with_suffix(f"{self._cache_path.suffix}.tmp")
+            with tmp_path.open("w", encoding="utf-8") as fh:
+                json.dump(self._cache, fh)
+            tmp_path.replace(self._cache_path)
+        except Exception as exc:
+            logger.warning("Failed to persist embedding cache %s: %s", self._cache_path, exc)
+
+
 def rank_search_results(skills: Iterable[Skill], query: SearchQuery) -> List[SearchResult]:
     """Filter, score, deduplicate, and stably sort Skills for a query."""
 
@@ -160,15 +337,56 @@ def rank_search_results(skills: Iterable[Skill], query: SearchQuery) -> List[Sea
             continue
         results.append(result)
 
-    results.sort(reverse=True)
-    best_by_name: Dict[str, SearchResult] = {}
-    for result in results:
-        existing = best_by_name.get(result.skill.name)
-        if existing is None or _result_sort_key(result) > _result_sort_key(existing):
-            best_by_name[result.skill.name] = result
-    deduped = list(best_by_name.values())
-    deduped.sort(reverse=True)
-    return deduped[: query.max_results]
+    return _dedupe_results(results)[: query.max_results]
+
+
+def skill_semantic_text(skill: Skill) -> str:
+    interface = skill.interface
+    input_props = interface.input_schema.get("properties", {}) if interface else {}
+    output_props = interface.output_schema.get("properties", {}) if interface else {}
+    preconditions = interface.preconditions if interface else []
+    postconditions = interface.postconditions if interface else []
+    tool_calls = skill.implementation.tool_calls if skill.implementation else []
+    return "\n".join([
+        f"Skill name: {skill.name}",
+        f"Display name: {skill.display_name}",
+        f"Type: {skill.skill_type.value}",
+        f"Domain: {skill.domain}",
+        f"Description: {skill.description}",
+        f"Tags: {', '.join(skill.tags)}",
+        f"Inputs: {input_props}",
+        f"Outputs: {output_props}",
+        f"Tools: {', '.join(tool_calls)}",
+        f"Preconditions: {'; '.join(preconditions)}",
+        f"Postconditions: {'; '.join(postconditions)}",
+    ])
+
+
+def graph_node_semantic_text(node: Any) -> str:
+    node_type = getattr(getattr(node, "node_type", None), "value", getattr(node, "node_type", ""))
+    return "\n".join([
+        f"Graph node type: {node_type}",
+        f"Name: {getattr(node, 'name', '')}",
+        f"Description: {getattr(node, 'description', '')}",
+        f"Labels: {', '.join(getattr(node, 'labels', []) or [])}",
+        f"Metadata: {getattr(node, 'metadata', {}) or {}}",
+    ])
+
+
+def graph_node_to_public_dict(node: Any, *, score: float = 0.0) -> dict[str, Any]:
+    node_type = getattr(getattr(node, "node_type", None), "value", getattr(node, "node_type", ""))
+    metadata = getattr(node, "metadata", {}) or {}
+    public = {
+        "id": getattr(node, "node_id", ""),
+        "name": getattr(node, "name", ""),
+        "node_type": node_type,
+        "description": getattr(node, "description", ""),
+        "labels": getattr(node, "labels", []) or [],
+        "metadata": metadata,
+    }
+    if score:
+        public["semantic_score"] = round(score, 4)
+    return public
 
 
 def skill_matches_filters(skill: Skill, query: SearchQuery) -> bool:
@@ -185,6 +403,8 @@ def skill_matches_filters(skill: Skill, query: SearchQuery) -> bool:
         if not requested_tags & set(skill.tags):
             return False
     if query.min_success_rate > 0 and skill.metrics.success_rate < query.min_success_rate:
+        return False
+    if query.visibility and query.visibility != "all" and skill.visibility.value != query.visibility:
         return False
     return True
 
@@ -296,6 +516,79 @@ def _result_sort_key(result: SearchResult) -> tuple:
         skill.name,
         skill.version,
     )
+
+
+def _dedupe_results(results: Iterable[SearchResult]) -> List[SearchResult]:
+    ordered = sorted(results, reverse=True)
+    best_by_name: Dict[str, SearchResult] = {}
+    for result in ordered:
+        existing = best_by_name.get(result.skill.name)
+        if existing is None or _result_sort_key(result) > _result_sort_key(existing):
+            best_by_name[result.skill.name] = result
+    deduped = list(best_by_name.values())
+    deduped.sort(reverse=True)
+    return deduped
+
+
+def _cosine_similarity(left: List[float], right: List[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0 or right_norm == 0:
+        return 0.0
+    # Map [-1, 1] to [0, 1] for easier fusion with rule scores.
+    return (dot / (left_norm * right_norm) + 1.0) / 2.0
+
+
+def _embedding_cache_key(model: str, text: str) -> str:
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    return f"{model}:{digest}"
+
+
+def _coarse_skill_candidates(skills: Iterable[Skill], query: SearchQuery, *, limit: int) -> List[SearchResult]:
+    candidates = [
+        result for result in (score_skill_match(skill, query) for skill in skills)
+        if result.score > 0
+    ]
+    if not candidates and query.text:
+        tokens = set(extract_query_tokens(query.text))
+        for skill in skills:
+            text = skill_semantic_text(skill)
+            if tokens & set(extract_query_tokens(text)):
+                candidates.append(SearchResult(skill=skill, score=_state_score(skill.state) * 0.2, match_reasons=["coarse token match"]))
+    return _dedupe_results(candidates)[:limit]
+
+
+def _coarse_graph_nodes(nodes: Iterable[Any], query_text: str, *, limit: int) -> List[Any]:
+    node_list = list(nodes)
+    if not query_text:
+        return [
+            node for node in node_list
+            if getattr(getattr(node, "node_type", None), "value", getattr(node, "node_type", "")) != "skill"
+        ][:limit]
+    tokens = set(extract_query_tokens(query_text))
+    if not tokens:
+        return node_list[:limit]
+    scored: List[tuple[float, Any]] = []
+    for node in node_list:
+        node_type = getattr(getattr(node, "node_type", None), "value", getattr(node, "node_type", ""))
+        if node_type == "skill":
+            continue
+        node_text = graph_node_semantic_text(node)
+        node_tokens = set(extract_query_tokens(node_text))
+        overlap = tokens & node_tokens
+        if not overlap:
+            continue
+        scored.append((len(overlap) / max(len(tokens), 1), node))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [node for _, node in scored[:limit]]
+
+
+def _is_demo_llm(llm_client: Any) -> bool:
+    api_key = str(getattr(getattr(llm_client, "_cfg", None), "api_key", ""))
+    return api_key.startswith("local-") or api_key.startswith("demo-")
 
 
 def _unique_reasons(reasons: Iterable[str]) -> List[str]:

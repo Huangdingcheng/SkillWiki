@@ -6,28 +6,46 @@ export function useWebSocket() {
   const pushWsEvent = useAppStore(s => s.pushWsEvent)
 
   useEffect(() => {
+    let closedByEffect = false
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${protocol}://${window.location.host}/ws`)
-    wsRef.current = ws
+    const connect = () => {
+      const ws = new WebSocket(`${protocol}://${window.location.host}/ws`)
+      wsRef.current = ws
 
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        pushWsEvent(msg.event, msg.data)
-      } catch {
-        // ignore
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data)
+          pushWsEvent(msg.event, msg.data)
+        } catch {
+          // ignore
+        }
+      }
+
+      ws.onclose = () => {
+        if (!closedByEffect) {
+          reconnectTimer = setTimeout(connect, 1500)
+        }
+      }
+
+      ws.onerror = () => {
+        ws.close()
       }
     }
+    connect()
 
     const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'ping' }))
       }
     }, 30_000)
 
     return () => {
+      closedByEffect = true
       clearInterval(ping)
-      ws.close()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      wsRef.current?.close()
     }
   }, [pushWsEvent])
 
