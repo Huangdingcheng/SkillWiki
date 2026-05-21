@@ -177,18 +177,19 @@ class SkillExecutor:
         tracker.snapshot_before(skill.skill_id, skill.name)
         tracker.push_checkpoint()
 
-        for attempt in range(self._max_retries + 1):
+        max_attempts = 1 if self._is_non_idempotent_host_skill(skill) else self._max_retries + 1
+        for attempt in range(max_attempts):
             try:
                 output = await asyncio.wait_for(
                     self._run_skill(skill, step.input_mapping, tracker.current),
                     timeout=self._step_timeout,
                 )
-                # 执行成功
                 state_changes = output.get("_state_changes", {})
                 tracker.update(state_changes)
                 tracker.snapshot_after(skill.skill_id, skill.name)
 
-                step.status = StepStatus.SUCCESS
+                host_failed = _host_output_failed(output)
+                step.status = StepStatus.FAILED if host_failed else StepStatus.SUCCESS
                 step.result = output
                 step.completed_at = datetime.utcnow()
                 after_observation = self._observations.collect(
@@ -200,7 +201,25 @@ class SkillExecutor:
                 )
                 step.observations.append(after_observation)
                 step.step_judgment = judge_step_observation(step, output, after_observation)
-                if step.step_judgment.get("next_action") == "repair" and attempt < self._max_retries:
+                if host_failed:
+                    step.error = _host_failure_reason(output)
+                    record.fail(step.error, "HostActionIncomplete")
+                    self._emit("step_observed", after_observation)
+                    self._emit("step_judged", {
+                        "step_id": step.step_id,
+                        "skill_name": skill.name,
+                        "judgment": step.step_judgment,
+                    })
+                    self._emit("step_failed", {
+                        "step_id": step.step_id,
+                        "skill_name": skill.name,
+                        "output": output,
+                        "observation": after_observation,
+                        "judgment": step.step_judgment,
+                        "error": step.error,
+                    })
+                    return record
+                if step.step_judgment.get("next_action") == "repair" and attempt + 1 < max_attempts:
                     repair = _repair_step_input(step, output, after_observation, step.step_judgment)
                     self._emit("step_repairing", {
                         "step_id": step.step_id,
@@ -233,8 +252,8 @@ class SkillExecutor:
 
             except asyncio.TimeoutError:
                 error = f"步骤超时 ({self._step_timeout}s)"
-                if attempt < self._max_retries:
-                    logger.warning(f"步骤超时，重试 {attempt + 1}/{self._max_retries}: {skill.name}")
+                if attempt + 1 < max_attempts:
+                    logger.warning(f"步骤超时，重试 {attempt + 1}/{max_attempts - 1}: {skill.name}")
                     continue
                 tracker.rollback()
                 step.status = StepStatus.FAILED
@@ -255,8 +274,8 @@ class SkillExecutor:
 
             except Exception as e:
                 error = str(e)
-                if attempt < self._max_retries:
-                    logger.warning(f"步骤失败，重试 {attempt + 1}/{self._max_retries}: {skill.name} - {error}")
+                if attempt + 1 < max_attempts:
+                    logger.warning(f"步骤失败，重试 {attempt + 1}/{max_attempts - 1}: {skill.name} - {error}")
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
                 tracker.rollback()
@@ -374,6 +393,68 @@ class SkillExecutor:
         if impl.sub_skill_ids:
             return await self._run_composite_skill(skill, impl, input_data, current_state)
         raise RuntimeError(f"Skill {skill.name} references unsupported host tools: {impl.tool_calls}")
+
+    @staticmethod
+    def _is_non_idempotent_host_skill(skill: Skill) -> bool:
+        if not skill.implementation:
+            return False
+        tool_calls = {str(name).strip().lower() for name in skill.implementation.tool_calls}
+        side_effect_tools = {
+            "host.open_chrome",
+            "host.open_application",
+            "host.open_url_in_chrome",
+            "host.open_file",
+            "host.move_to_trash",
+            "host.open_or_create_file_in_vscode",
+            "host.create_wps_document_from_text_file",
+            "host.write_downloads_text_file",
+            "host.open_downloads_folder",
+            "host.complete_chatgpt_note_task",
+            "host.run_terminal_top",
+            "host.run_terminal_command",
+            "host.open_search_first_result",
+            "host.browser_gui_workflow",
+        }
+        return bool(tool_calls & side_effect_tools)
+
+
+def _host_output_failed(output: Dict[str, Any]) -> bool:
+    host_action = str(output.get("host_action") or "")
+    if not host_action:
+        return False
+    explicit_failure_actions = {
+        "browser_gui_workflow",
+        "move_to_trash",
+        "create_wps_document_from_text_file",
+        "open_or_create_file_in_vscode",
+        "write_downloads_text_file",
+    }
+    return host_action in explicit_failure_actions and output.get("success") is False
+
+
+def _host_failure_reason(output: Dict[str, Any]) -> str:
+    actions = output.get("actions")
+    if isinstance(actions, list):
+        fallback_successes = [
+            action for action in actions
+            if isinstance(action, dict)
+            and isinstance(action.get("execution"), dict)
+            and str(action["execution"].get("action", "")).endswith("_fallback")
+            and action["execution"].get("status") == "success"
+        ]
+        for action in reversed(actions):
+            if not isinstance(action, dict):
+                continue
+            execution = action.get("execution")
+            if isinstance(execution, dict) and execution.get("status") in {"blocked", "failed"}:
+                if fallback_successes:
+                    return "Search target fallback opened candidate pages, but DOM/visual verification is still required to confirm and click the final visible target."
+                return str(execution.get("reason") or execution.get("error") or action.get("reason") or "Host action blocked.")
+            if action.get("status") in {"blocked", "failed"}:
+                if fallback_successes:
+                    return "Search target fallback opened candidate pages, but DOM/visual verification is still required to confirm and click the final visible target."
+                return str(action.get("reason") or "Host action blocked.")
+    return str(output.get("reason") or output.get("message") or f"Host action {output.get('host_action')} did not satisfy the task.")
 
     async def _run_prompt_skill(self, skill: Skill, impl: Any, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """调用 LLM 执行 prompt 类型 Skill。"""
@@ -1176,14 +1257,16 @@ def _open_search_first_result(input_data: Dict[str, Any]) -> Dict[str, Any]:
     query = str(input_data.get("query") or input_data.get("search_query") or input_data.get("goal") or "").strip()
     if not query:
         raise RuntimeError("Missing query/search_query for host.open_search_first_result")
-    url = f"https://www.google.com/search?q={quote_plus(query)}&btnI=I"
+    target_hint = str(input_data.get("target_hint") or input_data.get("result_hint") or "").strip()
+    url = _google_target_result_url(query, target_hint=target_hint)
     result = _open_url_in_chrome({"url": url, "goal": str(input_data.get("goal", ""))})
     return {
         **result,
-        "host_action": "open_search_first_result",
+        "host_action": "open_search_target_result",
         "query": query,
+        "target_hint": target_hint,
         "search_url": url,
-        "message": f"Requested the first search result for query: {query}",
+        "message": f"Requested the search target result for query: {query}",
     }
 
 
@@ -1223,6 +1306,7 @@ def _run_browser_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
             merged_decision["status"] = "success"
         actions.append(merged_decision)
         time.sleep(0.6 if action_result.get("status") == "success" else 0.15)
+        after = controller.observe(round_index)
         observations.append(_browser_workflow_observation(
             round_index,
             decision["observation_type"],
@@ -1230,14 +1314,14 @@ def _run_browser_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
             query,
             str(action_result.get("target") or decision.get("target") or entry_url),
             controller=controller,
-            dom_snapshot=before,
+            dom_snapshot=after,
             action_result=action_result,
         ))
         if decision.get("done"):
-            completed = True
+            completed = bool(action_result.get("goal_satisfied"))
             final_target = str(decision.get("target") or entry_url)
             break
-        if _browser_goal_satisfied(goal, action_result, before):
+        if _browser_goal_satisfied(goal, action_result, after):
             completed = True
             final_target = str(action_result.get("target") or decision.get("target") or entry_url)
             break
@@ -1329,8 +1413,50 @@ def _capture_screen_observation(round_index: int) -> Dict[str, Any]:
         return {"available": False, "reason": str(exc)[:240]}
 
 
-def _browser_workflow_decision(goal: str, query: str, round_index: int) -> Dict[str, Any]:
+def _browser_workflow_decision(
+    goal: str,
+    query: str,
+    round_index: int,
+    observation: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     lowered = goal.lower()
+    visible = str((observation or {}).get("visible_text_preview") or "").lower()
+    url = str((observation or {}).get("url") or "").lower()
+    wants_sent = "已发送" in goal or "sent" in lowered
+    wants_login = "登录" in goal or "login" in lowered or "sign in" in lowered
+    if wants_sent and ("已发送" in visible or "sent" in visible):
+        return {
+            "action": "open_sent_mail_folder",
+            "target": "Sent / 已发送",
+            "observation_type": "mailbox_navigation_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "The current page appears to expose the Sent folder; click it now.",
+            "observation_required": ["Sent/已发送 folder element", "current folder indicator"],
+            "reason": "Visible page text already contains the target folder label.",
+        }
+    if wants_login and any(token in visible for token in ("登录", "统一身份认证", "sign in", "login")):
+        return {
+            "action": "look_for_mail_login_control",
+            "target": "mail login / unified authentication",
+            "observation_type": "login_page_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "The current page exposes a login/authentication target; use it before mailbox navigation.",
+            "observation_required": ["login button/form", "cached credential prompt", "authenticated mailbox state"],
+            "reason": "Visible page text contains login/authentication cues.",
+        }
+    if round_index > 1 and any(token in url for token in ("mail", "email", "webmail", "cas", "auth")) and wants_sent:
+        return {
+            "action": "open_sent_mail_folder",
+            "target": "Sent / 已发送",
+            "observation_type": "mailbox_navigation_candidate",
+            "status": "planned",
+            "done": False,
+            "agent_decision": "After navigating into a mail/auth page, try to locate the Sent folder.",
+            "observation_required": ["mailbox sidebar", "Sent/已发送 folder element"],
+            "reason": "The current URL suggests the workflow is inside a mail/auth surface.",
+        }
     if round_index == 1:
         return {
             "action": "select_search_result_candidate",
@@ -1342,16 +1468,16 @@ def _browser_workflow_decision(goal: str, query: str, round_index: int) -> Dict[
             "observation_required": ["visible search results", "official domain/title", "clickable result element"],
             "reason": "Need page observation to choose the official/login result instead of guessing a hard-coded URL.",
         }
-    if round_index == 2 and ("邮箱" in goal or "mail" in lowered or "email" in lowered):
+    if round_index == 2 and wants_login:
         return {
             "action": "look_for_mail_login_control",
-            "target": "mail login / unified authentication",
+            "target": "Login / Sign in / authentication entry",
             "observation_type": "login_page_candidate",
             "status": "planned",
             "done": False,
-            "agent_decision": "Use cached credentials/session only after the login or authenticated page is observed.",
-            "observation_required": ["login button/form", "cached credential prompt", "authenticated mailbox state"],
-            "reason": "The workflow should use cached credentials if the page exposes an authenticated session or login form.",
+            "agent_decision": "Find the login/sign-in entry after the target result has opened.",
+            "observation_required": ["login/sign-in button or link", "authentication page", "cached credential prompt if applicable"],
+            "reason": "The user asked to find a Login or Sign in entry after opening the target search result.",
         }
     if round_index == 3 and ("已发送" in goal or "sent" in lowered):
         return {
@@ -1374,6 +1500,271 @@ def _browser_workflow_decision(goal: str, query: str, round_index: int) -> Dict[
         "observation_required": ["DOM snapshot", "screenshot OCR", "click result feedback"],
         "reason": "Host runtime can open/search, but cannot yet click arbitrary page elements without DOM/screenshot controller feedback.",
     }
+
+
+class _BrowserGuiController:
+    """Cross-platform browser workflow controller with provider-specific depth.
+
+    All platforms support launch/search and target-result URL fallback. macOS
+    Chrome additionally supports DOM observation/clicks when the user enables
+    "Allow JavaScript from Apple Events" in Chrome's Develop menu.
+    """
+
+    def __init__(self, *, goal: str, query: str) -> None:
+        self.goal = goal
+        self.query = query
+        self.platform = platform.system().lower()
+        self.provider = "macos_chrome_dom_controller" if self.platform == "darwin" else "generic_browser_url_controller"
+        self.dom_supported = self.platform == "darwin"
+        self.requires_visual_controller = not self.dom_supported
+        self.action_log: List[Dict[str, Any]] = []
+        self.last_observation: Dict[str, Any] = {}
+
+    def observe(self, round_index: int) -> Dict[str, Any]:
+        if not self.dom_supported:
+            observation = {
+                "available": False,
+                "round": round_index,
+                "provider": self.provider,
+                "reason": "DOM observation is unavailable for this platform/provider; URL-level search target fallback remains available.",
+            }
+            self.last_observation = observation
+            return observation
+        script = r"""
+(() => {
+  const textOf = (el) => (el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+  const pick = (selector, limit) => Array.from(document.querySelectorAll(selector)).slice(0, limit).map((el, index) => ({
+    index,
+    tag: el.tagName.toLowerCase(),
+    text: textOf(el).slice(0, 160),
+    href: el.href || '',
+    role: el.getAttribute('role') || '',
+    aria: el.getAttribute('aria-label') || '',
+    id: el.id || '',
+    className: String(el.className || '').slice(0, 120)
+  })).filter(item => item.text || item.href || item.aria || item.id);
+  return JSON.stringify({
+    title: document.title,
+    url: location.href,
+    visibleText: (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim().slice(0, 3000),
+    links: pick('a', 30),
+    buttons: pick('button,[role=button],input[type=button],input[type=submit]', 30),
+    inputs: pick('input,textarea,[contenteditable=true]', 20)
+  });
+})()
+"""
+        result = _chrome_execute_javascript(script)
+        if not result.get("ok"):
+            self.requires_visual_controller = True
+            observation = {
+                "available": False,
+                "round": round_index,
+                "reason": result.get("error") or "Chrome JavaScript observation failed.",
+            }
+            self.last_observation = observation
+            return observation
+        try:
+            payload = json.loads(str(result.get("value") or "{}"))
+        except json.JSONDecodeError:
+            payload = {"raw": str(result.get("value") or "")[:2000]}
+        observation = {
+            "available": True,
+            "round": round_index,
+            "title": payload.get("title", ""),
+            "url": payload.get("url", ""),
+            "visible_text_preview": str(payload.get("visibleText", ""))[:1200],
+            "links": payload.get("links", [])[:12],
+            "buttons": payload.get("buttons", [])[:12],
+            "inputs": payload.get("inputs", [])[:8],
+        }
+        self.last_observation = observation
+        return observation
+
+    def act(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        action = str(decision.get("action") or "")
+        if not self.dom_supported:
+            if action == "select_search_result_candidate":
+                result = self._open_target_result_fallback(reason="DOM controller is unavailable on this platform/provider.")
+            else:
+                result = {"status": "blocked", "reason": "No DOM/visual controller available for this action on the current platform.", "action": action}
+            self.action_log.append(result)
+            return result
+        if action == "select_search_result_candidate":
+            result = self._click_first_search_result()
+        elif action == "look_for_mail_login_control":
+            result = self._click_text_candidates(
+                ["登录", "统一身份认证", "Sign in", "Login", "Log in", "mail", "邮箱", "进入邮箱", "邮件系统"],
+                action=action,
+            )
+            if result.get("status") == "blocked" and _is_chrome_apple_event_js_disabled(str(result.get("reason", ""))):
+                result = self._open_target_result_fallback(
+                    reason="Chrome JavaScript from Apple Events is disabled for login-entry click.",
+                    target_hint="Login Sign in",
+                    action="open_login_target_url_fallback",
+                )
+        elif action == "open_sent_mail_folder":
+            result = self._click_text_candidates([
+                "已发送", "Sent", "Sent Mail", "发件箱", "已发邮件",
+            ], action=action)
+        elif action == "stop_for_visual_controller":
+            result = {"status": "blocked", "reason": decision.get("reason", ""), "action": action}
+        else:
+            result = {"status": "skipped", "reason": f"Unsupported browser action: {action}", "action": action}
+        self.action_log.append(result)
+        if result.get("status") not in {"success", "skipped"}:
+            self.requires_visual_controller = True
+        return result
+
+    def _click_first_search_result(self) -> Dict[str, Any]:
+        fallback_url = _google_target_result_url(self.query)
+        script = r"""
+(() => {
+  const candidates = Array.from(document.querySelectorAll('a'))
+    .filter(a => a.href && !a.href.includes('/search?') && !a.href.includes('accounts.google') && (a.innerText || a.textContent || '').trim().length > 3);
+  const target = candidates.find(a => {
+    const href = a.href.toLowerCase();
+    const text = (a.innerText || a.textContent || '').toLowerCase();
+    return !href.includes('google.com') || text.includes('邮箱') || text.includes('mail');
+  }) || candidates[0];
+  if (!target) return JSON.stringify({status:'blocked', reason:'No clickable search result link found'});
+  const info = {status:'success', action:'click_first_search_result', targetText:(target.innerText || target.textContent || '').trim().slice(0,180), target: target.href};
+  target.click();
+  return JSON.stringify(info);
+})()
+"""
+        result = _json_js_result(_chrome_execute_javascript(script), fallback_action="click_first_search_result")
+        if result.get("status") == "blocked" and _is_chrome_apple_event_js_disabled(str(result.get("reason", ""))):
+            return self._open_target_result_fallback(reason="Chrome JavaScript from Apple Events is disabled.")
+        return result
+
+    def _open_target_result_fallback(
+        self,
+        *,
+        reason: str,
+        target_hint: str = "",
+        action: str = "open_target_result_url_fallback",
+    ) -> Dict[str, Any]:
+        fallback_url = _google_target_result_url(self.query, target_hint=target_hint)
+        launch = _open_url_in_chrome({"url": fallback_url, "goal": self.goal})
+        return {
+            "status": "success",
+            "action": action,
+            "target": fallback_url,
+            "targetText": f"Search target result for {self.query} {target_hint}".strip(),
+            "reason": f"{reason} Used the generalized search-target URL fallback.",
+            "fallback": launch,
+        }
+
+    def _click_text_candidates(self, labels: List[str], *, action: str) -> Dict[str, Any]:
+        script = r"""
+((labels) => {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const textOf = (el) => norm(el.innerText || el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '');
+  const elements = Array.from(document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit],div,span'))
+    .filter(el => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && textOf(el).length > 0;
+    });
+  const lowered = labels.map(norm);
+  const target = elements.find(el => {
+    const text = textOf(el);
+    return lowered.some(label => label && text.includes(label));
+  });
+  if (!target) return JSON.stringify({status:'blocked', reason:'No visible text target matched', labels});
+  const info = {status:'success', action:'click_text_target', targetText:textOf(target).slice(0,180), target: textOf(target).slice(0,180), tag: target.tagName.toLowerCase()};
+  target.click();
+  return JSON.stringify(info);
+})(%s)
+""" % json.dumps(labels, ensure_ascii=False)
+        result = _json_js_result(_chrome_execute_javascript(script), fallback_action=action)
+        result.setdefault("action", action)
+        return result
+
+    def summary(self) -> Dict[str, Any]:
+        return {
+            "name": self.provider,
+            "platform": self.platform,
+            "dom_supported": self.dom_supported,
+            "requires_visual_controller": self.requires_visual_controller,
+            "action_count": len(self.action_log),
+            "last_url": self.last_observation.get("url"),
+            "last_title": self.last_observation.get("title"),
+        }
+
+
+def _chrome_execute_javascript(script: str) -> Dict[str, Any]:
+    if platform.system().lower() != "darwin":
+        return {"ok": False, "error": "Chrome JavaScript execution is currently implemented for macOS only."}
+    script_path = Path("/tmp") / f"skillos_chrome_js_{uuid.uuid4().hex}.js"
+    try:
+        script_path.write_text(script, encoding="utf-8")
+    except Exception as exc:
+        return {"ok": False, "error": f"Failed to write Chrome JavaScript payload: {exc}"}
+    osa = [
+        "osascript",
+        "-e",
+        f'set jsSource to read POSIX file {json.dumps(str(script_path))} as «class utf8»',
+        "-e",
+        'tell application "Google Chrome"',
+        "-e",
+        "if not (exists front window) then return \"\"",
+        "-e",
+        "execute active tab of front window javascript jsSource",
+        "-e",
+        "end tell",
+    ]
+    try:
+        completed = subprocess.run(osa, capture_output=True, text=True, timeout=8)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    if completed.returncode != 0:
+        return {"ok": False, "error": (completed.stderr or completed.stdout or "osascript failed").strip()[:500]}
+    return {"ok": True, "value": completed.stdout.strip()}
+
+
+def _is_chrome_apple_event_js_disabled(reason: str) -> bool:
+    lowered = reason.lower()
+    return (
+        "javascript from apple events" in lowered
+        or "apple 事件中的 javascript" in lowered
+        or "执行 javascript 的功能已关闭" in lowered
+        or "allow javascript from apple events" in lowered
+    )
+
+
+def _google_target_result_url(query: str, *, target_hint: str = "") -> str:
+    target = f"{query} {target_hint}".strip()
+    return f"https://www.google.com/search?q={quote_plus(target)}&btnI=I"
+
+
+def _json_js_result(result: Dict[str, Any], *, fallback_action: str) -> Dict[str, Any]:
+    if not result.get("ok"):
+        return {"status": "blocked", "action": fallback_action, "reason": result.get("error") or "Chrome JS action failed"}
+    raw = str(result.get("value") or "").strip()
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {"status": "unknown", "raw": raw[:1000]}
+    payload.setdefault("action", fallback_action)
+    payload.setdefault("status", "success" if payload.get("target") or payload.get("targetText") else "blocked")
+    return payload
+
+
+def _browser_goal_satisfied(goal: str, action_result: Dict[str, Any], observation: Dict[str, Any]) -> bool:
+    if action_result.get("status") != "success":
+        return False
+    text = " ".join([
+        str(action_result.get("targetText", "")),
+        str(action_result.get("target", "")),
+        str(observation.get("title", "")),
+        str(observation.get("url", "")),
+        str(observation.get("visible_text_preview", ""))[:500],
+    ]).lower()
+    if ("已发送" in goal or "sent" in goal.lower()) and ("已发送" in text or "sent" in text):
+        return True
+    if ("登录" in goal or "login" in goal.lower() or "sign in" in goal.lower()) and any(token in text for token in ("mail", "邮箱", "inbox", "收件箱")):
+        return True
+    return False
 
 
 def _infer_browser_gui_query(goal: str) -> str:

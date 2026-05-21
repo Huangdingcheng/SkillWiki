@@ -140,6 +140,7 @@ function BrowserLoopPanel({ result }: { result: ExecutionResult | null }) {
   const browserTrace = getBrowserLoopTrace(result)
   const details = asRecord(browserTrace?.details)
   const finalState = asRecord(result?.final_state)
+  const controller = asRecord(details.controller || finalState.controller)
   const observations = asArray(details.observations || finalState.observations)
   const actions = asArray(details.actions || finalState.actions)
   if (!browserTrace && observations.length === 0 && actions.length === 0) return null
@@ -169,6 +170,11 @@ function BrowserLoopPanel({ result }: { result: ExecutionResult | null }) {
           <Tag color="blue">query: {compactValue(details.query || finalState.query, 80)}</Tag>
           <Tag color="geekblue">entry: {compactValue(details.entry_url || finalState.entry_url, 120)}</Tag>
           <Tag color={details.success ? 'green' : 'gold'}>{details.success ? 'success' : 'not finished'}</Tag>
+          {Object.keys(controller).length > 0 && (
+            <Tag color={controller.dom_supported ? 'green' : 'volcano'}>
+              controller: {String(controller.name || 'browser_controller')} · DOM {controller.dom_supported ? 'on' : 'off'}
+            </Tag>
+          )}
         </Space>
         <Row gutter={[12, 12]}>
           <Col xs={24} md={12}>

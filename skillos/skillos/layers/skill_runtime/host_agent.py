@@ -578,7 +578,8 @@ Important rules:
 - If the task says macOS Spotlight / 聚焦搜索, it means the OS launcher, not web search.
 - If the task asks to open Settings/系统设置/设置 and find Appearance/外观, it is desktop_settings_navigation, not Chrome or web search.
 - If the task asks to search from/in a browser, it is web_search unless it explicitly asks to open the first result.
-- If the task asks to find a website/service and then interact with visible page controls (login, click a folder/button, open sent mail, submit, choose a result), it is browser_gui_workflow, not one-shot website_navigation.
+- If the task asks to search/open a result and then continue interacting with the destination page (find Login/Sign in, click a folder/button, open sent mail, submit, choose a visible control), it is browser_gui_workflow, not search_first_result or one-shot website_navigation.
+- search_first_result is only for tasks whose final goal is opening the first result; if anything remains to find/click/verify after opening the result, use browser_gui_workflow.
 - Do not convert "open X" into a Google search unless the user clearly asks for web/search/browser/navigation.
 - If the task asks to move/delete a local file or folder to Trash/废纸篓/回收站, it is file_move_to_trash, not file_or_folder_open.
 - If the task asks to open WPS/new blank document/copy a local txt file into it/save to Desktop, it is wps_document_from_text_file.
@@ -800,7 +801,7 @@ def task_only_fallback(goal: str, context: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    if _is_first_search_result_goal(goal):
+    if _is_first_search_result_goal(goal) and not _has_post_search_browser_interaction(goal):
         query = _infer_search_query(goal) or goal
         return {
             "intent_type": "search_first_result",
@@ -1745,7 +1746,7 @@ def validate_execution_outcome(
             "reason": (
                 "Browser GUI workflow completed with observation evidence."
                 if matched and completed
-                else "Browser GUI workflow entered an observation-driven loop but still needs live DOM/screenshot control for arbitrary page clicks."
+                else "Browser GUI workflow did not reach the requested visible final state yet; inspect actions/observations for the blocking point."
             ),
             "retryable": False,
             "actual": _execution_actual_snapshot(final_state),
@@ -1822,10 +1823,11 @@ def validate_execution_outcome(
             "actual": _execution_actual_snapshot(final_state),
         }
 
+    contract_matched = _contract_signal_matches(task_contract, final_state) if task_contract else bool(final_state.get("success") or final_state.get("launched"))
     return {
-        "matched": _contract_signal_matches(task_contract, final_state) if task_contract else bool(final_state.get("success") or final_state.get("launched")),
-        "score": 0.85 if _contract_signal_matches(task_contract, final_state) else 0.2,
-        "reason": "Execution evidence satisfied the task contract." if _contract_signal_matches(task_contract, final_state) else "Execution did not provide enough evidence for the task contract.",
+        "matched": contract_matched,
+        "score": 0.85 if contract_matched else 0.2,
+        "reason": "Execution evidence satisfied the task contract." if contract_matched else "Execution did not provide enough evidence for the task contract.",
         "retryable": False,
         "contract": task_contract.to_dict() if task_contract else {},
         "actual": _execution_actual_snapshot(final_state),
@@ -2348,6 +2350,11 @@ def _primary_tool_calls_for_context(inferred_context: dict[str, Any], proposed_t
     if "host.move_to_trash" in normalized:
         return ["host.move_to_trash"]
     if "host.browser_gui_workflow" in normalized:
+        return ["host.browser_gui_workflow"]
+    if "host.open_chrome" in normalized and (
+        inferred_context.get("query")
+        or _has_post_search_browser_interaction(str(inferred_context.get("goal") or ""))
+    ):
         return ["host.browser_gui_workflow"]
     if "host.open_url_in_chrome" in normalized:
         return ["host.open_url_in_chrome"]
@@ -2895,14 +2902,37 @@ def _looks_browser_gui_workflow(goal: str) -> bool:
     interaction = any(token in goal for token in ("登录", "点击", "选择", "进入", "找到", "打开已发送", "已发送", "收件箱", "按钮")) or any(
         token in lowered for token in ("login", "sign in", "click", "select", "sent", "inbox", "button", "open sent")
     )
-    return browser_context and interaction
+    return (browser_context and interaction) or _has_post_search_browser_interaction(goal)
+
+
+def _has_post_search_browser_interaction(goal: str) -> bool:
+    lowered = goal.lower()
+    has_search_open = _is_first_search_result_goal(goal) or (
+        any(token in goal for token in ("搜索", "搜")) and any(token in goal for token in ("打开", "进入"))
+    )
+    post_markers = (
+        "然后", "之后", "并", "再", "找到", "查找", "点击", "选择", "登录", "入口",
+        "按钮", "已发送", "收件箱",
+    )
+    english_markers = (
+        "then", "after", "find", "locate", "click", "login", "sign in", "button",
+        "sent", "inbox", "entry",
+    )
+    return has_search_open and (
+        any(marker in goal for marker in post_markers)
+        or any(marker in lowered for marker in english_markers)
+    )
 
 
 def _infer_browser_gui_query(goal: str) -> str:
     query = goal
+    for sep in ("然后", "之后", "再", "then", "after"):
+        if sep in query:
+            query = query.split(sep, 1)[0]
     remove_tokens = [
         "打开浏览器", "浏览器", "找到", "并登录", "直接登录", "登录", "并打开",
         "打开已发送", "已发送", "我已经有账密缓存", "账密缓存", "我已经有", "缓存",
+        "搜索", "搜", "并打开第一条结果", "打开第一条结果", "第一条结果", "第一条", "结果",
         "click", "login", "sign in", "open sent", "browser", "chrome",
     ]
     for token in remove_tokens:
@@ -3194,6 +3224,19 @@ def _contract_signal_matches(task_contract: Optional[TaskContract], final_state:
     if not task_contract:
         return bool(final_state.get("success") or final_state.get("launched"))
     if not bool(final_state.get("success") or final_state.get("launched")):
+        return False
+    goal = task_contract.goal.lower()
+    if _has_post_search_browser_interaction(task_contract.goal):
+        if final_state.get("host_action") != "browser_gui_workflow":
+            return False
+        if not final_state.get("observations") or not final_state.get("actions"):
+            return False
+        if not bool(final_state.get("success")):
+            return False
+    if (
+        ("login" in goal or "sign in" in goal or "登录" in task_contract.goal or "入口" in task_contract.goal)
+        and final_state.get("host_action") in {"open_chrome_browser", "open_application"}
+    ):
         return False
     evidence_text = " ".join([
         str(final_state.get(key, ""))
