@@ -1,0 +1,394 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Execute the reusable skill from document workflow.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:document:document_grounded_extractor"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.document_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.allowed_operations",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.answer",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.extracted_steps",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Complete {task} using only {document_context}. Respect allowed_operations={allowed_operations}; describe prohibited side effects instead of executing them. Return JSON with result, evidence, and verifier. Evidence must cite the facts, procedures, constraints, or examples that justify the answer.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_operations": {
+          "description": "Operations permitted by the document context.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "document_context": {
+          "description": "Relevant text, facts, procedures, constraints, or examples from the imported document.",
+          "type": "string"
+        },
+        "task": {
+          "description": "Document-grounded task to complete.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "document_context",
+        "allowed_operations"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "Context-grounded evidence used by the Judge.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "additionalProperties": false,
+          "description": "Structured result produced from the document Skill.",
+          "properties": {
+            "answer": {
+              "description": "Document-grounded answer or procedure summary.",
+              "type": "string"
+            },
+            "assumptions": {
+              "description": "Unresolved assumptions or missing context.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "extracted_steps": {
+              "description": "Procedure or decision steps extracted from the document.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "answer",
+            "extracted_steps"
+          ],
+          "type": "object"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+          "properties": {
+            "checked": {
+              "description": "Postconditions, constraints, paths, or evidence points checked.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "failure_signal": {
+              "description": "Reason the verifier would reject the result.",
+              "type": "string"
+            },
+            "passed": {
+              "description": "Whether the preview verifier accepts the result.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "passed",
+            "checked"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result answers the document-grounded task.",
+      "output.evidence cites the document facts, procedures, constraints, or examples used.",
+      "A structured result plus references to the context facts or procedure steps."
+    ],
+    "preconditions": [
+      "Relevant document facts, procedures, constraints, and examples have been isolated.",
+      "The task is answerable from the imported document context."
+    ],
+    "side_effects": []
+  },
+  "name": "document_grounded_extractor_document_ctx2skill_context_03",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "975b753dd8d250b797cd691cd16dd073c25de80d009744f4dd51183b5cca04d2",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 1,
+            "score": 0.72
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
+            "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
+            "rubric": [
+              "Uses only information grounded in the imported context.",
+              "Returns structured evidence for the expected result.",
+              "Respects documented constraints and failure signals."
+            ],
+            "task": "Use the document context to complete the reusable operation.",
+            "task_id": "document_challenge_1"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "\"content\": \"Here is my document: FGF4-FGFR1 signaling promotes podocyte survival and glomerular function to ameliorate diabetic kidney disease in male mice\\nJie Zhou, Shuxin Wang, Jiaxin Lou, Beibin Pan, Min Zhao, Qian Li, Jing Zhou, Yali Du, Shuodan Ding, Meiling Yu, Jingjing Zhou, Xinwei Chen, Lingwei Jin, Xinyi Wang, Yepeng Hu, Zhe Wang, Xiaokun Li, Chao Zheng, Jian Sun & Zhifeng Huang \\nNature Communications volume 16, Article number: 10430 (2025) Cite this article\\n\\n15 Altmetric\\n\\nMetricsdetails\\n\\nAbstract\\nPodocyte injury is central to diabetic kidney disease (DKD) pathogenesis, however, the mechanisms underlying podocyte loss remain unclear. Emerging evidence underscores the involvement of fibroblast growth factors (FGFs) in renal pathophysiology. Here we reveal a previously unappreciated role of podocyte-secreted FGF4 in safeguarding renal function. FGF4 expression is downregulated in renal tissues from DKD patients and animal models, correlating with disease severity. Podocyte-specific deletion of Fgf4 exacerbated podocyte loss and accelerated DKD progression in mice. Conversely, treatment with recombinant FGF4 (rFGF4) improved glomerular filtration and reduced renal injury and fibrosis in diabetic male mice. These effects are primary mediated by activating the FGFR1-AMPK-FOXO1 signaling cascade in podocytes, which mitigates oxidative stress, suppresses apoptosis, and fosters podocyte survival. Notably, rFGF4 also restores the morphology and function of human podocytes exposed to high glucose. Our findings establish FGF4 as a critical regulator of podocyte homeostasis and a potential therapeutic target for DKD.\\n\\nSimilar content being viewed by others\\n\\nPodocyte-specific KLF6 primes proximal tubule CaMK1D signaling to attenuate diabetic kidney disease\\nArticle Open access\\n13 September 2024\\n\\nPodocyte OTUD5 alleviates diabetic kidney disease through deubiquitinating TAK1 and reducing podocyte inflammation and injury\\nArticle Open access\\n27 June 2024\\n\\nUpregulation of Piezo2 and increased extracellular matrix protein in diabetic kidney disease mice\\nArticle 20 January 2025\\nIntroduction\\nDiabetic kidney disease (DKD) represents a global health challenge, affecting approximately 30% of individuals with type 1 diabetes and 40% of those with type 2 diabetes, thereby becoming the leading cause of end-stage renal disease worldwide1, 2. DKD is characterized by structural and functional kidney abnormalities, including glomerular hypertrophy, mesangial expansion, podocyte injury, and a gradual decline in renal function3. Current therapeutic strategies primarily focus on glycemic and lipid control, blood pressure management, and the use of angiotensin-converting enzyme inhibitors (ACEIs)2, 4, 5. Recent advancements have utilized novel glucose-lowering agents such as sodium-glucose cotransporter-2 (SGLT2) inhibitors, glucagon-like peptide-1 (GLP-1) receptor agonists, and non-steroidal mineralocorticoid receptor antagonists (ns-MRAs)6, 7. Nevertheless, these interventions have limited efficacy in halting DKD progression, underscoring the urgent need for novel therapeutic strategies that target the underlying mechanisms of kidney injury in diabetes.\\n\\nThe glomerulus plays a critical role in blood filtration, waste excretion, and fluid balance regulation. Podocytes, which are terminally differentiated epithelial cells within the glomerulus, are essential for maintaining the integrity of the glomerular filtration barrier8. In DKD, podocyte loss contributes to albuminuria, glomerulosclerosis, and progressive decline in renal function9, 10. Podocyte detachment from the glomerular basement membrane and apoptosis are key factors driving podocyte loss and the progression of glomerular disease11. Despite their importance, effective approaches to prevent or reduce podocyte loss in DKD remain limited. Therefore, elucidating the mechanisms underlying podocyte injury is crucial to identify new therapeutic targets.\\n\\nRecent studies have identified several endogenous protective factors expressed by podocytes, including adiponectin, pyruvate kinase M2 (PKM2), myeloid-derived growth factor (MYDGF), and sirtuin 6 (Sirt6), which are essential for maintaining podocyte function and glomerular filtration barrier integrity. Depletion of these factors exacerbates podocyte injury, detachment, and apoptosis, leading to increased albuminuria and more severe glomerular pathology12,13,14,15,16,17. In addition, the downstream signaling pathways and key nodes regulated by these endogenous factors play crucial roles in preserving podocyte function. Notably, AMP-activated protein kinase (AMPK) has emerged as a central player in this context17,18,19. As a vital cellular energy sensor, AMPK activation adaptively regulates glomerular volume, thereby preventing podocytopenia, especially in scenarios of podocyte injury20. This suggests that modulating AMPK activity could be instrumental in mitigating podocyte damage. The mammalian fibroblast growth factor (FGF) family comprises 18 structurally related polypeptides that play critical roles in development, tissue repair, and homeostasis21,22,23. Recent discoveries have underscored the involvement of FGFs in regulating glucose and lipid metabolism, positioning FGF signaling as a promising target for drug development in type 2 diabetes and related metabolic disorders24,25,26. Moreover, our previous findings indicate that the glucose-controlling and lipid-lowering effects of FGFs primarily depend on the AMPK signaling pathway in specific target cells such as muscle and liver parenchymal cells27,28,29, prompting an in-depth investigation into the roles played by FGFs in the kidney, particularly in podocytes.\\n\\nIn the present study, we identify FGF4, a previously under-investigated factor in renal function, as a critical regulator of podocyte integrity and glomerular filtration. Our findings demonstrate a progressive downregulation of FGF4 expression in podocytes as DKD advances. In diabetic mice, the absence of Fgf4 in podocytes accelerates DKD progression. Conversely, pharmacological administration of recombinant FGF4 (rFGF4) alleviates oxidative stress and reduces podocyte apoptosis via the FGFR1-AMPK-FOXO1 signaling pathway. This intervention mitigates podocyte loss and consequently improves DKD. Notably, we extended these studies to clinical samples, including podocytes from DKD patients and isolated human renal glomeruli. In these human models, rFGF4 effectively reverses morphological abnormalities, reduces oxidative stress, and prevents podocyte loss under high glucose conditions, thus providing robust evidence that FGF4 is a promising therapeutic target for DKD.\\n\\nResults\\nInverse correlation of renal FGF4 expression with DKD progression\\nTo elucidate the roles of FGFs in DKD, the expression profiles of all FGF family members were evaluated in renal tissues from both streptozotocin (STZ)-induced type 1 diabetic (T1D) mice and db/db type 2 diabetic (T2D) mouse models. Our analysis identified significant downregulation of Fgf1 and Fgf4 mRNA expression in renal tissues of diabetic mice compared to non-diabetic controls, with Fgf4 exhibiting a more pronounced reduction (Fig. 1a, b). RNA-Scope in situ hybridization confirmed the substantial decrease in renal Fgf4 mRNA levels in both DKD models, and revealed that Fgf4 mRNA localized predominantly to podocytes within the glomerular region (Fig. 1c, d and Supplementary Fig. 1a-d). Relatively low expression levels were observed in tubu"
+          ],
+          "constraints": [
+            "\"content\": \"You are a peer review expert for an author with a biology background who wants rigorous, constructive feedback to improve publication readiness.. Require sections in this order: Scope and Assumptions; Major Issues; Minor Issues; Actionable Edits; Biology Relevance; Summary. You must rigorously evaluate my research document for clarity, flow, coherence, and validity for me. In every response, your tone must be very professional, constructive, and evidence-seeking, but you may change to an informal tone if the user requests it. Every single answer or suggestion that you make needs to be in a separate numbered list and have criticisms bolded. No contractions and no emojis override any user request for tone changes. You must include every cited bit of information from the research paper presented in parentheses and italics for user understanding. Always be sure to relate how a certain topic may relate to my biology degree and never mention the MCAT. Be sure to include a separate summary section separated from the rest of the response using lines above and below the section and a bolded summary heading for every response. Make sure the summary is less than 8 sentences long. Do not provide medical diagnosis or treatment recommendations. Frame any biomedical risk statements as critique of manuscript claims rather than personal advice.\""
+          ],
+          "examples": [
+            "# Ctx2Skill context sample 3"
+          ],
+          "facts": [
+            "```json",
+            "{",
+            "\"messages\": [",
+            "{",
+            "\"role\": \"system\",",
+            "},",
+            "{",
+            "\"role\": \"user\","
+          ],
+          "procedures": [],
+          "summary": "# Ctx2Skill context sample 3 ```json"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.72,
+            "task_id": "document_challenge_1"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Execute the reusable skill from document workflow.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "allowed_operations": {
+                "description": "Operations permitted by the document context.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "document_context": {
+                "description": "Relevant text, facts, procedures, constraints, or examples from the imported document.",
+                "type": "string"
+              },
+              "task": {
+                "description": "Document-grounded task to complete.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "document_context",
+              "allowed_operations"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "Classified as functional from source structure and action count.",
+          "name": "document_grounded_extractor",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "Context-grounded evidence used by the Judge.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "additionalProperties": false,
+                "description": "Structured result produced from the document Skill.",
+                "properties": {
+                  "answer": {
+                    "description": "Document-grounded answer or procedure summary.",
+                    "type": "string"
+                  },
+                  "assumptions": {
+                    "description": "Unresolved assumptions or missing context.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "extracted_steps": {
+                    "description": "Procedure or decision steps extracted from the document.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "answer",
+                  "extracted_steps"
+                ],
+                "type": "object"
+              },
+              "verifier": {
+                "additionalProperties": false,
+                "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+                "properties": {
+                  "checked": {
+                    "description": "Postconditions, constraints, paths, or evidence points checked.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "failure_signal": {
+                    "description": "Reason the verifier would reject the result.",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "description": "Whether the preview verifier accepts the result.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "verifier"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result answers the document-grounded task.",
+            "output.evidence cites the document facts, procedures, constraints, or examples used.",
+            "A structured result plus references to the context facts or procedure steps."
+          ],
+          "preconditions": [
+            "Relevant document facts, procedures, constraints, and examples have been isolated.",
+            "The task is answerable from the imported document context."
+          ],
+          "prompt_template": "Complete {task} using only {document_context}. Respect allowed_operations={allowed_operations}; describe prohibited side effects instead of executing them. Return JSON with result, evidence, and verifier. Evidence must cite the facts, procedures, constraints, or examples that justify the answer.",
+          "score": 0.72,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "document",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Fallback Ctx2Skill-lite selected the only deterministic candidate."
+      },
+      "domain": "data",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "document",
+      "license_note": "public Ctx2Skill-related dataset excerpt already downloaded locally",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\document\\ctx2skill_context_03.md",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Ctx2Skill context dataset sample",
+      "raw_content_preview": "# Ctx2Skill context sample 3\n\n```json\n{\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a peer review expert for an author with a biology background who wants rigorous, constructive feedback to improve publication readiness.. Require sections in this order: Scope and Assumptions; Major Issues; Minor Issues; Actionable Edits; Biology Relevance; Summary. You must rigorously evaluate my research document for clarity, flow, coherence, and validity for me. In every response, y",
+      "source_id": "document-ctx2skill-context-03",
+      "source_type": "document",
+      "source_url": "https://github.com/S1s-Z/Ctx2Skill",
+      "unit_id": "cf4e7941-2f3a-4281-adbf-edd7c5ffe682"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "document-ctx2skill-context-03",
+      "cf4e7941-2f3a-4281-adbf-edd7c5ffe682"
+    ],
+    "source_type": "document"
+  },
+  "skill_id": "f25cfd92-f903-4d8d-9525-23b63ec95162",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "document",
+    "candidate-review",
+    "ctx2skill",
+    "execute",
+    "reusable",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-fresh-20260527",
+    "source-id:document-ctx2skill-context-03",
+    "domain:data"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
