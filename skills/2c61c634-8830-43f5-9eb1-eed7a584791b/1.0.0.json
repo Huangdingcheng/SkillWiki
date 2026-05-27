@@ -1,0 +1,342 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "--- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:past_skills:pptx_skill"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.validation",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are executing the imported legacy Skill 'pptx_skill' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- source_files: {source_files}\n- artifact_type: {artifact_type}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_type": {
+          "description": "Expected artifact family, for example document, presentation, spreadsheet, image, or code.",
+          "enum": [
+            "document",
+            "presentation",
+            "spreadsheet",
+            "image",
+            "code",
+            "api_project",
+            "other"
+          ],
+          "type": "string"
+        },
+        "constraints": {
+          "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_context": {
+          "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+          "type": "string"
+        },
+        "source_files": {
+          "description": "Local file paths or artifact identifiers the Skill is allowed to inspect or transform.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task": {
+          "description": "Concrete task the imported legacy Skill should perform.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "source_context",
+        "artifact_type"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "description": "Paths or identifiers of artifacts created, edited, or reviewed by the Skill.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured task result produced by the normalized SkillOS Skill.",
+          "type": "object"
+        },
+        "validation": {
+          "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result preserves the original legacy Skill capability in SkillOS form.",
+      "output.evidence cites the legacy instructions, source path, or context used for the result.",
+      "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+    ],
+    "preconditions": [
+      "Legacy Skill source has been reviewed: legacy Skill.",
+      "Caller supplied a concrete task and relevant source_context.",
+      "Any file, network, or code execution must stay within caller-approved constraints."
+    ],
+    "side_effects": []
+  },
+  "name": "pptx_skill_past_skills_anthropic_pptx",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "e5b0df918cbe9d62508b3cf808d73899633f82fc19f6258a25ef9f0de7e62125",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "pptx_skill",
+            "passed_challenges": 1,
+            "score": 0.76
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Canonical SkillOS schema fields plus graph relation preview.",
+            "failure_signal": "Lost interface, wrong layer, or missing graph relation evidence.",
+            "rubric": [
+              "Preserves the original capability description.",
+              "Assigns the correct SkillX layer.",
+              "Carries forward dependency, component, and parent relationships when present."
+            ],
+            "task": "Convert legacy Skill pptx_skill into canonical SkillOS representation.",
+            "task_id": "past_skills_normalize_pptx_skill"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [],
+          "constraints": [
+            "## QA (Required)"
+          ],
+          "examples": [],
+          "facts": [
+            "{\"name\": \"PPTX Skill\", \"description\": \"--- name: pptx description: \\\"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\", \"steps\": [\"Analyze template with `thumbnail.py`\", \"Unpack → manipulate slides → edit content → clean → pack\", \"Pick a bold, content-informed color palette**: The palette should feel designed for THIS topic. If swapping your colors into a completely different presentation would still \\\"work,\\\" you haven't made specific enough choices.\", \"Dominance over equality**: One color should dominate (60-70% visual weight), with 1-2 supporting tones and one sharp accent. Never give all colors equal weight.\", \"Dark/light contrast**: Dark backgrounds for title + conclusion slides, light for content (\\\"sandwich\\\" structure). Or commit to dark throughout for a premium feel.\", \"Commit to a visual motif**: Pick ONE distinctive element and repeat it — rounded image frames, icons in colored circles, thick single-side borders. Carry it across every slide.\", \"Two-column (text left, illustration on right)\", \"Icon + text rows (icon in colored circle, bold header, description below)\", \"x2 or 2x3 grid (image on one side, grid of content blocks on other)\", \"Half-bleed image (full left or right side) with content overlay\", \"Large stat callouts (big numbers 60-72pt with small labels below)\", \"Comparison columns (before/after, pros/cons, side-by-side options)\", \"Timeline or process flow (numbered steps, arrows)\", \"Icons in small colored circles next to section headers\", \"Italic accent text for key stats or taglines\", \"\\\" minimum margins\", \"\\\" between content blocks\", \"Leave breathing room—don't fill every inch\", \"Don't repeat the same layout** — vary columns, cards, and callouts across slides\", \"Don't center body text** — left-align paragraphs and lists; center only titles\", \"Don't skimp on size contrast** — titles need 36pt+ to stand out from 14-16pt body\", \"Don't default to blue** — pick colors that reflect the specific topic\", \"Don't mix spacing randomly** — choose 0.3\\\" or 0.5\\\" gaps and use consistently\", \"Don't style one slide and leave the rest plain** — commit fully or keep it simple throughout\", \"Don't create text-only slides** — add images, icons, charts, or visual elements; avoid plain title + bullets\", \"Don't forget text box padding** — when aligning lines or shapes with text edges, set `margin: 0` on the text box or offset the shape to account for padding\", \"Don't use low-contrast elements** — icons AND text need strong contrast against the background; avoid light text on light backgrounds or dark text on dark backgrounds\", \"NEVER use accent lines under titles** — these are a hallmark of AI-generated slides; use whitespace or background color instead\", \"Overlapping elements (text through shapes, lines through words, stacked elements)\", \"Text overflow or cut off at edges/box boundaries\", \"Decorative lines positioned for single-line text but title wrapped to two lines\", \"Source citations or footers colliding with content above\", \"Elements too close (< 0.3\\\" gaps) or cards/sections nearly touching\", \"Uneven gaps (large empty area in one place, cramped in another)\", \"Insufficient margin from slide edges (< 0.5\\\")\", \"Columns or similar elements not aligned consistently\", \"Low-contrast text (e.g., light gray text on cream-colored background)\", \"Low-contrast icons (e.g., dark icons on dark backgrounds without a contrasting circle)\", \"Text boxes too narrow causing excessive wrapping\", \"Leftover placeholder content\", \"/path/to/slide-01.jpg (Expected: [brief description])\", \"/path/to/slide-02.jpg (Expected: [brief description])\", \"Generate slides → Convert to images → Inspect\", \"List issues found** (if none found, look again more critically)\", \"Fix issues\", \"Re-verify affected slides** — one fix often creates another problem\", \"Repeat until a full pass reveals no new issues\", \"`pip install \\\"markitdown[pptx]\\\"` - text extraction\", \"`pip install Pillow` - thumbnail grids\", \"`npm install -g pptxgenjs` - creating from scratch\", \"LibreOffice (`soffice`) - PDF conversion (auto-configured for sandboxed environments via `scripts/office/soffice.py`)\", \"Poppler (`pdftoppm`) - PDF to images\"], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "procedures": [
+            "Use when no template or reference presentation is available.",
+            "0.5\" minimum margins",
+            "0.3-0.5\" between content blocks"
+          ],
+          "summary": "{\"name\": \"PPTX Skill\", \"description\": \"--- name: pptx description: \\\"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsi"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "pptx_skill",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.76,
+            "task_id": "past_skills_normalize_pptx_skill"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "--- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "artifact_type": {
+                "description": "Expected artifact family, for example document, presentation, spreadsheet, image, or code.",
+                "enum": [
+                  "document",
+                  "presentation",
+                  "spreadsheet",
+                  "image",
+                  "code",
+                  "api_project",
+                  "other"
+                ],
+                "type": "string"
+              },
+              "constraints": {
+                "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source_context": {
+                "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+                "type": "string"
+              },
+              "source_files": {
+                "description": "Local file paths or artifact identifiers the Skill is allowed to inspect or transform.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "task": {
+                "description": "Concrete task the imported legacy Skill should perform.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "source_context",
+              "artifact_type"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "SkillX functional layer: the candidate preserves a reusable multi-step capability or sub-skill composition.",
+          "name": "pptx_skill",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "artifacts": {
+                "description": "Paths or identifiers of artifacts created, edited, or reviewed by the Skill.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "evidence": {
+                "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured task result produced by the normalized SkillOS Skill.",
+                "type": "object"
+              },
+              "validation": {
+                "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "validation"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result preserves the original legacy Skill capability in SkillOS form.",
+            "output.evidence cites the legacy instructions, source path, or context used for the result.",
+            "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+          ],
+          "preconditions": [
+            "Legacy Skill source has been reviewed: legacy Skill.",
+            "Caller supplied a concrete task and relevant source_context.",
+            "Any file, network, or code execution must stay within caller-approved constraints."
+          ],
+          "prompt_template": "You are executing the imported legacy Skill 'pptx_skill' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- source_files: {source_files}\n- artifact_type: {artifact_type}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: pptx description: \"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+          "score": 0.76,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "past_skills",
+            "ctx2skill",
+            "code",
+            "presentation",
+            "pptx_skill",
+            "name",
+            "pptx",
+            "legacy"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Past Skill candidate preserves legacy capability and relation evidence."
+      },
+      "domain": "office",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "past_skills",
+      "license_note": "public Anthropic Skills excerpt; converted as legacy/past skill input only",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\past_skills\\anthropic_11_pptx.md",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic Skills public repository",
+      "raw_content_preview": "{\"name\": \"PPTX Skill\", \"description\": \"--- name: pptx description: \\\"Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or su\", \"steps\": [\"Analyze template with `thumbnail.py`\", \"Unpack → manipulate slides → edit content → clean → pack\", \"Pick a bold, content-infor",
+      "source_id": "past-skills-anthropic-pptx",
+      "source_type": "past_skills",
+      "source_url": "https://github.com/anthropics/skills/blob/f458cee31a7577a47ba0c9a101976fa599385174/skills/pptx/SKILL.md",
+      "unit_id": "91f990fc-6c92-4f3a-b9dc-8891480cfe05"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "past-skills-anthropic-pptx",
+      "91f990fc-6c92-4f3a-b9dc-8891480cfe05"
+    ],
+    "source_type": "past_skills"
+  },
+  "skill_id": "2c61c634-8830-43f5-9eb1-eed7a584791b",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "past_skills",
+    "candidate-review",
+    "ctx2skill",
+    "code",
+    "presentation",
+    "pptx_skill",
+    "name",
+    "pptx",
+    "legacy",
+    "any",
+    "description",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-fresh-20260527"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
