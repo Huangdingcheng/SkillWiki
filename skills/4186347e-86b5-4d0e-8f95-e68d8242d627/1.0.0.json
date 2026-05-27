@@ -1,0 +1,382 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Execute the reusable skill from api doc workflow.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:api_doc_execute"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Complete the API task for {endpoint} using validated {parameters}. Return JSON with result, evidence, and verifier, including required parameters and response assumptions.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "description": "Endpoint, method, or tool call described by the API documentation.",
+          "type": "string"
+        },
+        "parameters": {
+          "description": "Validated request parameters for the endpoint.",
+          "type": "object"
+        },
+        "task": {
+          "description": "API task to complete from the imported API documentation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "endpoint",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "Context-grounded evidence used by the Judge.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "additionalProperties": false,
+          "description": "Structured result produced from the API documentation Skill.",
+          "properties": {
+            "endpoint": {
+              "description": "Endpoint or tool selected.",
+              "type": "string"
+            },
+            "parameters": {
+              "description": "Validated request parameters.",
+              "type": "object"
+            },
+            "response_summary": {
+              "description": "Expected response or output contract.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "endpoint",
+            "parameters"
+          ],
+          "type": "object"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+          "properties": {
+            "checked": {
+              "description": "Postconditions, constraints, paths, or evidence points checked.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "failure_signal": {
+              "description": "Reason the verifier would reject the result.",
+              "type": "string"
+            },
+            "passed": {
+              "description": "Whether the preview verifier accepts the result.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "passed",
+            "checked"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result contains the structured task result.",
+      "output.evidence contains context-grounded support for the result.",
+      "A structured result plus references to the context facts or procedure steps."
+    ],
+    "preconditions": [
+      "Relevant api doc context has been reviewed."
+    ],
+    "side_effects": []
+  },
+  "name": "api_doc_execute_api_doc_github_create_release",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "c73e25e0fe1dda1eabe5889378f90f2b7d20b4de9c4ca0ff4e27524286c4ead8",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "api_doc_execute",
+            "passed_challenges": 1,
+            "score": 0.72
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
+            "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
+            "rubric": [
+              "Uses only information grounded in the imported context.",
+              "Returns structured evidence for the expected result.",
+              "Respects documented constraints and failure signals."
+            ],
+            "task": "Use the api_doc context to complete the reusable operation.",
+            "task_id": "api_doc_challenge_1"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "title: Focused GitHub REST API fixture - github-create-release",
+            "description: Focused public API documentation excerpt normalized for SkillOS API-doc-to-skill testing."
+          ],
+          "constraints": [
+            "url: https://example.invalid",
+            "required: false",
+            "required: false",
+            "required: true",
+            "'400': {description: Invalid request parameters.}"
+          ],
+          "examples": [
+            "url: https://example.invalid"
+          ],
+          "facts": [
+            "openapi: 3.0.3",
+            "info:",
+            "version: '1.0'",
+            "servers:",
+            "paths:",
+            "/repos/{owner}/{repo}/releases:",
+            "post:",
+            "operationId: github_create_release"
+          ],
+          "procedures": [
+            "type: object",
+            "type: object"
+          ],
+          "summary": "openapi: 3.0.3 info:"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "api_doc_execute",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.72,
+            "task_id": "api_doc_challenge_1"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Execute the reusable skill from api doc workflow.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "endpoint": {
+                "description": "Endpoint, method, or tool call described by the API documentation.",
+                "type": "string"
+              },
+              "parameters": {
+                "description": "Validated request parameters for the endpoint.",
+                "type": "object"
+              },
+              "task": {
+                "description": "API task to complete from the imported API documentation.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "endpoint",
+              "parameters"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "Classified as atomic from source structure and action count.",
+          "name": "api_doc_execute",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "Context-grounded evidence used by the Judge.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "additionalProperties": false,
+                "description": "Structured result produced from the API documentation Skill.",
+                "properties": {
+                  "endpoint": {
+                    "description": "Endpoint or tool selected.",
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "description": "Validated request parameters.",
+                    "type": "object"
+                  },
+                  "response_summary": {
+                    "description": "Expected response or output contract.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "endpoint",
+                  "parameters"
+                ],
+                "type": "object"
+              },
+              "verifier": {
+                "additionalProperties": false,
+                "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+                "properties": {
+                  "checked": {
+                    "description": "Postconditions, constraints, paths, or evidence points checked.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "failure_signal": {
+                    "description": "Reason the verifier would reject the result.",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "description": "Whether the preview verifier accepts the result.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "verifier"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result contains the structured task result.",
+            "output.evidence contains context-grounded support for the result.",
+            "A structured result plus references to the context facts or procedure steps."
+          ],
+          "preconditions": [
+            "Relevant api doc context has been reviewed."
+          ],
+          "prompt_template": "Complete the API task for {endpoint} using validated {parameters}. Return JSON with result, evidence, and verifier, including required parameters and response assumptions.",
+          "score": 0.72,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Fallback Ctx2Skill-lite selected the only deterministic candidate."
+      },
+      "domain": "software",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public API documentation normalized into a focused OpenAPI-style fixture; source URL recorded",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\api_doc\\api_04_github-create-release.yaml",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "GitHub REST API",
+      "raw_content_preview": "openapi: 3.0.3\ninfo:\n  title: Focused GitHub REST API fixture - github-create-release\n  version: '1.0'\n  description: Focused public API documentation excerpt normalized for SkillOS API-doc-to-skill testing.\nservers:\n  - url: https://example.invalid\npaths:\n  /repos/{owner}/{repo}/releases:\n    post:\n      operationId: github_create_release\n      summary: Create a release with tag, name, body, draft, prerelease.\n      parameters:\n        - name: request_id\n          in: header\n          required:",
+      "source_id": "api-doc-github-create-release",
+      "source_type": "api_doc",
+      "source_url": "https://docs.github.com/en/rest/releases/releases#create-a-release",
+      "unit_id": "8de9f887-42be-481b-b675-5f5a8a8696a0"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-github-create-release",
+      "8de9f887-42be-481b-b675-5f5a8a8696a0"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "4186347e-86b5-4d0e-8f95-e68d8242d627",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "api",
+    "doc",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-fresh-20260527",
+    "source-id:api-doc-github-create-release",
+    "domain:software"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
