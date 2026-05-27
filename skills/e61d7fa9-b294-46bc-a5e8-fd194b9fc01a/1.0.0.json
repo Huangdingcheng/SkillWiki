@@ -1,0 +1,289 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:past_skills:slack_gif_creator"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.validation",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are executing the imported legacy Skill 'slack_gif_creator' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "constraints": {
+          "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_context": {
+          "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+          "type": "string"
+        },
+        "task": {
+          "description": "Concrete task the imported legacy Skill should perform.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "source_context"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured task result produced by the normalized SkillOS Skill.",
+          "type": "object"
+        },
+        "validation": {
+          "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result preserves the original legacy Skill capability in SkillOS form.",
+      "output.evidence cites the legacy instructions, source path, or context used for the result.",
+      "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+    ],
+    "preconditions": [
+      "Legacy Skill source has been reviewed: legacy Skill.",
+      "Caller supplied a concrete task and relevant source_context.",
+      "Any file, network, or code execution must stay within caller-approved constraints."
+    ],
+    "side_effects": []
+  },
+  "name": "slack_gif_creator_past_skills_anthropic_slack_gif_creator",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "2efca615ce55a3edd8fc05c779068a8085816617991987e446606403cd3abb22",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "slack_gif_creator",
+            "passed_challenges": 1,
+            "score": 0.76
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Canonical SkillOS schema fields plus graph relation preview.",
+            "failure_signal": "Lost interface, wrong layer, or missing graph relation evidence.",
+            "rubric": [
+              "Preserves the original capability description.",
+              "Assigns the correct SkillX layer.",
+              "Carries forward dependency, component, and parent relationships when present."
+            ],
+            "task": "Convert legacy Skill slack_gif_creator into canonical SkillOS representation.",
+            "task_id": "past_skills_normalize_slack_gif_creator"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [],
+          "constraints": [],
+          "examples": [],
+          "facts": [
+            "{\"name\": \"Slack GIF Creator\", \"description\": \"--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \\\"make me a GIF of X doing Y for Slack.\\\"\", \"steps\": [\"Emoji GIFs: 128x128 (recommended)\", \"Message GIFs: 480x480\", \"FPS: 10-30 (lower is smaller file size)\", \"Colors: 48-128 (fewer = smaller file size)\", \"Duration: Keep under 3 seconds for emoji GIFs\", \"Use it directly** (e.g., \\\"animate this\\\", \\\"split this into frames\\\")\", \"Use it as inspiration** (e.g., \\\"make something like this\\\")\", \"Use gradients for backgrounds (`create_gradient_background`)\", \"Layer multiple shapes for complexity (e.g., a star with a smaller star inside)\", \"Don't just draw a plain circle - add highlights, rings, or patterns\", \"Stars can have glows (draw larger, semi-transparent versions behind)\", \"Combine multiple shapes (stars + sparkles, circles + rings)\", \"Use vibrant, complementary colors\", \"Add contrast (dark outlines on light shapes, light outlines on dark shapes)\", \"Consider the overall composition\", \"Use combinations of polygons and ellipses\", \"Calculate points carefully for symmetry\", \"Add details (a heart can have a highlight curve, snowflakes have intricate branches)\", \"Use `math.sin()` or `math.cos()` with frame index\", \"Add small random variations for natural feel\", \"Apply to x and/or y position\", \"Use `math.sin(t * frequency * 2 * math.pi)` for smooth pulse\", \"For heartbeat: two quick pulses then pause (adjust sine wave)\", \"Scale between 0.8 and 1.2 of base size\", \"Use `interpolate()` with `easing='bounce_out'` for landing\", \"Use `easing='ease_in'` for falling (accelerating)\", \"Apply gravity by increasing y velocity each frame\", \"PIL: `image.rotate(angle, resample=Image.BICUBIC)`\", \"For wobble: use sine wave for angle instead of linear\", \"Create RGBA image, adjust alpha channel\", \"Or use `Image.blend(image1, image2, alpha)`\", \"Fade in: alpha from 0 to 1\", \"Fade out: alpha from 1 to 0\", \"Start position: outside frame bounds\", \"End position: target location\", \"Use `interpolate()` with `easing='ease_out'` for smooth stop\", \"For overshoot: use `easing='back_out'`\", \"Zoom in: scale from 0.1 to 2.0, crop center\", \"Zoom out: scale from 2.0 to 1.0\", \"Can add motion blur for drama (PIL filter)\", \"Generate particles with random angles and velocities\", \"Update each particle: `x += vx`, `y += vy`\", \"Add gravity: `vy += gravity_constant`\", \"Fade out particles over time (reduce alpha)\", \"Fewer frames** - Lower FPS (10 instead of 20) or shorter duration\", \"Fewer colors** - `num_colors=48` instead of 128\", \"Smaller dimensions** - 128x128 instead of 480x480\", \"Remove duplicates** - `remove_duplicates=True` in save()\", \"Emoji mode** - `optimize_for_emoji=True` auto-optimizes\", \"Knowledge**: Slack's requirements and animation concepts\", \"Utilities**: GIFBuilder, validators, easing functions\", \"Flexibility**: Create the animation logic using PIL primitives\", \"Rigid animation templates or pre-made functions\", \"Emoji font rendering (unreliable across platforms)\", \"A library of pre-packaged graphics built into the skill\"], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "procedures": [
+            "Use gradients for backgrounds (`create_gradient_background`)",
+            "Use vibrant, complementary colors",
+            "Use combinations of polygons and ellipses",
+            "Use `math.sin()` or `math.cos()` with frame index",
+            "Use `math.sin(t * frequency * 2 * math.pi)` for smooth pulse",
+            "Use `interpolate()` with `easing='bounce_out'` for landing",
+            "Use `easing='ease_in'` for falling (accelerating)",
+            "Create RGBA image, adjust alpha channel"
+          ],
+          "summary": "{\"name\": \"Slack GIF Creator\", \"description\": \"--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users re"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "slack_gif_creator",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.76,
+            "task_id": "past_skills_normalize_slack_gif_creator"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "constraints": {
+                "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source_context": {
+                "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+                "type": "string"
+              },
+              "task": {
+                "description": "Concrete task the imported legacy Skill should perform.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "source_context"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "SkillX functional layer: the candidate preserves a reusable multi-step capability or sub-skill composition.",
+          "name": "slack_gif_creator",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured task result produced by the normalized SkillOS Skill.",
+                "type": "object"
+              },
+              "validation": {
+                "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "validation"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result preserves the original legacy Skill capability in SkillOS form.",
+            "output.evidence cites the legacy instructions, source path, or context used for the result.",
+            "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+          ],
+          "preconditions": [
+            "Legacy Skill source has been reviewed: legacy Skill.",
+            "Caller supplied a concrete task and relevant source_context.",
+            "Any file, network, or code execution must stay within caller-approved constraints."
+          ],
+          "prompt_template": "You are executing the imported legacy Skill 'slack_gif_creator' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.\"\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+          "score": 0.76,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "past_skills",
+            "ctx2skill",
+            "code",
+            "slack_gif_creator",
+            "name",
+            "slack",
+            "legacy",
+            "free_text"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Past Skill candidate preserves legacy capability and relation evidence."
+      },
+      "domain": "office",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "past_skills",
+      "license_note": "public Anthropic Skills excerpt; converted as legacy/past skill input only",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\past_skills\\anthropic_13_slack-gif-creator.md",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic Skills public repository",
+      "raw_content_preview": "{\"name\": \"Slack GIF Creator\", \"description\": \"--- name: slack-gif-creator description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \\\"make me a GIF of X doing Y for Slack.\\\"\", \"steps\": [\"Emoji GIFs: 128x128 (recommended)\", \"Message GIFs: 480x480\", \"FPS: 10-30 (lower is smaller file size)\", \"Colors: 48-128 (fewer = smaller file size)\", \"Duration: Keep unde",
+      "source_id": "past-skills-anthropic-slack-gif-creator",
+      "source_type": "past_skills",
+      "source_url": "https://github.com/anthropics/skills/blob/f458cee31a7577a47ba0c9a101976fa599385174/skills/slack-gif-creator/SKILL.md",
+      "unit_id": "3323102c-3ae1-42b4-a513-79200883ba8a"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "past-skills-anthropic-slack-gif-creator",
+      "3323102c-3ae1-42b4-a513-79200883ba8a"
+    ],
+    "source_type": "past_skills"
+  },
+  "skill_id": "e61d7fa9-b294-46bc-a5e8-fd194b9fc01a",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "past_skills",
+    "candidate-review",
+    "ctx2skill",
+    "code",
+    "slack_gif_creator",
+    "name",
+    "slack",
+    "legacy",
+    "free_text",
+    "animated",
+    "creating",
+    "creator",
+    "input-skill-eval"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
