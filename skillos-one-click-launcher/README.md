@@ -1,6 +1,6 @@
 # SkillOS One-Click Demo Launcher
 
-This launcher starts the SkillOS backend, starts the Vite frontend, verifies both endpoints, and opens the browser.
+This launcher asks for a local DeepSeek/OpenAI-compatible model configuration when needed, starts the SkillOS backend, starts the Vite frontend, verifies both endpoints, and opens the browser.
 
 ## Quick Start
 
@@ -9,6 +9,16 @@ From the repository root, double-click:
 ```text
 START_SKILLOS_DEMO.bat
 ```
+
+On the first run, the terminal asks for:
+
+```text
+DeepSeek API URL
+DeepSeek model
+DeepSeek API key
+```
+
+Press Enter to accept the default URL/model if they are correct. Paste your own API key when prompted. The key input is hidden and is saved only to `skillos-one-click-launcher\config.local.ps1`, which is ignored by Git.
 
 To stop the demo, double-click:
 
@@ -31,7 +41,7 @@ Backend:  http://127.0.0.1:8001
 
 ## Local LLM Configuration
 
-To use a real OpenAI-compatible model, copy:
+The launcher creates `config.local.ps1` interactively if it is missing. You can also create it manually by copying:
 
 ```text
 skillos-one-click-launcher\config.example.ps1
@@ -47,11 +57,13 @@ Then fill:
 
 ```powershell
 $env:LLM_API_URL = "https://api.deepseek.com"
-$env:LLM_MODEL = "your-model-id"
+$env:LLM_MODEL = "deepseek-v4-flash"
 $env:LLM_API_KEY = "your-api-key"
 ```
 
 `config.local.ps1` is ignored by Git. Do not commit or share it.
+
+For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SkillOSDemo.ps1` or set `SKILLOS_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
 
 ## Defaults
 

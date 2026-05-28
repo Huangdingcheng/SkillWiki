@@ -147,6 +147,12 @@ class DeprecateRequest(BaseModel):
 class NewVersionRequest(BaseModel):
     bump: str = Field(default="patch", pattern=r"^(major|minor|patch)$")
     description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    interface: Optional[SkillInterface] = None
+    implementation: Optional[SkillImplementation] = None
+    evaluation: Optional[SkillEvaluation] = None
+    test_cases: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None
     author: str = "api"
 
 

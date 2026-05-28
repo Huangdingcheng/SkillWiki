@@ -291,6 +291,8 @@ Do not mutate source data during review.
     metadata = data["units"][0]["metadata"]
     prompt_template = metadata["candidate_implementation"]["prompt_template"]
     assert data["units"][0]["proposed_skill_name"] == "script_dry_run_analyzer"
+    assert data["units"][0]["proposed_type"] == "functional"
+    assert "functional" in metadata["layering_reason"]
     assert prompt_template.startswith(
         "Complete {task} as a script-grounded dry-run analysis"
     )

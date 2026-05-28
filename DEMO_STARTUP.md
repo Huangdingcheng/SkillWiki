@@ -12,6 +12,7 @@ START_SKILLOS_DEMO.bat
 
 The launcher will:
 
+- ask for your own DeepSeek API URL, model, and API key on first run
 - start the FastAPI backend on `127.0.0.1:8001`
 - start the Vite frontend on `127.0.0.1:5174`
 - proxy frontend API requests to the backend
@@ -63,35 +64,45 @@ http://127.0.0.1:5174/wiki
 
 ## LLM Configuration
 
-For UI-only demos, no real LLM key is required. The launcher supplies placeholder values when no key is configured.
-
-For real LLM planning, copy:
+The one-click launcher requires a real DeepSeek/OpenAI-compatible configuration by default.
+If `skillos-one-click-launcher\config.local.ps1` does not exist, the startup
+window prompts for:
 
 ```text
-skillos-one-click-launcher\config.example.ps1
+DeepSeek API URL
+DeepSeek model
+DeepSeek API key
 ```
 
-to:
+The key input is hidden. The values are saved only to:
 
 ```text
 skillos-one-click-launcher\config.local.ps1
 ```
 
-Then fill your own endpoint and key:
+`config.local.ps1` is ignored by Git and must not be committed.
+
+You can also create it manually by copying:
+
+```text
+skillos-one-click-launcher\config.example.ps1
+```
+
+Then fill:
 
 ```powershell
 $env:LLM_API_URL = "https://api.deepseek.com"
-$env:LLM_MODEL = "your-model-id"
+$env:LLM_MODEL = "deepseek-v4-flash"
 $env:LLM_API_KEY = "your-api-key"
 ```
-
-`config.local.ps1` is ignored by Git and must not be committed.
 
 ## Useful Demo Pages
 
 ```text
 http://127.0.0.1:5174/wiki
+http://127.0.0.1:5174/ingest
 http://127.0.0.1:5174/graph
+http://127.0.0.1:5174/harness
 http://127.0.0.1:5174/evaluation
 http://127.0.0.1:5174/execution
 http://127.0.0.1:5174/evolution
@@ -104,11 +115,12 @@ For the group-demo checklist, API configuration, fixture import steps, and
 troubleshooting, see:
 
 ```text
-docs\SKILLOS_DEMO_OPERATOR_GUIDE_20260516.md
+docs\SKILLOS_GROUP_OPERATION_MANUAL_FINAL_20260527.md
 ```
 
-For the detailed update report since the previous demo-paper PR baseline, see:
+For the detailed update report and SkillsBench analysis, see:
 
 ```text
-docs\SKILLOS_DEMO_PAPER_UPDATE_REPORT_20260516.md
+docs\SKILLOS_PR_UPDATE_SUMMARY_AFTER_SKILLSBENCH_20260529.md
+docs\SKILLOS_SKILLSBENCH_FIVE_TASK_DEEP_ANALYSIS_20260529.md
 ```

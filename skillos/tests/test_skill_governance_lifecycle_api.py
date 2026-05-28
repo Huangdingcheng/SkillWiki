@@ -33,9 +33,24 @@ class FakeWiki:
             item.skill_id: item
             for item in ([skill] if skill else []) + list(extra_skills or [])
         }
+        self.last_new_version_overrides: dict | None = None
 
     async def get(self, skill_id: str) -> Skill | None:
         return self.skills.get(skill_id)
+
+    async def create_new_version(self, source_skill_id: str, bump: str = "patch", **overrides) -> Skill:
+        source = await self.get(source_skill_id)
+        if source is None:
+            raise ValueError(f"Source Skill does not exist: {source_skill_id}")
+        self.last_new_version_overrides = dict(overrides)
+        new_skill = source.model_copy(deep=True)
+        new_skill.skill_id = f"{source.skill_id}-new"
+        new_skill.version = "1.0.1"
+        new_skill.state = SkillState.DRAFT
+        for key, value in overrides.items():
+            setattr(new_skill, key, value)
+        self.skills[new_skill.skill_id] = new_skill
+        return new_skill
 
 
 class FakeGraph:
@@ -442,6 +457,123 @@ def test_governance_repository_status_is_read_only(
     assert data["dirty"] is False
     assert data["ahead"] == 0
     assert data["behind"] == 0
+
+
+def test_lifecycle_diff_returns_business_diff_for_compare_to(
+    git_repo: Path,
+    skill: Skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKILLOS_GOVERNANCE_REPO", str(git_repo))
+    previous = skill.model_copy(deep=True)
+    previous.skill_id = "skill-previous"
+    previous.version = "1.0.0"
+    current = skill.model_copy(deep=True)
+    current.skill_id = "skill-current"
+    current.version = "1.1.0"
+    current.description = "Search wiki entries with filters."
+    current.interface.input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer"},
+        },
+        "required": ["query", "limit"],
+    }
+    current.implementation = SkillImplementation(prompt_template="Search for {query} with limit {limit}")
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_app_state] = lambda: SimpleNamespace(
+        wiki=FakeWiki(current, [previous]),
+        graph=FakeGraph(),
+        version_ctrl=None,
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        f"/api/v1/lifecycle/{current.skill_id}/diff",
+        params={"compare_to": previous.skill_id},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["business_summary"]["changed_fields"] >= 3
+    assert data["business_summary"]["breaking"] is True
+    assert data["breaking"] is True
+    assert data["suggested_bump"] == "major"
+    fields = {item["field"] for item in data["business_diff"]}
+    assert "description" in fields
+    assert "interface.input_schema.required" in fields
+    assert "implementation.prompt_template" in fields
+
+
+def test_new_version_accepts_editable_fields_and_returns_draft(
+    git_repo: Path,
+    skill: Skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKILLOS_GOVERNANCE_REPO", str(git_repo))
+    wiki = FakeWiki(skill)
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_app_state] = lambda: SimpleNamespace(
+        wiki=wiki,
+        graph=FakeGraph(),
+        version_ctrl=None,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/v1/lifecycle/{skill.skill_id}/new-version",
+        json={
+            "bump": "minor",
+            "description": "Search wiki entries with filters.",
+            "tags": ["wiki", "search", "version-lab"],
+            "interface": {
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["query", "limit"],
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"results": {"type": "array"}},
+                },
+                "preconditions": ["query is not blank"],
+                "postconditions": ["returns filtered results"],
+            },
+            "implementation": {
+                "language": "python",
+                "prompt_template": "Search for {query} with limit {limit}",
+            },
+            "evaluation": {
+                "verifier_specs": [{"type": "json_array", "path": "output.results"}],
+                "benchmark_task_ids": ["skillsbench-search-wiki"],
+                "harness_validation": {"previous": "must be cleared by new version"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["state"] == "S2"
+    assert data["description"] == "Search wiki entries with filters."
+    assert "version-lab" in data["tags"]
+    assert data["evaluation"]["verifier_specs"] == [{"type": "json_array", "path": "output.results"}]
+    assert data["evaluation"]["benchmark_task_ids"] == ["skillsbench-search-wiki"]
+    assert data["evaluation"]["harness_validation"] == {}
+    assert wiki.last_new_version_overrides is not None
+    assert set(wiki.last_new_version_overrides) >= {
+        "description",
+        "tags",
+        "interface",
+        "implementation",
+        "evaluation",
+    }
 
 
 def test_propose_maintenance_change_rejects_skill_id_mismatch(

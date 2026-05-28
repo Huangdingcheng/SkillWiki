@@ -20,6 +20,7 @@ import type {
   MaintenanceReviewResponse,
   MaintenanceProposal,
   MaintenanceProposalListResponse,
+  NewVersionRequest,
   OverviewStats,
   SkillReleaseRecord,
   SkillRollbackRecord,
@@ -87,8 +88,13 @@ export const lifecycleApi = {
   reviewAndRelease: (id: string) =>
     http.post<SkillSummary>(`/lifecycle/${id}/review-and-release`).then(r => r.data),
 
-  newVersion: (id: string, bump: 'major' | 'minor' | 'patch' = 'patch') =>
-    http.post<SkillSummary>(`/lifecycle/${id}/new-version`, { bump }).then(r => r.data),
+  newVersion: (
+    id: string,
+    requestOrBump: NewVersionRequest | 'major' | 'minor' | 'patch' = 'patch',
+  ) => {
+    const request = typeof requestOrBump === 'string' ? { bump: requestOrBump } : requestOrBump
+    return http.post<SkillSummary>(`/lifecycle/${id}/new-version`, request).then(r => r.data)
+  },
 
   getDiff: (id: string, compare_to?: string) =>
     http.get<Record<string, unknown>>(`/lifecycle/${id}/diff`, { params: compare_to ? { compare_to } : {} }).then(r => r.data),

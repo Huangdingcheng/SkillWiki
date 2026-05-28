@@ -156,6 +156,20 @@ async def create_new_version(
     overrides = {}
     if req.description:
         overrides["description"] = req.description
+    if req.tags is not None:
+        overrides["tags"] = req.tags
+    if req.interface is not None:
+        overrides["interface"] = req.interface
+    if req.implementation is not None:
+        overrides["implementation"] = req.implementation
+    if req.evaluation is not None:
+        evaluation = req.evaluation.model_copy(deep=True)
+        evaluation.harness_validation = {}
+        overrides["evaluation"] = evaluation
+    if req.test_cases is not None:
+        overrides["test_cases"] = req.test_cases
+    if req.metadata is not None:
+        overrides["metadata"] = req.metadata
     skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
     return _to_summary(skill)
 
@@ -231,23 +245,37 @@ async def get_skill_diff(
         if other.name == skill.name and hasattr(app.wiki, "diff_versions"):
             try:
                 raw_diff = await app.wiki.diff_versions(skill.name, other.version, skill.version)
+                business_diff = _business_skill_diff(other, skill)
+                business_summary = _summarize_business_diff(business_diff)
                 return {
                     "skill_id": skill_id,
                     "compare_to": compare_to,
                     "diff": _format_unified_diff(raw_diff),
                     "raw_diff": raw_diff,
-                    "suggested_bump": "patch",
+                    "business_diff": business_diff,
+                    "business_summary": business_summary,
+                    "breaking": business_summary["breaking"],
+                    "suggested_bump": business_summary["suggested_bump"],
                     "source": "git",
                 }
             except Exception:
                 pass
 
         diff = app.version_ctrl.compute_diff(other, skill) if app.version_ctrl else {}
+        business_diff = _business_skill_diff(other, skill)
+        business_summary = _summarize_business_diff(business_diff)
         return {
             "skill_id": skill_id,
             "compare_to": compare_to,
             "diff": _format_diff(diff),
-            "suggested_bump": app.version_ctrl.suggest_version_bump(diff) if app.version_ctrl else "patch",
+            "business_diff": business_diff,
+            "business_summary": business_summary,
+            "breaking": business_summary["breaking"],
+            "suggested_bump": (
+                app.version_ctrl.suggest_version_bump(diff)
+                if app.version_ctrl and not business_diff
+                else business_summary["suggested_bump"]
+            ),
             "source": "version_controller",
         }
 
@@ -564,6 +592,114 @@ def _format_unified_diff(raw_diff: str) -> List[Dict[str, Any]]:
     current["new_value"] = "\n".join(current["new_lines"])
     rows.append(current)
     return rows
+
+
+def _business_skill_diff(old_skill: Skill, new_skill: Skill) -> List[Dict[str, Any]]:
+    old_data = old_skill.model_dump(mode="json")
+    new_data = new_skill.model_dump(mode="json")
+    rows: List[Dict[str, Any]] = []
+    for field in (
+        "description",
+        "tags",
+        "skill_type",
+        "domain",
+        "granularity_level",
+        "interface.input_schema",
+        "interface.input_schema.required",
+        "interface.output_schema",
+        "interface.preconditions",
+        "interface.postconditions",
+        "implementation.language",
+        "implementation.code",
+        "implementation.prompt_template",
+        "implementation.tool_calls",
+        "implementation.sub_skill_ids",
+        "evaluation.verifier_specs",
+        "evaluation.benchmark_task_ids",
+    ):
+        old_value = _get_nested_value(old_data, field)
+        new_value = _get_nested_value(new_data, field)
+        if old_value == new_value:
+            continue
+        row = {
+            "field": field,
+            "change_type": _business_change_type(old_value, new_value),
+            "category": _business_change_category(field),
+            "old_value": old_value,
+            "new_value": new_value,
+            "is_breaking": _business_change_is_breaking(field, old_value, new_value),
+        }
+        rows.append(row)
+    return rows
+
+
+def _summarize_business_diff(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    breaking = any(row.get("is_breaking") for row in rows)
+    categories = sorted({str(row.get("category", "general")) for row in rows})
+    suggested_bump = "major" if breaking else ("minor" if any(
+        row.get("category") in {"interface", "implementation"} for row in rows
+    ) else "patch")
+    return {
+        "changed_fields": len(rows),
+        "breaking": breaking,
+        "categories": categories,
+        "suggested_bump": suggested_bump,
+        "summary": _business_summary_text(rows, breaking, suggested_bump),
+    }
+
+
+def _business_summary_text(rows: List[Dict[str, Any]], breaking: bool, suggested_bump: str) -> str:
+    if not rows:
+        return "No business-level Skill changes detected."
+    fields = ", ".join(str(row["field"]) for row in rows[:4])
+    suffix = "" if len(rows) <= 4 else f", and {len(rows) - 4} more"
+    risk = "breaking" if breaking else "non-breaking"
+    return f"{len(rows)} {risk} field changes: {fields}{suffix}. Suggested bump: {suggested_bump}."
+
+
+def _business_change_type(old_value: Any, new_value: Any) -> str:
+    if old_value is None and new_value is not None:
+        return "added"
+    if old_value is not None and new_value is None:
+        return "removed"
+    return "modified"
+
+
+def _business_change_category(field: str) -> str:
+    if field.startswith("interface."):
+        return "interface"
+    if field.startswith("implementation."):
+        return "implementation"
+    if field.startswith("evaluation."):
+        return "evaluation"
+    return "metadata"
+
+
+def _business_change_is_breaking(field: str, old_value: Any, new_value: Any) -> bool:
+    if field == "interface.input_schema.required":
+        old_required = set(old_value or [])
+        new_required = set(new_value or [])
+        return not old_required.issuperset(new_required)
+    if field == "interface.input_schema":
+        return _schema_required_added(old_value, new_value)
+    return False
+
+
+def _schema_required_added(old_value: Any, new_value: Any) -> bool:
+    if not isinstance(old_value, dict) or not isinstance(new_value, dict):
+        return False
+    old_required = set(old_value.get("required") or [])
+    new_required = set(new_value.get("required") or [])
+    return not old_required.issuperset(new_required)
+
+
+def _get_nested_value(data: Dict[str, Any], path: str) -> Any:
+    value: Any = data
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
 
 
 async def _get_skill_or_404(skill_id: str, app: AppState):
