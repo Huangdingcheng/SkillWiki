@@ -59,6 +59,9 @@ skillos/skillos/storage/skill_repo/SkillStorage/
 
 # Runtime harness evidence
 artifacts/harness-runs/
+artifacts/eval-readiness-runs/
+artifacts/input-skill-eval-runs/
+artifacts/skillsbench-runs/
 
 # Local one-click demo launcher state and secrets
 skillos-one-click-launcher/config.local.ps1

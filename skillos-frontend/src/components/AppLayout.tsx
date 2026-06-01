@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Layout, Menu, Switch, Badge, Tooltip, Avatar, Tag } from 'antd'
+import { Layout, Menu, Switch, Badge, Tooltip, Avatar, Tag, Grid } from 'antd'
 import {
   DashboardOutlined,
   BookOutlined,
@@ -22,6 +22,7 @@ import { useAppStore } from '@/store/appStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
 
 const { Header, Sider, Content } = Layout
+const { useBreakpoint } = Grid
 
 const menuItems = [
   {
@@ -66,19 +67,24 @@ const menuItems = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
+  const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
   const { darkMode, toggleDark, wsEvents } = useAppStore()
   useWebSocket()
 
+  const isNarrow = screens.xs && !screens.md
+  const siderCollapsed = isNarrow ? true : collapsed
   const unreadEvents = wsEvents.filter(e => e.type !== 'pong' && e.type !== 'connected').length
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
         collapsible
-        collapsed={collapsed}
+        collapsed={siderCollapsed}
         onCollapse={setCollapsed}
+        collapsedWidth={isNarrow ? 64 : 80}
+        width={isNarrow ? 64 : 200}
         theme={darkMode ? 'dark' : 'light'}
         style={{
           boxShadow: '2px 0 8px rgba(0,0,0,0.08)',
@@ -97,7 +103,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
-          {!collapsed ? (
+          {!siderCollapsed ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Avatar
                 style={{ background: 'linear-gradient(135deg, #1677ff, #722ed1)', flexShrink: 0 }}
@@ -120,6 +126,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
+          inlineCollapsed={siderCollapsed}
           style={{ borderRight: 0, marginTop: 8 }}
         />
       </Sider>
@@ -128,16 +135,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Header
           style={{
             background: darkMode ? '#141414' : '#fff',
-            padding: '0 24px',
+            padding: isNarrow ? '0 12px' : '0 24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 12,
             boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
             zIndex: 9,
           }}
         >
-          <div style={{ fontWeight: 600, color: darkMode ? '#fff' : '#333' }}>
-            Skill-Centric Operating System for Self-Evolving Agents
+          <div
+            style={{
+              fontWeight: 600,
+              color: darkMode ? '#fff' : '#333',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isNarrow ? 'SkillOS' : 'Skill-Centric Operating System for Self-Evolving Agents'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Tooltip title={`${unreadEvents} live events`}>

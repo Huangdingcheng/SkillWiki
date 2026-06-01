@@ -1,0 +1,348 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "--- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:past_skills:requirements_for_outputs"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.validation",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are executing the imported legacy Skill 'requirements_for_outputs' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- source_files: {source_files}\n- artifact_type: {artifact_type}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_type": {
+          "description": "Expected artifact family, for example document, presentation, spreadsheet, image, or code.",
+          "enum": [
+            "document",
+            "presentation",
+            "spreadsheet",
+            "image",
+            "code",
+            "api_project",
+            "other"
+          ],
+          "type": "string"
+        },
+        "constraints": {
+          "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_context": {
+          "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+          "type": "string"
+        },
+        "source_files": {
+          "description": "Local file paths or artifact identifiers the Skill is allowed to inspect or transform.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task": {
+          "description": "Concrete task the imported legacy Skill should perform.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "source_context",
+        "artifact_type"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "description": "Paths or identifiers of artifacts created, edited, or reviewed by the Skill.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured task result produced by the normalized SkillOS Skill.",
+          "type": "object"
+        },
+        "validation": {
+          "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result preserves the original legacy Skill capability in SkillOS form.",
+      "output.evidence cites the legacy instructions, source path, or context used for the result.",
+      "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+    ],
+    "preconditions": [
+      "Legacy Skill source has been reviewed: legacy Skill.",
+      "Caller supplied a concrete task and relevant source_context.",
+      "Any file, network, or code execution must stay within caller-approved constraints."
+    ],
+    "side_effects": []
+  },
+  "name": "requirements_for_outputs_past_skills_anthropic_xlsx",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "55591d7decc1fb36065019767e79939314cc35db2087c5b3c3ba637db5b41e52",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "requirements_for_outputs",
+            "passed_challenges": 1,
+            "score": 0.76
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Canonical SkillOS schema fields plus graph relation preview.",
+            "failure_signal": "Lost interface, wrong layer, or missing graph relation evidence.",
+            "rubric": [
+              "Preserves the original capability description.",
+              "Assigns the correct SkillX layer.",
+              "Carries forward dependency, component, and parent relationships when present."
+            ],
+            "task": "Convert legacy Skill requirements_for_outputs into canonical SkillOS representation.",
+            "task_id": "past_skills_normalize_requirements_for_outputs"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\", \"steps\": [\"Use a consistent, professional font (e.g., Arial, Times New Roman) for all deliverables unless otherwise instructed by the user\", \"Every Excel model MUST be delivered with ZERO formula errors (#REF!, #DIV/0!, #VALUE!, #N/A, #NAME?)\", \"Study and EXACTLY match existing format, style, and conventions when modifying files\", \"Never impose standardized formatting on files with established patterns\", \"Existing template conventions ALWAYS override these guidelines\", \"Blue text (RGB: 0,0,255)**: Hardcoded inputs, and numbers users will change for scenarios\", \"Black text (RGB: 0,0,0)**: ALL formulas and calculations\", \"Green text (RGB: 0,128,0)**: Links pulling from other worksheets within same workbook\", \"Red text (RGB: 255,0,0)**: External links to other files\", \"Yellow background (RGB: 255,255,0)**: Key assumptions needing attention or cells that need to be updated\", \"Years**: Format as text strings (e.g., \\\"2024\\\" not \\\"2,024\\\")\", \"Currency**: Use $#,##0 format; ALWAYS specify units in headers (\\\"Revenue ($mm)\\\")\", \"Zeros**: Use number formatting to make all zeros \\\"-\\\", including percentages (e.g., \\\"$#,##0;($#,##0);-\\\")\", \"Percentages**: Default to 0.0% format (one decimal)\", \"Multiples**: Format as 0.0x for valuation multiples (EV/EBITDA, P/E)\", \"Negative numbers**: Use parentheses (123) not minus -123\", \"Place ALL assumptions (growth rates, margins, multiples, etc.) in separate assumption cells\", \"Use cell references instead of hardcoded values in formulas\", \"Example: Use =B5*(1+$B$6) instead of =B5*1.05\", \"Verify all cell references are correct\", \"Check for off-by-one errors in ranges\", \"Ensure consistent formulas across all projection periods\", \"Test with edge cases (zero values, negative numbers)\", \"Verify no unintended circular references\", \"Comment or in cells beside (if end of table). Format: \\\"Source: [System/Document], [Date], [Specific Reference], [URL if applicable]\\\"\", \"Examples:\", \"\\\"Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]\\\"\", \"\\\"Source: Company 10-Q, Q2 2025, Exhibit 99.1, [SEC EDGAR URL]\\\"\", \"\\\"Source: Bloomberg Terminal, 8/15/2025, AAPL US Equity\\\"\", \"\\\"Source: FactSet, 8/20/2025, Consensus Estimates Screen\\\"\", \"Choose tool**: pandas for data, openpyxl for formulas/formatting\", \"Create/Load**: Create new workbook or load existing file\", \"Modify**: Add/edit data, formulas, and formatting\", \"Save**: Write to file\", \"Recalculate formulas (MANDATORY IF USING FORMULAS)**: Use the scripts/recalc.py script\", \"Verify and fix any errors**:\", \"The script returns JSON with error details\", \"If `status` is `errors_found`, check `error_summary` for specific error types and locations\", \"Fix the identified errors and recalculate again\", \"Common errors to fix:\", \"`#REF!`: Invalid cell references\", \"`#DIV/0!`: Division by zero\", \"`#VALUE!`: Wrong data type in formula\", \"`#NAME?`: Unrecognized formula name\", \"Automatically sets up LibreOffice macro on first run\", \"Recalculates all formulas in all sheets\", \"Scans ALL cells for Excel errors (#REF!, #DIV/0!, etc.)\", \"Returns JSON with detailed error locations and counts\", \"Works on both Linux and macOS\", \"[ ] **Test 2-3 sample references**: Verify they pull correct values before building full model\", \"[ ] **Column mapping**: Confirm Excel columns match (e.g., column 64 = BL, not BK)\", \"[ ] **Row offset**: Remember Excel rows are 1-indexed (DataFrame row 5 = Excel row 6)\", \"[ ] **NaN handling**: Check for null values with `pd.notna()`\", \"[ ] **Far-right columns**: FY data often in columns 50+\", \"[ ] **Multiple matches**: Search all occurrences, not just first\", \"[ ] **Division by zero**: Check denominators before using `/` in formulas (#DIV/0!)\", \"[ ] **Wrong references**: Verify all cell references point to intended cells (#REF!)\", \"[ ] **Cross-sheet references**: Use correct format (Sheet1!A1) for linking sheets\", \"[ ] **Start small**: Test formulas on 2-3 cells before applying broadly\", \"[ ] **Verify dependencies**: Check all cells referenced in formulas exist\", \"[ ] **Test edge cases**: Include zero, negative, and very large values\", \"pandas**: Best for data analysis, bulk operations, and simple data export\", \"openpyxl**: Best for complex formatting, formulas, and Excel-specific features\", \"Cell indices are 1-based (row=1, column=1 refers to cell A1)\", \"Use `data_only=True` to read calculated values: `load_workbook('file.xlsx', data_only=True)`\", \"Warning**: If opened with `data_only=True` and saved, formulas are replaced with values and permanently lost\", \"For large files: Use `read_only=True` for reading or `write_only=True` for writing\", \"Formulas are preserved but not evaluated - use scripts/recalc.py to update values\", \"Specify data types to avoid inference issues: `pd.read_excel('file.xlsx', dtype={'id': str})`\", \"For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`\", \"Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`\", \"Write minimal, concise Python code without unnecessary comments\", \"Avoid verbose variable names and redundant operations\", \"Avoid unnecessary print statements\", \"Add comments to cells with complex formulas or important assumptions\", \"Document data sources for hardcoded values\", \"Include notes for key calculations and model sections\"], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "constraints": [
+            "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\", \"steps\": [\"Use a consistent, professional font (e.g., Arial, Times New Roman) for all deliverables unless otherwise instructed by the user\", \"Every Excel model MUST be delivered with ZERO formula errors (#REF!, #DIV/0!, #VALUE!, #N/A, #NAME?)\", \"Study and EXACTLY match existing format, style, and conventions when modifying files\", \"Never impose standardized formatting on files with established patterns\", \"Existing template conventions ALWAYS override these guidelines\", \"Blue text (RGB: 0,0,255)**: Hardcoded inputs, and numbers users will change for scenarios\", \"Black text (RGB: 0,0,0)**: ALL formulas and calculations\", \"Green text (RGB: 0,128,0)**: Links pulling from other worksheets within same workbook\", \"Red text (RGB: 255,0,0)**: External links to other files\", \"Yellow background (RGB: 255,255,0)**: Key assumptions needing attention or cells that need to be updated\", \"Years**: Format as text strings (e.g., \\\"2024\\\" not \\\"2,024\\\")\", \"Currency**: Use $#,##0 format; ALWAYS specify units in headers (\\\"Revenue ($mm)\\\")\", \"Zeros**: Use number formatting to make all zeros \\\"-\\\", including percentages (e.g., \\\"$#,##0;($#,##0);-\\\")\", \"Percentages**: Default to 0.0% format (one decimal)\", \"Multiples**: Format as 0.0x for valuation multiples (EV/EBITDA, P/E)\", \"Negative numbers**: Use parentheses (123) not minus -123\", \"Place ALL assumptions (growth rates, margins, multiples, etc.) in separate assumption cells\", \"Use cell references instead of hardcoded values in formulas\", \"Example: Use =B5*(1+$B$6) instead of =B5*1.05\", \"Verify all cell references are correct\", \"Check for off-by-one errors in ranges\", \"Ensure consistent formulas across all projection periods\", \"Test with edge cases (zero values, negative numbers)\", \"Verify no unintended circular references\", \"Comment or in cells beside (if end of table). Format: \\\"Source: [System/Document], [Date], [Specific Reference], [URL if applicable]\\\"\", \"Examples:\", \"\\\"Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]\\\"\", \"\\\"Source: Company 10-Q, Q2 2025, Exhibit 99.1, [SEC EDGAR URL]\\\"\", \"\\\"Source: Bloomberg Terminal, 8/15/2025, AAPL US Equity\\\"\", \"\\\"Source: FactSet, 8/20/2025, Consensus Estimates Screen\\\"\", \"Choose tool**: pandas for data, openpyxl for formulas/formatting\", \"Create/Load**: Create new workbook or load existing file\", \"Modify**: Add/edit data, formulas, and formatting\", \"Save**: Write to file\", \"Recalculate formulas (MANDATORY IF USING FORMULAS)**: Use the scripts/recalc.py script\", \"Verify and fix any errors**:\", \"The script returns JSON with error details\", \"If `status` is `errors_found`, check `error_summary` for specific error types and locations\", \"Fix the identified errors and recalculate again\", \"Common errors to fix:\", \"`#REF!`: Invalid cell references\", \"`#DIV/0!`: Division by zero\", \"`#VALUE!`: Wrong data type in formula\", \"`#NAME?`: Unrecognized formula name\", \"Automatically sets up LibreOffice macro on first run\", \"Recalculates all formulas in all sheets\", \"Scans ALL cells for Excel errors (#REF!, #DIV/0!, etc.)\", \"Returns JSON with detailed error locations and counts\", \"Works on both Linux and macOS\", \"[ ] **Test 2-3 sample references**: Verify they pull correct values before building full model\", \"[ ] **Column mapping**: Confirm Excel columns match (e.g., column 64 = BL, not BK)\", \"[ ] **Row offset**: Remember Excel rows are 1-indexed (DataFrame row 5 = Excel row 6)\", \"[ ] **NaN handling**: Check for null values with `pd.notna()`\", \"[ ] **Far-right columns**: FY data often in columns 50+\", \"[ ] **Multiple matches**: Search all occurrences, not just first\", \"[ ] **Division by zero**: Check denominators before using `/` in formulas (#DIV/0!)\", \"[ ] **Wrong references**: Verify all cell references point to intended cells (#REF!)\", \"[ ] **Cross-sheet references**: Use correct format (Sheet1!A1) for linking sheets\", \"[ ] **Start small**: Test formulas on 2-3 cells before applying broadly\", \"[ ] **Verify dependencies**: Check all cells referenced in formulas exist\", \"[ ] **Test edge cases**: Include zero, negative, and very large values\", \"pandas**: Best for data analysis, bulk operations, and simple data export\", \"openpyxl**: Best for complex formatting, formulas, and Excel-specific features\", \"Cell indices are 1-based (row=1, column=1 refers to cell A1)\", \"Use `data_only=True` to read calculated values: `load_workbook('file.xlsx', data_only=True)`\", \"Warning**: If opened with `data_only=True` and saved, formulas are replaced with values and permanently lost\", \"For large files: Use `read_only=True` for reading or `write_only=True` for writing\", \"Formulas are preserved but not evaluated - use scripts/recalc.py to update values\", \"Specify data types to avoid inference issues: `pd.read_excel('file.xlsx', dtype={'id': str})`\", \"For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`\", \"Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`\", \"Write minimal, concise Python code without unnecessary comments\", \"Avoid verbose variable names and redundant operations\", \"Avoid unnecessary print statements\", \"Add comments to cells with complex formulas or important assumptions\", \"Document data sources for hardcoded values\", \"Include notes for key calculations and model sections\"], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "examples": [
+            "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\", \"steps\": [\"Use a consistent, professional font (e.g., Arial, Times New Roman) for all deliverables unless otherwise instructed by the user\", \"Every Excel model MUST be delivered with ZERO formula errors (#REF!, #DIV/0!, #VALUE!, #N/A, #NAME?)\", \"Study and EXACTLY match existing format, style, and conventions when modifying files\", \"Never impose standardized formatting on files with established patterns\", \"Existing template conventions ALWAYS override these guidelines\", \"Blue text (RGB: 0,0,255)**: Hardcoded inputs, and numbers users will change for scenarios\", \"Black text (RGB: 0,0,0)**: ALL formulas and calculations\", \"Green text (RGB: 0,128,0)**: Links pulling from other worksheets within same workbook\", \"Red text (RGB: 255,0,0)**: External links to other files\", \"Yellow background (RGB: 255,255,0)**: Key assumptions needing attention or cells that need to be updated\", \"Years**: Format as text strings (e.g., \\\"2024\\\" not \\\"2,024\\\")\", \"Currency**: Use $#,##0 format; ALWAYS specify units in headers (\\\"Revenue ($mm)\\\")\", \"Zeros**: Use number formatting to make all zeros \\\"-\\\", including percentages (e.g., \\\"$#,##0;($#,##0);-\\\")\", \"Percentages**: Default to 0.0% format (one decimal)\", \"Multiples**: Format as 0.0x for valuation multiples (EV/EBITDA, P/E)\", \"Negative numbers**: Use parentheses (123) not minus -123\", \"Place ALL assumptions (growth rates, margins, multiples, etc.) in separate assumption cells\", \"Use cell references instead of hardcoded values in formulas\", \"Example: Use =B5*(1+$B$6) instead of =B5*1.05\", \"Verify all cell references are correct\", \"Check for off-by-one errors in ranges\", \"Ensure consistent formulas across all projection periods\", \"Test with edge cases (zero values, negative numbers)\", \"Verify no unintended circular references\", \"Comment or in cells beside (if end of table). Format: \\\"Source: [System/Document], [Date], [Specific Reference], [URL if applicable]\\\"\", \"Examples:\", \"\\\"Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]\\\"\", \"\\\"Source: Company 10-Q, Q2 2025, Exhibit 99.1, [SEC EDGAR URL]\\\"\", \"\\\"Source: Bloomberg Terminal, 8/15/2025, AAPL US Equity\\\"\", \"\\\"Source: FactSet, 8/20/2025, Consensus Estimates Screen\\\"\", \"Choose tool**: pandas for data, openpyxl for formulas/formatting\", \"Create/Load**: Create new workbook or load existing file\", \"Modify**: Add/edit data, formulas, and formatting\", \"Save**: Write to file\", \"Recalculate formulas (MANDATORY IF USING FORMULAS)**: Use the scripts/recalc.py script\", \"Verify and fix any errors**:\", \"The script returns JSON with error details\", \"If `status` is `errors_found`, check `error_summary` for specific error types and locations\", \"Fix the identified errors and recalculate again\", \"Common errors to fix:\", \"`#REF!`: Invalid cell references\", \"`#DIV/0!`: Division by zero\", \"`#VALUE!`: Wrong data type in formula\", \"`#NAME?`: Unrecognized formula name\", \"Automatically sets up LibreOffice macro on first run\", \"Recalculates all formulas in all sheets\", \"Scans ALL cells for Excel errors (#REF!, #DIV/0!, etc.)\", \"Returns JSON with detailed error locations and counts\", \"Works on both Linux and macOS\", \"[ ] **Test 2-3 sample references**: Verify they pull correct values before building full model\", \"[ ] **Column mapping**: Confirm Excel columns match (e.g., column 64 = BL, not BK)\", \"[ ] **Row offset**: Remember Excel rows are 1-indexed (DataFrame row 5 = Excel row 6)\", \"[ ] **NaN handling**: Check for null values with `pd.notna()`\", \"[ ] **Far-right columns**: FY data often in columns 50+\", \"[ ] **Multiple matches**: Search all occurrences, not just first\", \"[ ] **Division by zero**: Check denominators before using `/` in formulas (#DIV/0!)\", \"[ ] **Wrong references**: Verify all cell references point to intended cells (#REF!)\", \"[ ] **Cross-sheet references**: Use correct format (Sheet1!A1) for linking sheets\", \"[ ] **Start small**: Test formulas on 2-3 cells before applying broadly\", \"[ ] **Verify dependencies**: Check all cells referenced in formulas exist\", \"[ ] **Test edge cases**: Include zero, negative, and very large values\", \"pandas**: Best for data analysis, bulk operations, and simple data export\", \"openpyxl**: Best for complex formatting, formulas, and Excel-specific features\", \"Cell indices are 1-based (row=1, column=1 refers to cell A1)\", \"Use `data_only=True` to read calculated values: `load_workbook('file.xlsx', data_only=True)`\", \"Warning**: If opened with `data_only=True` and saved, formulas are replaced with values and permanently lost\", \"For large files: Use `read_only=True` for reading or `write_only=True` for writing\", \"Formulas are preserved but not evaluated - use scripts/recalc.py to update values\", \"Specify data types to avoid inference issues: `pd.read_excel('file.xlsx', dtype={'id': str})`\", \"For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`\", \"Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`\", \"Write minimal, concise Python code without unnecessary comments\", \"Avoid verbose variable names and redundant operations\", \"Avoid unnecessary print statements\", \"Add comments to cells with complex formulas or important assumptions\", \"Document data sources for hardcoded values\", \"Include notes for key calculations and model sections\"], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "facts": [
+            "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing"
+          ],
+          "procedures": [
+            "Use a consistent, professional font (e.g., Arial, Times New Roman) for all deliverables unless otherwise instructed by the user",
+            "Use cell references instead of hardcoded values in formulas",
+            "Verify all cell references are correct",
+            "Verify no unintended circular references",
+            "Use `data_only=True` to read calculated values: `load_workbook('file.xlsx', data_only=True)`"
+          ],
+          "summary": "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing "
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "requirements_for_outputs",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.76,
+            "task_id": "past_skills_normalize_requirements_for_outputs"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "--- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "artifact_type": {
+                "description": "Expected artifact family, for example document, presentation, spreadsheet, image, or code.",
+                "enum": [
+                  "document",
+                  "presentation",
+                  "spreadsheet",
+                  "image",
+                  "code",
+                  "api_project",
+                  "other"
+                ],
+                "type": "string"
+              },
+              "constraints": {
+                "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source_context": {
+                "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+                "type": "string"
+              },
+              "source_files": {
+                "description": "Local file paths or artifact identifiers the Skill is allowed to inspect or transform.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "task": {
+                "description": "Concrete task the imported legacy Skill should perform.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "source_context",
+              "artifact_type"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "SkillX functional layer: the candidate preserves a reusable multi-step capability or sub-skill composition.",
+          "name": "requirements_for_outputs",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "artifacts": {
+                "description": "Paths or identifiers of artifacts created, edited, or reviewed by the Skill.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "evidence": {
+                "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured task result produced by the normalized SkillOS Skill.",
+                "type": "object"
+              },
+              "validation": {
+                "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "validation"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result preserves the original legacy Skill capability in SkillOS form.",
+            "output.evidence cites the legacy instructions, source path, or context used for the result.",
+            "output.validation records whether required inputs, safety constraints, and known limitations were satisfied."
+          ],
+          "preconditions": [
+            "Legacy Skill source has been reviewed: legacy Skill.",
+            "Caller supplied a concrete task and relevant source_context.",
+            "Any file, network, or code execution must stay within caller-approved constraints."
+          ],
+          "prompt_template": "You are executing the imported legacy Skill 'requirements_for_outputs' as a SkillOS functional Skill.\nOriginal source: legacy Skill source\nCapability summary: --- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- source_files: {source_files}\n- artifact_type: {artifact_type}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n--- name: xlsx description: \"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+          "score": 0.76,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "past_skills",
+            "ctx2skill",
+            "code",
+            "frontend",
+            "spreadsheet",
+            "requirements_for_outputs",
+            "name",
+            "xlsx"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Past Skill candidate preserves legacy capability and relation evidence."
+      },
+      "domain": "data",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "past_skills",
+      "license_note": "public Anthropic Skills excerpt; converted as legacy/past skill input only",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\past_skills\\anthropic_17_xlsx.md",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic Skills public repository",
+      "raw_content_preview": "{\"name\": \"Requirements for Outputs\", \"description\": \"--- name: xlsx description: \\\"Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new s\", \"steps\": [\"Use a consistent, professional font (e.g., Arial, Times New Roman) for all deliverables unless otherwise instruc",
+      "source_id": "past-skills-anthropic-xlsx",
+      "source_type": "past_skills",
+      "source_url": "https://github.com/anthropics/skills/blob/f458cee31a7577a47ba0c9a101976fa599385174/skills/xlsx/SKILL.md",
+      "unit_id": "79f6ec92-63c3-4c2e-82e9-ea8dfdbf4bcd"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "past-skills-anthropic-xlsx",
+      "79f6ec92-63c3-4c2e-82e9-ea8dfdbf4bcd"
+    ],
+    "source_type": "past_skills"
+  },
+  "skill_id": "da2e62cb-f5f9-4356-85b1-2a49e788985a",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "past_skills",
+    "candidate-review",
+    "ctx2skill",
+    "code",
+    "frontend",
+    "spreadsheet",
+    "requirements_for_outputs",
+    "name",
+    "xlsx",
+    "any",
+    "description",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-fresh-20260527"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}

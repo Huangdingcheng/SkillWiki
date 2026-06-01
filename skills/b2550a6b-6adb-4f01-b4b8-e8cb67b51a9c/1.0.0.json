@@ -1,0 +1,453 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:script:script_dry_run_analyzer"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.script_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.dry_run",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "input.allowed_paths",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.entrypoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.arguments",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.dependencies",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.side_effects",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.mutation_avoided",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Complete {task} as a script-grounded dry-run analysis from {script_context}. Respect dry_run={dry_run} and allowed_paths={allowed_paths}; do not execute or mutate files unless a harness explicitly allows it. Return strict JSON only with this exact shape: {{\"result\":{{\"entrypoint\":\"...\",\"arguments\":[\"...\"],\"dependencies\":[\"...\"],\"side_effects\":[\"...\"],\"mutation_avoided\":true}},\"evidence\":[\"...\"],\"verifier\":{{\"passed\":true,\"checked\":[\"...\"]}}}}. Do not return nested objects for result.arguments, result.dependencies, result.side_effects, or evidence; each must be an array of concise strings.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_paths": {
+          "description": "Paths the verifier allows the script skill to inspect or modify.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dry_run": {
+          "const": true,
+          "default": true,
+          "description": "Whether to describe execution without mutating files or external services.",
+          "type": "boolean"
+        },
+        "script_context": {
+          "description": "Relevant script excerpt, entrypoint, arguments, dependencies, or side-effect notes.",
+          "type": "string"
+        },
+        "task": {
+          "description": "Script-grounded task to complete.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "script_context",
+        "dry_run",
+        "allowed_paths"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "Context-grounded evidence used by the Judge.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "additionalProperties": false,
+          "description": "Structured result produced from the script Skill.",
+          "properties": {
+            "arguments": {
+              "description": "Arguments or input values required by the script operation.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "dependencies": {
+              "description": "Packages, files, environment variables, or services required.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "entrypoint": {
+              "description": "Script function, CLI, or file entrypoint identified.",
+              "type": "string"
+            },
+            "mutation_avoided": {
+              "const": true,
+              "description": "True when the operation stayed in dry-run analysis mode.",
+              "type": "boolean"
+            },
+            "side_effects": {
+              "description": "Potential file, network, process, or state changes.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "entrypoint",
+            "arguments",
+            "dependencies",
+            "side_effects",
+            "mutation_avoided"
+          ],
+          "type": "object"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+          "properties": {
+            "checked": {
+              "description": "Postconditions, constraints, paths, or evidence points checked.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "failure_signal": {
+              "description": "Reason the verifier would reject the result.",
+              "type": "string"
+            },
+            "passed": {
+              "description": "Whether the preview verifier accepts the result.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "passed",
+            "checked"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result describes the script-grounded action or dry-run result.",
+      "output.evidence lists the entrypoint, arguments, dependencies, and side-effect boundaries used.",
+      "output.verifier records whether the requested operation stayed within allowed paths and dry-run constraints."
+    ],
+    "preconditions": [
+      "Script context, allowed paths, and dry-run preference have been reviewed.",
+      "No filesystem or network mutation is performed unless explicitly allowed by the caller."
+    ],
+    "side_effects": []
+  },
+  "name": "script_dry_run_analyzer_script_skillsbench_10_solve_solution",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "73cd4b0de77f2f0a1a22dca1b065e1e6014c4bb94ead4b22740093672f542d5e",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "script_dry_run_analyzer",
+            "passed_challenges": 1,
+            "score": 0.72
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
+            "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
+            "rubric": [
+              "Uses only information grounded in the imported context.",
+              "Returns structured evidence for the expected result.",
+              "Respects documented constraints and failure signals."
+            ],
+            "task": "Use the script context to complete the reusable operation.",
+            "task_id": "script_challenge_1"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "def fill_sc100_form():",
+            "\"\"\"Main function to fill the SC-100 form.\"\"\""
+          ],
+          "constraints": [],
+          "examples": [],
+          "facts": [
+            "# Source: tasks/court-form-filling/solution/solve.sh",
+            "# Project: SkillsBench",
+            "#!/bin/bash",
+            "set -e",
+            "cat > /tmp/fill_form.py << 'PYTHON_SCRIPT'",
+            "#!/usr/bin/env python3",
+            "\"\"\"",
+            "Oracle solution for court-form-filling task."
+          ],
+          "procedures": [],
+          "summary": "# Source: tasks/court-form-filling/solution/solve.sh # Project: SkillsBench"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.72,
+            "task_id": "script_challenge_1"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "allowed_paths": {
+                "description": "Paths the verifier allows the script skill to inspect or modify.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "dry_run": {
+                "const": true,
+                "default": true,
+                "description": "Whether to describe execution without mutating files or external services.",
+                "type": "boolean"
+              },
+              "script_context": {
+                "description": "Relevant script excerpt, entrypoint, arguments, dependencies, or side-effect notes.",
+                "type": "string"
+              },
+              "task": {
+                "description": "Script-grounded task to complete.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "script_context",
+              "dry_run",
+              "allowed_paths"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "Classified as functional from source structure and action count.",
+          "name": "script_dry_run_analyzer",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "Context-grounded evidence used by the Judge.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "additionalProperties": false,
+                "description": "Structured result produced from the script Skill.",
+                "properties": {
+                  "arguments": {
+                    "description": "Arguments or input values required by the script operation.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "dependencies": {
+                    "description": "Packages, files, environment variables, or services required.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "entrypoint": {
+                    "description": "Script function, CLI, or file entrypoint identified.",
+                    "type": "string"
+                  },
+                  "mutation_avoided": {
+                    "const": true,
+                    "description": "True when the operation stayed in dry-run analysis mode.",
+                    "type": "boolean"
+                  },
+                  "side_effects": {
+                    "description": "Potential file, network, process, or state changes.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "entrypoint",
+                  "arguments",
+                  "dependencies",
+                  "side_effects",
+                  "mutation_avoided"
+                ],
+                "type": "object"
+              },
+              "verifier": {
+                "additionalProperties": false,
+                "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+                "properties": {
+                  "checked": {
+                    "description": "Postconditions, constraints, paths, or evidence points checked.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "failure_signal": {
+                    "description": "Reason the verifier would reject the result.",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "description": "Whether the preview verifier accepts the result.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "verifier"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result describes the script-grounded action or dry-run result.",
+            "output.evidence lists the entrypoint, arguments, dependencies, and side-effect boundaries used.",
+            "output.verifier records whether the requested operation stayed within allowed paths and dry-run constraints."
+          ],
+          "preconditions": [
+            "Script context, allowed paths, and dry-run preference have been reviewed.",
+            "No filesystem or network mutation is performed unless explicitly allowed by the caller."
+          ],
+          "prompt_template": "Complete {task} as a script-grounded dry-run analysis from {script_context}. Respect dry_run={dry_run} and allowed_paths={allowed_paths}; do not execute or mutate files unless a harness explicitly allows it. Return strict JSON only with this exact shape: {{\"result\":{{\"entrypoint\":\"...\",\"arguments\":[\"...\"],\"dependencies\":[\"...\"],\"side_effects\":[\"...\"],\"mutation_avoided\":true}},\"evidence\":[\"...\"],\"verifier\":{{\"passed\":true,\"checked\":[\"...\"]}}}}. Do not return nested objects for result.arguments, result.dependencies, result.side_effects, or evidence; each must be an array of concise strings.",
+          "score": 0.72,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "script",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Fallback Ctx2Skill-lite selected the only deterministic candidate."
+      },
+      "domain": "office",
+      "eval_run_id": "p0-full-workflow-125-fresh-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "script",
+      "license_note": "Apache-2.0 benchmark script excerpt; run only in isolated harness/eval directories",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\script\\skillsbench_10_solve-solution.sh",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench script/oracle/test utility",
+      "raw_content_preview": "# Source: tasks/court-form-filling/solution/solve.sh\n# Project: SkillsBench\n\n#!/bin/bash\nset -e\n\ncat > /tmp/fill_form.py << 'PYTHON_SCRIPT'\n#!/usr/bin/env python3\n\"\"\"\nOracle solution for court-form-filling task.\n\nFills out the California SC-100 Small Claims Court form based on the case\ndescription.\n\"\"\"\n\nimport os\nfrom pypdf import PdfReader, PdfWriter\n\nINPUT_PDF = \"/root/sc100-blank.pdf\"\nOUTPUT_PDF = \"/root/sc100-filled.pdf\"\n\n\ndef fill_sc100_form():\n    \"\"\"Main function to fill the SC-100 form.\"",
+      "source_id": "script-skillsbench-10-solve-solution",
+      "source_type": "script",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/court-form-filling/solution/solve.sh",
+      "unit_id": "fb7c323f-cd03-4d64-85da-d8b1dc6335f9"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "script-skillsbench-10-solve-solution",
+      "fb7c323f-cd03-4d64-85da-d8b1dc6335f9"
+    ],
+    "source_type": "script"
+  },
+  "skill_id": "b2550a6b-6adb-4f01-b4b8-e8cb67b51a9c",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "script",
+    "candidate-review",
+    "ctx2skill",
+    "execute",
+    "reusable",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-fresh-20260527",
+    "source-id:script-skillsbench-10-solve-solution",
+    "domain:office"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}

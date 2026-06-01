@@ -9,6 +9,7 @@ import {
   Descriptions,
   Drawer,
   Empty,
+  Form,
   Input,
   Popconfirm,
   Row,
@@ -37,6 +38,9 @@ import { useLocation } from 'react-router-dom'
 import { lifecycleApi, skillsApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
 import type {
+  BusinessDiffEntry,
+  BusinessDiffSummary,
+  NewVersionRequest,
   SkillReleaseRecord,
   SkillRollbackRecord,
   SkillSummary,
@@ -81,11 +85,15 @@ interface DiffLine {
 
 interface DiffData {
   skill_id: string
-  skill_name: string
-  current_version: string
-  history: {
+  skill_name?: string
+  current_version?: string
+  business_diff?: BusinessDiffEntry[]
+  business_summary?: BusinessDiffSummary
+  breaking?: boolean
+  suggested_bump?: 'major' | 'minor' | 'patch'
+  history?: {
     record_id: string
-    from_version: string
+    from_version?: string
     to_version: string
     change_type: string
     summary: string
@@ -94,6 +102,15 @@ interface DiffData {
     diff: DiffLine[]
     is_breaking: boolean
   }[]
+}
+
+interface VersionLabForm {
+  bump: 'major' | 'minor' | 'patch'
+  description?: string
+  tags?: string
+  interface_json?: string
+  implementation_json?: string
+  evaluation_json?: string
 }
 
 function semverCompare(a: string, b: string) {
@@ -231,10 +248,86 @@ function StructuredDiffTable({ diff }: { diff: SnapshotDiffResponse }) {
   )
 }
 
+function jsonText(value: unknown) {
+  return JSON.stringify(value ?? {}, null, 2)
+}
+
+function parseJsonField(value: string | undefined, label: string) {
+  const text = (value ?? '').trim()
+  if (!text) return undefined
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`${label} must be valid JSON`)
+  }
+}
+
+function tagList(value?: string) {
+  return (value ?? '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function businessDiffColor(row: BusinessDiffEntry) {
+  if (row.is_breaking) return 'red'
+  if (row.category === 'interface') return 'orange'
+  if (row.category === 'implementation') return 'blue'
+  return 'default'
+}
+
+function BusinessDiffView({ diff, summary }: { diff: BusinessDiffEntry[]; summary?: BusinessDiffSummary }) {
+  if (!diff.length) return <Empty description="No business-level changes" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {summary && (
+        <Alert
+          type={summary.breaking ? 'warning' : 'info'}
+          showIcon
+          message={summary.summary}
+          description={`Suggested bump: ${summary.suggested_bump}. Categories: ${summary.categories.join(', ') || 'none'}.`}
+        />
+      )}
+      <Table
+        size="small"
+        pagination={false}
+        rowKey={(record, index) => `${record.field}-${index}`}
+        dataSource={diff}
+        columns={[
+          {
+            title: 'Field',
+            render: (_, record) => <Text code>{record.field}</Text>,
+          },
+          {
+            title: 'Change',
+            render: (_, record) => (
+              <Space wrap>
+                <Tag color={businessDiffColor(record)}>{record.change_type}</Tag>
+                <Tag>{record.category}</Tag>
+                {record.is_breaking && <Tag color="red">BREAKING</Tag>}
+              </Space>
+            ),
+          },
+          {
+            title: 'Before',
+            render: (_, record) => renderValue(record.old_value),
+          },
+          {
+            title: 'After',
+            render: (_, record) => renderValue(record.new_value),
+          },
+        ]}
+      />
+    </Space>
+  )
+}
+
 export default function VersionControl() {
   const location = useLocation()
+  const [form] = Form.useForm<VersionLabForm>()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedFull, setSelectedFull] = useState<import('@/api/types').SkillFull | null>(null)
   const [versions, setVersions] = useState<SkillSummary[]>([])
   const [loadingVersions, setLoadingVersions] = useState(false)
   const [bumpLoading, setBumpLoading] = useState(false)
@@ -282,6 +375,24 @@ export default function VersionControl() {
     }
   }, [])
 
+  const loadSelectedFull = useCallback(async (id: string) => {
+    try {
+      const full = await skillsApi.getFull(id)
+      setSelectedFull(full)
+      form.setFieldsValue({
+        bump: 'patch',
+        description: full.description,
+        tags: full.tags.join(', '),
+        interface_json: jsonText(full.interface),
+        implementation_json: jsonText(full.implementation ?? { language: 'python', prompt_template: '' }),
+        evaluation_json: jsonText(full.evaluation),
+      })
+    } catch (err) {
+      setSelectedFull(null)
+      message.warning(getApiErrorMessage(err, 'Load editable Skill details failed'))
+    }
+  }, [form])
+
   const loadSnapshotHistory = useCallback(async (id: string, options: { silent?: boolean } = {}) => {
     setHistoryLoading(true)
     try {
@@ -309,11 +420,12 @@ export default function VersionControl() {
     setLastRestore(null)
     setSourceRef('')
     void loadVersions(id)
+    void loadSelectedFull(id)
     void loadSnapshotHistory(id, { silent: true })
     if (options.loadCurrentDiff) {
       void loadDiff(id)
     }
-  }, [loadDiff, loadSnapshotHistory, loadVersions])
+  }, [loadDiff, loadSelectedFull, loadSnapshotHistory, loadVersions])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -338,6 +450,37 @@ export default function VersionControl() {
       void loadVersions(selectedId)
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Create version failed'))
+    } finally {
+      setBumpLoading(false)
+    }
+  }
+
+  const handleEditableVersion = async (values: VersionLabForm) => {
+    if (!selectedId || !selectedFull) return
+    setBumpLoading(true)
+    try {
+      const nextInterface = parseJsonField(values.interface_json, 'Interface')
+      const nextImplementation = parseJsonField(values.implementation_json, 'Implementation')
+      const nextEvaluation = parseJsonField(values.evaluation_json, 'Evaluation')
+      const request: NewVersionRequest = {
+        bump: values.bump,
+        description: values.description,
+        tags: tagList(values.tags),
+        interface: nextInterface,
+        implementation: nextImplementation,
+        evaluation: nextEvaluation,
+        author: 'version_lab',
+      }
+      const newSkill = await lifecycleApi.newVersion(selectedId, request)
+      message.success(`Created draft version v${newSkill.version}`)
+      const allSkills = await skillsApi.list({ limit: 200 })
+      setSkills(allSkills)
+      setSelectedId(newSkill.skill_id)
+      await loadVersions(newSkill.skill_id)
+      await loadSelectedFull(newSkill.skill_id)
+      await loadDiff(newSkill.skill_id)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : getApiErrorMessage(err, 'Create editable version failed'))
     } finally {
       setBumpLoading(false)
     }
@@ -421,6 +564,8 @@ export default function VersionControl() {
   }
 
   const selectedSkill = selectedId ? skills.find(skill => skill.skill_id === selectedId) : null
+  const currentDiffHistory = diffData?.history ?? []
+  const currentBusinessDiff = diffData?.business_diff ?? []
   const queryProposalId = new URLSearchParams(location.search).get('proposal_id')
 
   const versionColumns: TableColumnsType<SkillSummary> = [
@@ -605,6 +750,91 @@ export default function VersionControl() {
           </Card>
 
           <Card
+            title={<span><PlusOutlined /> Version Lab</span>}
+            variant="borderless"
+            style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
+          >
+            {!selectedId || !selectedFull ? (
+              <Empty description="Select a Skill to create an editable draft version" />
+            ) : (
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ bump: 'patch' }}
+                onFinish={handleEditableVersion}
+              >
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="Editable versions are created as Drafts"
+                  description="Changing the interface or implementation creates a new S2 draft version that should be sent through harness verification before release."
+                />
+                <Row gutter={12}>
+                  <Col xs={24} md={8}>
+                    <Form.Item name="bump" label="Version bump">
+                      <Select
+                        options={[
+                          { label: 'patch', value: 'patch' },
+                          { label: 'minor', value: 'minor' },
+                          { label: 'major', value: 'major' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={16}>
+                    <Form.Item name="tags" label="Tags">
+                      <Input placeholder="comma-separated tags" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item name="description" label="Description">
+                  <Input.TextArea rows={2} />
+                </Form.Item>
+                <Collapse
+                  items={[
+                    {
+                      key: 'interface',
+                      label: 'Interface JSON',
+                      children: (
+                        <Form.Item name="interface_json" noStyle>
+                          <Input.TextArea rows={10} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                        </Form.Item>
+                      ),
+                    },
+                    {
+                      key: 'implementation',
+                      label: 'Implementation JSON',
+                      children: (
+                        <Form.Item name="implementation_json" noStyle>
+                          <Input.TextArea rows={8} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                        </Form.Item>
+                      ),
+                    },
+                    {
+                      key: 'evaluation',
+                      label: 'Evaluation JSON',
+                      children: (
+                        <Form.Item name="evaluation_json" noStyle>
+                          <Input.TextArea rows={8} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                        </Form.Item>
+                      ),
+                    },
+                  ]}
+                />
+                <Space wrap style={{ marginTop: 16 }}>
+                  <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={bumpLoading}>
+                    Create draft version
+                  </Button>
+                  <Button icon={<ReloadOutlined />} onClick={() => loadSelectedFull(selectedId)}>
+                    Reset editor
+                  </Button>
+                </Space>
+              </Form>
+            )}
+          </Card>
+
+          <Card
             title={<span><SaveOutlined /> Git-backed governance snapshots</span>}
             variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
@@ -742,19 +972,24 @@ export default function VersionControl() {
 
           {diffData && (
             <Card
-              title={<span><DiffOutlined /> Version change history - {diffData.skill_name}</span>}
+              title={<span><DiffOutlined /> Version change history - {diffData.skill_name ?? selectedSkill?.name ?? 'Skill'}</span>}
               variant="borderless"
               style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
-              {diffData.history.length === 0 ? (
+              {currentBusinessDiff.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <BusinessDiffView diff={currentBusinessDiff} summary={diffData.business_summary} />
+                </div>
+              )}
+              {currentDiffHistory.length === 0 ? (
                 <Empty description="No version change records" />
               ) : (
                 <Collapse
-                  items={diffData.history.map(item => ({
+                  items={currentDiffHistory.map(item => ({
                     key: item.record_id,
                     label: (
                       <Space wrap>
-                        <Text code>{`${item.from_version} -> ${item.to_version}`}</Text>
+                        <Text code>{`${item.from_version ?? 'previous'} -> ${item.to_version}`}</Text>
                         <Tag color={item.is_breaking ? 'red' : 'blue'}>{item.change_type}</Tag>
                         {item.is_breaking && <Tag color="red">BREAKING</Tag>}
                         <Text type="secondary" style={{ fontSize: 11 }}>{item.summary}</Text>

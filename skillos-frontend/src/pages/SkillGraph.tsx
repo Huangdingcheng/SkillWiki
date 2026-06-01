@@ -12,6 +12,7 @@ import {
   Slider,
   Space,
   Spin,
+  Switch,
   Tag,
   Tooltip,
   Typography,
@@ -131,7 +132,18 @@ type GraphLayoutSettings = {
   attraction: number
   linkDistance: number
   nodeSpacing: number
+  nodeSize: number
+  edgeWidth: number
+  edgeOpacity: number
+  labelMode: GraphLabelMode
+  edgeLabelMode: GraphLabelMode
+  denseMode: boolean
 }
+
+type GraphLabelMode = 'always' | 'hover' | 'selected' | 'hidden'
+type NumericGraphLayoutField = {
+  [K in keyof GraphLayoutSettings]: GraphLayoutSettings[K] extends number ? K : never
+}[keyof GraphLayoutSettings]
 
 type GraphCanvasSize = {
   width: number
@@ -150,6 +162,7 @@ type GraphInstance = {
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
   updateEdgeData: (edges: Array<{ id: string; style: { badgeText: string } }>) => void
+  updateNodeData: (nodes: Array<{ id: string; style: Record<string, unknown> }>) => void
   zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
 }
 
@@ -158,29 +171,54 @@ type ForceEdgeDatum = {
   weight?: number
 }
 
-const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v1'
-const EDGE_LABEL_ZOOM_THRESHOLD = 0.85
+const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v2'
+const EDGE_LABEL_ZOOM_THRESHOLD = 0.9
 const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
-  repulsion: 180,
-  attraction: 0.35,
-  linkDistance: 150,
-  nodeSpacing: 56,
+  repulsion: 260,
+  attraction: 0.28,
+  linkDistance: 165,
+  nodeSpacing: 38,
+  nodeSize: 12,
+  edgeWidth: 0.9,
+  edgeOpacity: 0.34,
+  labelMode: 'hover',
+  edgeLabelMode: 'selected',
+  denseMode: true,
 }
 const GRAPH_LAYOUT_PRESETS: Record<string, GraphLayoutSettings> = {
-  compact: {
-    repulsion: 100,
-    attraction: 0.6,
-    linkDistance: 100,
-    nodeSpacing: 44,
+  nebula: DEFAULT_GRAPH_LAYOUT,
+  readable: {
+    repulsion: 190,
+    attraction: 0.36,
+    linkDistance: 150,
+    nodeSpacing: 52,
+    nodeSize: 20,
+    edgeWidth: 1.4,
+    edgeOpacity: 0.62,
+    labelMode: 'always',
+    edgeLabelMode: 'hover',
+    denseMode: false,
   },
-  balanced: DEFAULT_GRAPH_LAYOUT,
-  open: {
-    repulsion: 300,
-    attraction: 0.2,
-    linkDistance: 220,
-    nodeSpacing: 76,
+  debug: {
+    repulsion: 240,
+    attraction: 0.42,
+    linkDistance: 190,
+    nodeSpacing: 64,
+    nodeSize: 24,
+    edgeWidth: 2,
+    edgeOpacity: 0.86,
+    labelMode: 'always',
+    edgeLabelMode: 'always',
+    denseMode: false,
   },
 }
+
+const LABEL_MODE_OPTIONS: { label: string; value: GraphLabelMode }[] = [
+  { label: 'Always', value: 'always' },
+  { label: 'Hover', value: 'hover' },
+  { label: 'Selected', value: 'selected' },
+  { label: 'Hidden', value: 'hidden' },
+]
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
   const numeric = Number(value)
@@ -188,12 +226,24 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, numeric))
 }
 
+function normalizeLabelMode(value: unknown, fallback: GraphLabelMode): GraphLabelMode {
+  return value === 'always' || value === 'hover' || value === 'selected' || value === 'hidden'
+    ? value
+    : fallback
+}
+
 function normalizeLayoutSettings(value: Partial<GraphLayoutSettings> = {}): GraphLayoutSettings {
   return {
     repulsion: clampNumber(value.repulsion, 40, 400, DEFAULT_GRAPH_LAYOUT.repulsion),
     attraction: clampNumber(value.attraction, 0.05, 1, DEFAULT_GRAPH_LAYOUT.attraction),
     linkDistance: clampNumber(value.linkDistance, 60, 280, DEFAULT_GRAPH_LAYOUT.linkDistance),
-    nodeSpacing: clampNumber(value.nodeSpacing, 36, 96, DEFAULT_GRAPH_LAYOUT.nodeSpacing),
+    nodeSpacing: clampNumber(value.nodeSpacing, 28, 96, DEFAULT_GRAPH_LAYOUT.nodeSpacing),
+    nodeSize: clampNumber(value.nodeSize, 6, 42, DEFAULT_GRAPH_LAYOUT.nodeSize),
+    edgeWidth: clampNumber(value.edgeWidth, 0.4, 4, DEFAULT_GRAPH_LAYOUT.edgeWidth),
+    edgeOpacity: clampNumber(value.edgeOpacity, 0.08, 1, DEFAULT_GRAPH_LAYOUT.edgeOpacity),
+    labelMode: normalizeLabelMode(value.labelMode, DEFAULT_GRAPH_LAYOUT.labelMode),
+    edgeLabelMode: normalizeLabelMode(value.edgeLabelMode, DEFAULT_GRAPH_LAYOUT.edgeLabelMode),
+    denseMode: typeof value.denseMode === 'boolean' ? value.denseMode : DEFAULT_GRAPH_LAYOUT.denseMode,
   }
 }
 
@@ -268,8 +318,42 @@ function formatEdgeLabel(edge: GraphViewEdgeData) {
   return `${formatEdgeType(edge.edge_type)} / ${score.toFixed(2)}`
 }
 
-function shouldShowEdgeLabels(zoom: number) {
-  return zoom >= EDGE_LABEL_ZOOM_THRESHOLD
+function shouldShowNodeLabel(
+  mode: GraphLabelMode,
+  options: { selected: boolean; centered: boolean; denseMode: boolean },
+) {
+  const { selected, centered, denseMode } = options
+  if (mode === 'hidden') return false
+  if (mode === 'always') return true
+  if (mode === 'selected') return selected || centered
+  return denseMode ? selected || centered : true
+}
+
+function shouldShowEdgeLabels(
+  mode: GraphLabelMode,
+  zoom: number,
+  edges: GraphViewEdgeData[],
+  selectedEdgeId: string | null,
+) {
+  if (mode === 'hidden') return new Set<string>()
+  if (mode === 'always') return new Set(edges.map(edge => edge.id))
+  if (mode === 'selected') return new Set(selectedEdgeId ? [selectedEdgeId] : [])
+  if (zoom < EDGE_LABEL_ZOOM_THRESHOLD && edges.length > 24) {
+    return new Set(selectedEdgeId ? [selectedEdgeId] : [])
+  }
+  return new Set(edges.map(edge => edge.id))
+}
+
+function nodeVisualSize(node: GraphViewNodeData, settings: GraphLayoutSettings, selected: boolean, centered: boolean) {
+  const usageBoost = Math.min(8, Number(node.usage_count || 0) * 0.25)
+  const base = settings.nodeSize + usageBoost
+  if (selected || centered) return Math.max(18, base + 8)
+  return base
+}
+
+function nodeLabelFontSize(settings: GraphLayoutSettings, selected: boolean, centered: boolean) {
+  if (selected || centered) return 10
+  return settings.denseMode ? 7 : 8
 }
 
 function formatMetadataValue(value: unknown) {
@@ -389,6 +473,12 @@ function calculateInitialNodePositions(
   })
 
   return positions
+}
+
+function graphPresetName(settings: GraphLayoutSettings) {
+  if (settings.denseMode && settings.nodeSize <= 14 && settings.edgeOpacity <= 0.4) return 'Nebula'
+  if (settings.edgeLabelMode === 'always' && settings.labelMode === 'always') return 'Debug'
+  return 'Readable'
 }
 
 export default function SkillGraph() {
@@ -594,17 +684,21 @@ export default function SkillGraph() {
             fillOpacity: node.kind === 'skill' ? (STATE_OPACITY[String(node.state || '')] || 0.65) : 0.92,
             stroke: selected || centered ? '#111827' : color,
             strokeOpacity: 1,
-            lineWidth: selected || centered ? 3 : 1,
-            size: Math.max(28, Math.min(58, 30 + Number(node.usage_count || 0) * 0.5)),
-            labelText: node.name,
+            lineWidth: selected || centered ? 2.4 : Math.max(0.7, layoutSettings.edgeWidth * 0.8),
+            size: nodeVisualSize(node, layoutSettings, selected, centered),
+            labelText: shouldShowNodeLabel(layoutSettings.labelMode, {
+              selected,
+              centered,
+              denseMode: layoutSettings.denseMode,
+            }) ? node.name : '',
             labelFill: '#111827',
-            labelFontSize: 8,
+            labelFontSize: nodeLabelFontSize(layoutSettings, selected, centered),
             labelFontWeight: selected || centered ? 700 : 600,
             labelMaxWidth: '260%',
             labelPlacement: 'bottom' as const,
-            labelOffsetY: 5,
+            labelOffsetY: layoutSettings.denseMode ? 4 : 5,
             labelStroke: '#fff',
-            labelLineWidth: 3,
+            labelLineWidth: layoutSettings.denseMode ? 2 : 3,
             labelWordWrap: true,
             cursor: 'pointer',
           },
@@ -621,8 +715,10 @@ export default function SkillGraph() {
           data: { edgeType: edge.edge_type, weight: edge.weight },
           style: {
             stroke: color,
-            strokeOpacity: selected ? 1 : 0.82,
-            lineWidth: selected ? Math.max(2.5, edge.weight * 3) : Math.max(1, edge.weight * 2),
+            strokeOpacity: selected ? 1 : layoutSettings.edgeOpacity,
+            lineWidth: selected
+              ? Math.max(2.4, layoutSettings.edgeWidth + Number(edge.weight || 0) * 1.8)
+              : Math.max(0.4, layoutSettings.edgeWidth + Number(edge.weight || 0) * 0.7),
             endArrow: true,
             labelText: formatEdgeLabel(edge),
             labelFontSize: 9,
@@ -676,17 +772,44 @@ export default function SkillGraph() {
       }) as GraphInstance
 
       let graphReady = false
-      let edgeLabelsVisible: boolean | null = null
+      let edgeLabelsVisibleKey: string | null = null
       const syncEdgeLabelVisibility = () => {
         if (disposed || !graphReady || filteredEdges.length === 0) return
-        const visible = shouldShowEdgeLabels(g.getZoom())
-        if (edgeLabelsVisible === visible) return
+        const visibleIds = shouldShowEdgeLabels(
+          layoutSettings.edgeLabelMode,
+          g.getZoom(),
+          filteredEdges,
+          selectedEdgeId,
+        )
+        const visibleKey = `${layoutSettings.edgeLabelMode}:${g.getZoom().toFixed(2)}:${selectedEdgeId || ''}:${visibleIds.size}`
+        if (edgeLabelsVisibleKey === visibleKey) return
 
-        edgeLabelsVisible = visible
+        edgeLabelsVisibleKey = visibleKey
         g.updateEdgeData(filteredEdges.map(edge => ({
           id: edge.id,
-          style: { badgeText: visible ? formatEdgeLabel(edge) : '' },
+          style: { badgeText: visibleIds.has(edge.id) ? formatEdgeLabel(edge) : '' },
         })))
+        void Promise.resolve(g.draw())
+      }
+
+      const updateHoveredNodeLabel = (id: string | undefined, visible: boolean) => {
+        if (!id || layoutSettings.labelMode !== 'hover') return
+        const node = graphData.nodes.find(item => item.id === id)
+        if (!node) return
+        const selected = id === selectedNodeId
+        const centered = id === centerSkillId
+        const shouldKeep = shouldShowNodeLabel(layoutSettings.labelMode, {
+          selected,
+          centered,
+          denseMode: layoutSettings.denseMode,
+        })
+        g.updateNodeData([{
+          id,
+          style: {
+            labelText: visible || shouldKeep ? node.name : '',
+            size: visible ? Math.max(nodeVisualSize(node, layoutSettings, selected, centered) + 5, 18) : nodeVisualSize(node, layoutSettings, selected, centered),
+          },
+        }])
         void Promise.resolve(g.draw())
       }
 
@@ -705,6 +828,9 @@ export default function SkillGraph() {
           setSelectedNodeId(null)
         }
       })
+
+      g.on('node:pointerenter', event => updateHoveredNodeLabel(event.target?.id, true))
+      g.on('node:pointerleave', event => updateHoveredNodeLabel(event.target?.id, false))
 
       g.on('canvas:click', () => {
         setSelectedNodeId(null)
@@ -785,6 +911,10 @@ export default function SkillGraph() {
     setLayoutDraft(previous => normalizeLayoutSettings({ ...previous, [field]: value }))
   }
 
+  const updateLayoutDraftValue = (field: keyof GraphLayoutSettings, value: GraphLayoutSettings[keyof GraphLayoutSettings]) => {
+    setLayoutDraft(previous => normalizeLayoutSettings({ ...previous, [field]: value }))
+  }
+
   const applyLayoutSettings = () => {
     const next = normalizeLayoutSettings(layoutDraft)
     setLayoutSettings(next)
@@ -801,7 +931,10 @@ export default function SkillGraph() {
   }
 
   const applyLayoutPreset = (preset: keyof typeof GRAPH_LAYOUT_PRESETS) => {
-    setLayoutDraft(normalizeLayoutSettings(GRAPH_LAYOUT_PRESETS[preset]))
+    const next = normalizeLayoutSettings(GRAPH_LAYOUT_PRESETS[preset])
+    setLayoutDraft(next)
+    setLayoutSettings(next)
+    saveLayoutSettings(next)
   }
 
   const handleLayoutPanelOpenChange = (open: boolean) => {
@@ -811,7 +944,7 @@ export default function SkillGraph() {
 
   const renderLayoutSlider = (
     label: string,
-    field: keyof GraphLayoutSettings,
+    field: NumericGraphLayoutField,
     min: number,
     max: number,
     step = 1,
@@ -837,18 +970,51 @@ export default function SkillGraph() {
   }
 
   const layoutSettingsContent = (
-    <div style={{ width: 292 }}>
+    <div style={{ width: 320 }}>
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Text strong>Layout Settings</Text>
+        <Text strong>Graph Visual Settings</Text>
         <Space.Compact block>
-          <Button size="small" onClick={() => applyLayoutPreset('compact')}>Compact</Button>
-          <Button size="small" onClick={() => applyLayoutPreset('balanced')}>Balanced</Button>
-          <Button size="small" onClick={() => applyLayoutPreset('open')}>Open</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('nebula')}>Nebula</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('readable')}>Readable</Button>
+          <Button size="small" onClick={() => applyLayoutPreset('debug')}>Debug</Button>
         </Space.Compact>
-        {renderLayoutSlider('Repulsion', 'repulsion', 40, 400)}
+        {renderLayoutSlider('Node size', 'nodeSize', 6, 42)}
+        {renderLayoutSlider('Edge width', 'edgeWidth', 0.4, 4, 0.1)}
+        {renderLayoutSlider('Edge opacity', 'edgeOpacity', 0.08, 1, 0.02)}
+        {renderLayoutSlider('Charge strength', 'repulsion', 40, 400)}
         {renderLayoutSlider('Attraction', 'attraction', 0.05, 1, 0.05)}
         {renderLayoutSlider('Link distance', 'linkDistance', 60, 280)}
-        {renderLayoutSlider('Node spacing', 'nodeSpacing', 36, 96)}
+        {renderLayoutSlider('Node spacing', 'nodeSpacing', 28, 96)}
+        <div>
+          <Text>Node labels</Text>
+          <Segmented
+            block
+            size="small"
+            options={LABEL_MODE_OPTIONS}
+            value={layoutDraft.labelMode}
+            onChange={value => updateLayoutDraftValue('labelMode', value as GraphLabelMode)}
+            style={{ marginTop: 6 }}
+          />
+        </div>
+        <div>
+          <Text>Edge labels</Text>
+          <Segmented
+            block
+            size="small"
+            options={LABEL_MODE_OPTIONS}
+            value={layoutDraft.edgeLabelMode}
+            onChange={value => updateLayoutDraftValue('edgeLabelMode', value as GraphLabelMode)}
+            style={{ marginTop: 6 }}
+          />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+          <Text>Dense mode</Text>
+          <Switch
+            size="small"
+            checked={layoutDraft.denseMode}
+            onChange={checked => updateLayoutDraftValue('denseMode', checked)}
+          />
+        </div>
         <Space style={{ justifyContent: 'flex-end', width: '100%' }}>
           <Button size="small" onClick={resetLayoutSettings}>Reset</Button>
           <Button size="small" type="primary" onClick={applyLayoutSettings}>Apply</Button>
@@ -1126,9 +1292,10 @@ export default function SkillGraph() {
           </span>
         </Space>
         {graphData && (
-          <span>
-            {graphData.nodes.length} nodes / {graphData.edges.length} edges
-          </span>
+          <Space size={8} wrap>
+            <span>{graphPresetName(layoutSettings)} preset</span>
+            <span>{graphData.nodes.length} nodes / {graphData.edges.length} edges</span>
+          </Space>
         )}
       </div>
     </div>

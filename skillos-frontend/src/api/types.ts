@@ -107,6 +107,18 @@ export interface SkillUpdateRequest {
   author?: string
 }
 
+export interface NewVersionRequest {
+  bump?: 'major' | 'minor' | 'patch'
+  description?: string | null
+  tags?: string[] | null
+  interface?: SkillInterface | null
+  implementation?: SkillImplementation | null
+  evaluation?: SkillEvaluation | null
+  test_cases?: Record<string, unknown>[] | null
+  metadata?: Record<string, unknown> | null
+  author?: string
+}
+
 export interface SkillSummary {
   skill_id: string
   name: string
@@ -465,6 +477,23 @@ export interface StructuredDiffEntry {
   is_breaking?: boolean
   review_recommendation?: string
   [key: string]: unknown
+}
+
+export interface BusinessDiffEntry {
+  field: string
+  change_type: string
+  category: string
+  old_value?: unknown
+  new_value?: unknown
+  is_breaking?: boolean
+}
+
+export interface BusinessDiffSummary {
+  changed_fields: number
+  breaking: boolean
+  categories: string[]
+  suggested_bump: 'major' | 'minor' | 'patch'
+  summary: string
 }
 
 export interface MaintenanceReviewRequest {

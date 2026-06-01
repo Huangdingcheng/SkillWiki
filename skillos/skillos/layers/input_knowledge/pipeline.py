@@ -650,7 +650,7 @@ def _fallback_ctx2skill_payload(
         "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
         "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
     }
-    skill_type = "functional" if len(actions) > 1 or source_type in {"document", "trajectory"} else "atomic"
+    skill_type = "functional" if len(actions) > 1 or source_type in {"document", "trajectory", "script"} else "atomic"
     description = _source_safe_description(
         source_type,
         summary or f"Execute a reusable {source_type.replace('_', ' ')} skill with context-grounded evidence.",

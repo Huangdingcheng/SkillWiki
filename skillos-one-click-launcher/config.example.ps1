@@ -4,7 +4,8 @@
 # Optional: point to a Python executable that already has SkillOS backend dependencies.
 # $env:SKILLOS_PYTHON = "C:\Python314\python.exe"
 
-# Optional: OpenAI-compatible LLM endpoint.
+# DeepSeek/OpenAI-compatible LLM endpoint. The launcher prompts for these
+# values automatically when config.local.ps1 does not exist.
 # $env:LLM_API_URL = "https://api.deepseek.com"
 # $env:LLM_MODEL = "deepseek-v4-flash"
 # $env:LLM_API_KEY = "replace-with-your-own-key"

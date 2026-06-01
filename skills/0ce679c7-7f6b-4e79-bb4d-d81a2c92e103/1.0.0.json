@@ -1,0 +1,318 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Execute the reusable skill from trajectory workflow.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:trajectory_execute"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.verifier",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Execute the reusable trajectory capability: Execute the reusable skill from trajectory workflow.. Return JSON with result, evidence, and verifier.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "description": "Reviewed context pack and runtime facts.",
+          "type": "object"
+        },
+        "task": {
+          "description": "Task to perform with the imported trajectory context.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "Context-grounded evidence used by the Judge.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured result produced from the trajectory Skill.",
+          "type": "object"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+          "properties": {
+            "checked": {
+              "description": "Postconditions, constraints, paths, or evidence points checked.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "failure_signal": {
+              "description": "Reason the verifier would reject the result.",
+              "type": "string"
+            },
+            "passed": {
+              "description": "Whether the preview verifier accepts the result.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "passed",
+            "checked"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result contains the structured task result.",
+      "output.evidence contains context-grounded support for the result.",
+      "A structured result plus references to the context facts or procedure steps."
+    ],
+    "preconditions": [
+      "Relevant trajectory context has been reviewed."
+    ],
+    "side_effects": []
+  },
+  "name": "trajectory_execute_trajectory_browser_use_06_shopping",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "f9bec4fd7b22a85eafb9be63cb23320779f16108d633bc5b962ceec36eb1be84",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "trajectory_execute",
+            "passed_challenges": 1,
+            "score": 0.72
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
+            "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
+            "rubric": [
+              "Uses only information grounded in the imported context.",
+              "Returns structured evidence for the expected result.",
+              "Respects documented constraints and failure signals."
+            ],
+            "task": "Use the trajectory context to complete the reusable operation.",
+            "task_id": "trajectory_challenge_1"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "async def main():"
+          ],
+          "constraints": [
+            "Visit [Migros Online](https://www.migros.ch/en), search for the required grocery items, add them to the cart, select an appropriate delivery window, and complete the checkout process using TWINT.",
+            "At this step, check if you have bought MORE items than needed. If the price is more then CHF200, you MUST remove items.",
+            "1. Open the required browser context.",
+            "Visit [Migros Online](https://www.migros.ch/en), search for the required grocery items, add them to the cart, select an appropriate delivery window, and complete the checkout process using TWINT.",
+            "At this step, check if you have bought MORE items than needed. If the price is more then CHF200, you MUST remove items."
+          ],
+          "examples": [
+            "Example substitutions:",
+            "Example substitutions:"
+          ],
+          "facts": [
+            "# Browser-use normalized trajectory: shopping",
+            "Source file: `examples/use-cases/shopping.py`",
+            "## Original task excerpt",
+            "### Prompt for Shopping Agent – Migros Online Grocery Order",
+            "**Objective:**",
+            "**Important:**",
+            "Make sure that you don't buy more than it's needed for each article.",
+            "After your search, if you click  the \"+\" button, it adds the item to the basket."
+          ],
+          "procedures": [
+            "Open [Migros Online](https://www.migros.ch/en).",
+            "Use the following recipe contexts to choose substitutions:",
+            "Open [Migros Online](https://www.migros.ch/en).",
+            "Use the following recipe contexts to choose substitutions:"
+          ],
+          "summary": "# Browser-use normalized trajectory: shopping Source file: `examples/use-cases/shopping.py`"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "trajectory_execute",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.72,
+            "task_id": "trajectory_challenge_1"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Execute the reusable skill from trajectory workflow.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "context": {
+                "description": "Reviewed context pack and runtime facts.",
+                "type": "object"
+              },
+              "task": {
+                "description": "Task to perform with the imported trajectory context.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "Classified as functional from source structure and action count.",
+          "name": "trajectory_execute",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "Context-grounded evidence used by the Judge.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured result produced from the trajectory Skill.",
+                "type": "object"
+              },
+              "verifier": {
+                "additionalProperties": false,
+                "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+                "properties": {
+                  "checked": {
+                    "description": "Postconditions, constraints, paths, or evidence points checked.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "failure_signal": {
+                    "description": "Reason the verifier would reject the result.",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "description": "Whether the preview verifier accepts the result.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "verifier"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result contains the structured task result.",
+            "output.evidence contains context-grounded support for the result.",
+            "A structured result plus references to the context facts or procedure steps."
+          ],
+          "preconditions": [
+            "Relevant trajectory context has been reviewed."
+          ],
+          "prompt_template": "Execute the reusable trajectory capability: Execute the reusable skill from trajectory workflow.. Return JSON with result, evidence, and verifier.",
+          "score": 0.72,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "trajectory",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Fallback Ctx2Skill-lite selected the only deterministic candidate."
+      },
+      "domain": "finance",
+      "eval_run_id": "p0-full-workflow-125-after-25-existing-20260527",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub example excerpt normalized for repeatable local testing",
+      "local_path": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\artifacts\\external-test-corpus-20260527\\additional-input-fixtures-20260527\\trajectory\\browser_use_06_shopping.md",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "browser-use public example normalized as trajectory",
+      "raw_content_preview": "# Browser-use normalized trajectory: shopping\n\nSource file: `examples/use-cases/shopping.py`\n\n## Original task excerpt\n\n### Prompt for Shopping Agent – Migros Online Grocery Order\n\n**Objective:**\nVisit [Migros Online](https://www.migros.ch/en), search for the required grocery items, add them to the cart, select an appropriate delivery window, and complete the checkout process using TWINT.\n\n**Important:**\n- Make sure that you don't buy more than it's needed for each article.\n- After your search, ",
+      "source_id": "trajectory-browser-use-06-shopping",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/browser-use/browser-use/blob/834269609082d187ca0250de2c06d93799dac92d/examples/use-cases/shopping.py",
+      "unit_id": "09c0098b-129f-470b-b82d-bfe19f750154"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-browser-use-06-shopping",
+      "09c0098b-129f-470b-b82d-bfe19f750154"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "0ce679c7-7f6b-4e79-bb4d-d81a2c92e103",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "execute",
+    "reusable",
+    "skill",
+    "input-skill-eval",
+    "eval-run:p0-full-workflow-125-after-25-existing-20260527",
+    "source-id:trajectory-browser-use-06-shopping",
+    "domain:finance"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
