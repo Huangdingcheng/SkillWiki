@@ -1,0 +1,279 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Given a healthcare portal URL and user credentials, navigate to the appointment scheduling page and extract the next appointment date and time. Handles both successful extraction and absence of appointments.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:check_appointment"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Execute a browser-based workflow to check the next appointment. Navigate to {portal_url}, log in with {username} and {password}, then access the appointment scheduling page. Extract the next appointment date and time. If no appointment is found, return 'No upcoming appointments'.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "browser.navigate",
+      "browser.click",
+      "browser.type",
+      "browser.extract_text",
+      "wait_for_element"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "password": {
+          "description": "The user's password.",
+          "type": "string"
+        },
+        "portal_url": {
+          "description": "The URL of the healthcare portal login page.",
+          "type": "string"
+        },
+        "username": {
+          "description": "The user's login name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portal_url",
+        "username",
+        "password"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "next_appointment": {
+          "description": "The extracted next appointment date and time, or a message indicating no appointment found.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "next_appointment"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "The next appointment date and time is extracted if available.",
+      "If no appointment exists, an appropriate message is returned."
+    ],
+    "preconditions": [
+      "User has valid credentials for the healthcare portal.",
+      "The portal URL is accessible and the login page is reachable."
+    ],
+    "side_effects": []
+  },
+  "name": "check_appointment_trajectory_browser_use_09_check_appointment",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "6af6092389d1cd76a41e0a18722c2da1266e10ac4d4c6b09ae944857d2c58d52",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "check_appointment",
+            "passed_challenges": 2,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A string containing the next appointment date and time, e.g., '2025-01-15 10:30 AM'.",
+            "failure_signal": "An error message, login failure, or inability to locate the appointment data on the page.",
+            "rubric": [
+              "Navigates to the correct portal URL.",
+              "Successfully logs in with provided credentials.",
+              "Reaches the appointment scheduling page.",
+              "Extracts a valid date and time string from the page."
+            ],
+            "task": "Given valid credentials for a healthcare portal, extract the next appointment date and time.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "A message like 'No upcoming appointments' or an empty date field.",
+            "failure_signal": "Failure to detect the absence, e.g., returning a placeholder date or raising an error.",
+            "rubric": [
+              "Navigates to the appointment scheduling page.",
+              "Detects that no appointment is listed or that a 'no appointments' message is present.",
+              "Returns a clear indication that no appointment exists."
+            ],
+            "task": "Given a healthcare portal where no future appointments are scheduled, detect and report the absence of an appointment.",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "browser.navigate",
+            "browser.click",
+            "browser.type",
+            "browser.extract_text",
+            "wait_for_element"
+          ],
+          "constraints": [
+            "Valid user credentials are required.",
+            "The portal may have session timeouts or CAPTCHA challenges.",
+            "Page load times and dynamic content may affect extraction."
+          ],
+          "examples": [
+            "Use this browser-use example as a public multi-step browser task."
+          ],
+          "facts": [
+            "Healthcare portals require user authentication to view appointments.",
+            "Appointment scheduling pages typically display next available date and time.",
+            "Extracting appointment data involves navigating through multiple pages after login."
+          ],
+          "procedures": [
+            "Navigate to the appointment portal.",
+            "Log in using user credentials.",
+            "Access the appointment scheduling page.",
+            "Extract the next appointment date and time."
+          ],
+          "summary": "Automated process to check the next appointment date and time from a healthcare portal by navigating to the portal, logging in, accessing the scheduling page, and extracting the relevant information."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "check_appointment",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "check_appointment",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Given a healthcare portal URL and user credentials, navigate to the appointment scheduling page and extract the next appointment date and time. Handles both successful extraction and absence of appointments.",
+          "input_schema": {
+            "properties": {
+              "password": {
+                "description": "The user's password.",
+                "type": "string"
+              },
+              "portal_url": {
+                "description": "The URL of the healthcare portal login page.",
+                "type": "string"
+              },
+              "username": {
+                "description": "The user's login name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "portal_url",
+              "username",
+              "password"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "check_appointment",
+          "output_schema": {
+            "properties": {
+              "next_appointment": {
+                "description": "The extracted next appointment date and time, or a message indicating no appointment found.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "next_appointment"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "The next appointment date and time is extracted if available.",
+            "If no appointment exists, an appropriate message is returned."
+          ],
+          "preconditions": [
+            "User has valid credentials for the healthcare portal.",
+            "The portal URL is accessible and the login page is reachable."
+          ],
+          "prompt_template": "Execute a browser-based workflow to check the next appointment. Navigate to {portal_url}, log in with {username} and {password}, then access the appointment scheduling page. Extract the next appointment date and time. If no appointment is found, return 'No upcoming appointments'.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "trajectory",
+            "ctx2skill"
+          ],
+          "tool_calls": [
+            "browser.navigate",
+            "browser.click",
+            "browser.type",
+            "browser.extract_text",
+            "wait_for_element"
+          ]
+        },
+        "selected_reason": "The 'check_appointment' skill directly addresses the core functionality of extracting appointment information from a healthcare portal. It is reusable across different portals and user credentials, and the challenges demonstrate its applicability in both standard and edge-case scenarios. With a cross-time replay lite score of 0.75, it is the strongest candidate for automating this common browser-based task."
+      },
+      "domain": "office",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub example excerpt normalized for repeatable local testing",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\trajectory_018_d388923f.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "browser-use public example normalized as trajectory",
+      "raw_content_preview": "# Browser-use normalized trajectory: check-appointment\n\nSource file: `examples/use-cases/check_appointment.py`\n\n## Original task excerpt\n\nUse this browser-use example as a public multi-step browser task.\n\n## Normalized trajectory\n\n1. Open the required browser context.\n2. Observe page state and task constraints.\n3. Choose the next safe browser action.\n4. Execute search/click/type/select/upload/extract as needed.\n5. Re-observe and repair the plan if expected evidence is missing.\n6. Stop when final",
+      "source_id": "trajectory-browser-use-09-check-appointment",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/browser-use/browser-use/blob/834269609082d187ca0250de2c06d93799dac92d/examples/use-cases/check_appointment.py",
+      "unit_id": "c7c3e2a8-19ae-4350-8c77-acc75c70edab"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-browser-use-09-check-appointment",
+      "c7c3e2a8-19ae-4350-8c77-acc75c70edab"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "263cae06-98d2-4240-8855-d4827d4a4741",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "after",
+    "appointment",
+    "check",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:trajectory-browser-use-09-check-appointment",
+    "domain:office"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
