@@ -1,0 +1,304 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Click an autocomplete input when it is present",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:trajectory_click"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.verifier",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Execute the reusable trajectory capability: Click an autocomplete input when it is present. Return JSON with result, evidence, and verifier.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "description": "Reviewed context pack and runtime facts.",
+          "type": "object"
+        },
+        "task": {
+          "description": "Task to perform with the imported trajectory context.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "Context-grounded evidence used by the Judge.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured result produced from the trajectory Skill.",
+          "type": "object"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+          "properties": {
+            "checked": {
+              "description": "Postconditions, constraints, paths, or evidence points checked.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "failure_signal": {
+              "description": "Reason the verifier would reject the result.",
+              "type": "string"
+            },
+            "passed": {
+              "description": "Whether the preview verifier accepts the result.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "passed",
+            "checked"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result contains the structured task result.",
+      "output.evidence contains context-grounded support for the result.",
+      "A structured result plus references to the context facts or procedure steps."
+    ],
+    "preconditions": [
+      "Relevant trajectory context has been reviewed."
+    ],
+    "side_effects": []
+  },
+  "name": "trajectory_click_trajectory_rci_autocomplete_submit",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "940fea26c1738abab1d2fa9c817472987f796357649a8056c09b715604a4b069",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "trajectory_click",
+            "passed_challenges": 1,
+            "score": 0.72
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A structured result plus references to the context facts or procedure steps.",
+            "failure_signal": "Missing required input, ignored constraint, or output without supporting evidence.",
+            "rubric": [
+              "Uses only information grounded in the imported context.",
+              "Returns structured evidence for the expected result.",
+              "Respects documented constraints and failure signals."
+            ],
+            "task": "Use the trajectory context to complete the reusable operation.",
+            "task_id": "trajectory_challenge_1"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [],
+          "constraints": [],
+          "examples": [
+            "Source: https://raw.githubusercontent.com/posgnu/rci-agent/main/prompt/use-autocomplete/example.txt"
+          ],
+          "facts": [
+            "Expected skill name: autocomplete_select_and_submit",
+            "Task:",
+            "Enter an item that starts with \"Aust\" and ends with \"lia\", then submit the form.",
+            "Trajectory:",
+            "1. Observation: The page has an autocomplete input with id \"tags\" and a submit button with id \"subbtn\".",
+            "Action: clickxpath //*[@id=\"tags\"]",
+            "Expected observation: The autocomplete input is focused.",
+            "2. Observation: The input is focused and emp"
+          ],
+          "procedures": [],
+          "summary": "Source: https://raw.githubusercontent.com/posgnu/rci-agent/main/prompt/use-autocomplete/example.txt Expected skill name: autocomplete_select_and_submit"
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "trajectory_click",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.72,
+            "task_id": "trajectory_challenge_1"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Click an autocomplete input when it is present",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "context": {
+                "description": "Reviewed context pack and runtime facts.",
+                "type": "object"
+              },
+              "task": {
+                "description": "Task to perform with the imported trajectory context.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "Classified as functional from source structure and action count.",
+          "name": "trajectory_click",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "description": "Context-grounded evidence used by the Judge.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured result produced from the trajectory Skill.",
+                "type": "object"
+              },
+              "verifier": {
+                "additionalProperties": false,
+                "description": "Minimal verifier verdict, failure signal, or replay score for the result.",
+                "properties": {
+                  "checked": {
+                    "description": "Postconditions, constraints, paths, or evidence points checked.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "failure_signal": {
+                    "description": "Reason the verifier would reject the result.",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "description": "Whether the preview verifier accepts the result.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "passed",
+                  "checked"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "verifier"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result contains the structured task result.",
+            "output.evidence contains context-grounded support for the result.",
+            "A structured result plus references to the context facts or procedure steps."
+          ],
+          "preconditions": [
+            "Relevant trajectory context has been reviewed."
+          ],
+          "prompt_template": "Execute the reusable trajectory capability: Click an autocomplete input when it is present. Return JSON with result, evidence, and verifier.",
+          "score": 0.72,
+          "skill_type": "functional",
+          "sub_skill_ids": [],
+          "tags": [
+            "trajectory",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Fallback Ctx2Skill-lite selected the only deterministic candidate."
+      },
+      "domain": "web",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub excerpt normalized as local test fixture",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\trajectory_013_1b5bc5fb.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "RCI-agent / web trajectory sample",
+      "raw_content_preview": "Source: https://raw.githubusercontent.com/posgnu/rci-agent/main/prompt/use-autocomplete/example.txt\nExpected skill name: autocomplete_select_and_submit\n\nTask:\nEnter an item that starts with \"Aust\" and ends with \"lia\", then submit the form.\n\nTrajectory:\n1. Observation: The page has an autocomplete input with id \"tags\" and a submit button with id \"subbtn\".\n   Action: clickxpath //*[@id=\"tags\"]\n   Expected observation: The autocomplete input is focused.\n\n2. Observation: The input is focused and emp",
+      "source_id": "trajectory-rci-autocomplete-submit",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/posgnu/rci-agent",
+      "unit_id": "9e8174ed-5bd3-4fc9-b9d8-240c5815a238"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-rci-autocomplete-submit",
+      "9e8174ed-5bd3-4fc9-b9d8-240c5815a238"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "f8ab602c-ee7e-4641-a302-0656ed200654",
+  "skill_type": "functional",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "an",
+    "autocomplete",
+    "click",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:trajectory-rci-autocomplete-submit",
+    "domain:web"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
