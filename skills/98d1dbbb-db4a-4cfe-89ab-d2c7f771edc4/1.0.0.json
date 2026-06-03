@@ -1,0 +1,319 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Reusable skill to complete an online grocery order: visit site, search items, add to cart with quantity, select delivery window, and checkout with TWINT, respecting quantity limits.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:online_grocery_order"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Execute the following steps: 1. Navigate to Migros Online (migros.ch/en). 2. For each item in the input list, search for it and add the specified quantity to the cart. 3. Select the provided delivery window (or choose an appropriate one if not specified). 4. Proceed to checkout and pay using TWINT. Ensure no item exceeds the required quantity.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "delivery_window": {
+          "description": "Desired delivery time slot",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "quantity": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "quantity"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "payment_method": {
+          "default": "TWINT",
+          "type": "string"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "order_confirmed": {
+          "type": "boolean"
+        },
+        "order_details": {
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "Order is placed with correct items and quantities.",
+      "Delivery window is selected.",
+      "Payment is processed via TWINT."
+    ],
+    "preconditions": [
+      "User has a valid Migros account with TWINT linked."
+    ],
+    "side_effects": []
+  },
+  "name": "online_grocery_order_trajectory_browser_use_06_shopping",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "788e69fed42c23175bfba4077fc88dc90d63e0d099e8b07f20883bc27a496953",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "online_grocery_order",
+            "passed_challenges": 3,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Order confirmation page with correct items, quantities, delivery slot, and payment method.",
+            "failure_signal": "Wrong quantity in cart, missing delivery selection, payment error, or order not placed.",
+            "rubric": [
+              "Adds each item with the correct quantity.",
+              "Selects a valid delivery window.",
+              "Completes checkout using TWINT.",
+              "Confirms order success."
+            ],
+            "task": "Complete an order with multiple items and specific quantities, ensuring correct delivery window and TWINT payment.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "Order proceeds without the unavailable item, cart contains only available items with correct quantities.",
+            "failure_signal": "Script crashes, adds unavailable item, or fails to complete order.",
+            "rubric": [
+              "Detects unavailability without crashing.",
+              "Either skips the item or suggests an alternative.",
+              "Proceeds to checkout with remaining items.",
+              "Maintains correct quantities for available items."
+            ],
+            "task": "Handle an out-of-stock item gracefully: search for an item that is unavailable and continue with the rest of the order.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "Delivery window updated to new slot, checkout proceeds without error.",
+            "failure_signal": "Delivery window unchanged, error during modification, or order fails.",
+            "rubric": [
+              "Navigates to delivery selection after cart is populated.",
+              "Selects a different valid time slot.",
+              "Confirms the change.",
+              "Proceeds to checkout with updated window."
+            ],
+            "task": "Modify the delivery window after adding items to the cart.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "Web browser automation",
+            "Migros Online website interface"
+          ],
+          "constraints": [
+            "Do not buy more than needed for each article.",
+            "Use TWINT as the payment method."
+          ],
+          "examples": [],
+          "facts": [
+            "The website is Migros.ch/en.",
+            "Payment method is TWINT.",
+            "Each item quantity must be limited to what is needed.",
+            "Delivery window selection is required before checkout."
+          ],
+          "procedures": [
+            "Visit the online grocery store website.",
+            "Search for the required grocery items.",
+            "Add each item to the cart with the specified quantity.",
+            "Select an appropriate delivery window.",
+            "Complete checkout using the designated payment method."
+          ],
+          "summary": "A shopping agent trajectory for ordering groceries from Migros Online (migros.ch/en). The agent must visit the site, search for items, add each with specified quantity, select a delivery window, and complete checkout using TWINT payment, ensuring not to buy more than needed."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "online_grocery_order",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "online_grocery_order",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "online_grocery_order",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [
+            "search_item",
+            "add_to_cart",
+            "select_delivery",
+            "checkout"
+          ],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Reusable skill to complete an online grocery order: visit site, search items, add to cart with quantity, select delivery window, and checkout with TWINT, respecting quantity limits.",
+          "input_schema": {
+            "properties": {
+              "delivery_window": {
+                "description": "Desired delivery time slot",
+                "type": "string"
+              },
+              "items": {
+                "items": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "quantity"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "payment_method": {
+                "default": "TWINT",
+                "type": "string"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "online_grocery_order",
+          "output_schema": {
+            "properties": {
+              "order_confirmed": {
+                "type": "boolean"
+              },
+              "order_details": {
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "Order is placed with correct items and quantities.",
+            "Delivery window is selected.",
+            "Payment is processed via TWINT."
+          ],
+          "preconditions": [
+            "User has a valid Migros account with TWINT linked."
+          ],
+          "prompt_template": "Execute the following steps: 1. Navigate to Migros Online (migros.ch/en). 2. For each item in the input list, search for it and add the specified quantity to the cart. 3. Select the provided delivery window (or choose an appropriate one if not specified). 4. Proceed to checkout and pay using TWINT. Ensure no item exceeds the required quantity.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "trajectory",
+            "ctx2skill",
+            "shopping",
+            "grocery",
+            "migros",
+            "twint"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The candidate 'online_grocery_order' directly generalizes the trajectory steps into a reusable composite skill. It handles item search, quantity-limited cart addition, delivery window selection, and TWINT checkout, matching the constraints. The score of 0.75 reflects good reusability with moderate flexibility for variations like out-of-stock or delivery changes, though further refinement could improve handling of edge cases."
+      },
+      "domain": "finance",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub example excerpt normalized for repeatable local testing",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\trajectory_016_0ce679c7.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "browser-use public example normalized as trajectory",
+      "raw_content_preview": "# Browser-use normalized trajectory: shopping\n\nSource file: `examples/use-cases/shopping.py`\n\n## Original task excerpt\n\n### Prompt for Shopping Agent – Migros Online Grocery Order\n\n**Objective:**\nVisit [Migros Online](https://www.migros.ch/en), search for the required grocery items, add them to the cart, select an appropriate delivery window, and complete the checkout process using TWINT.\n\n**Important:**\n- Make sure that you don't buy more than it's needed for each article.\n- After your search, ",
+      "source_id": "trajectory-browser-use-06-shopping",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/browser-use/browser-use/blob/834269609082d187ca0250de2c06d93799dac92d/examples/use-cases/shopping.py",
+      "unit_id": "745cce21-aead-4f66-8627-334618ed11b7"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-browser-use-06-shopping",
+      "745cce21-aead-4f66-8627-334618ed11b7"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "98d1dbbb-db4a-4cfe-89ab-d2c7f771edc4",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "shopping",
+    "grocery",
+    "migros",
+    "twint",
+    "adding",
+    "by",
+    "checkout",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:trajectory-browser-use-06-shopping"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
