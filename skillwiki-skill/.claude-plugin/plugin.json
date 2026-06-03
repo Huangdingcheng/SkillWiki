@@ -1,0 +1,10 @@
+{
+  "name": "skillwiki",
+  "description": "Skills for managing a SkillWiki knowledge base — ingest experience into skills, run execute-verify loops until skills pass postconditions, and query or promote skills through their lifecycle.",
+  "author": {
+    "name": "Apollo-universe",
+    "email": ""
+  },
+  "version": "0.1.0",
+  "homepage": "https://github.com/Huangdingcheng/skillos"
+}

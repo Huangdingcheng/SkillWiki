@@ -1,8 +1,6 @@
-# SkillOS
+# SkillWiki
 
-SkillOS is a skill-centric agent operating system prototype. It can import experience from multiple source types, convert that material into governed Skill candidates, show Skill graph relations, manage Skill versions, and run local verification/evaluation workflows.
-
-This branch is packaged for a Windows one-click demo. After dependencies are installed, run one file. On the first run, the launcher asks for your own DeepSeek-compatible model configuration, saves it to a local ignored config file, starts the backend and frontend, and opens the web UI.
+SkillWiki is a skill-centric knowledge wiki for self-evolving agents. It imports experience from multiple source types, converts that material into governed Skill candidates, manages Skill graph relations and versions, and runs local verification/evaluation workflows — all accessible via a web UI or the `skillwiki` CLI.
 
 ## Quick Start On Windows
 
@@ -11,23 +9,23 @@ This branch is packaged for a Windows one-click demo. After dependencies are ins
 Backend:
 
 ```powershell
-cd <repo-root>\skillos
+cd <repo-root>\skillwiki
 python -m pip install -r requirements.txt
 ```
 
 Frontend:
 
 ```powershell
-cd <repo-root>\skillos-frontend
+cd <repo-root>\skillwiki-frontend
 npm install
 ```
 
-### 2. Start SkillOS
+### 2. Start SkillWiki
 
 Open the repository root and double-click:
 
 ```text
-START_SKILLOS_DEMO.bat
+START_SKILLWIKI_DEMO.bat
 ```
 
 On the first run, the terminal asks for:
@@ -48,7 +46,7 @@ deepseek-v4-flash
 Paste your own API key when prompted. The key input is hidden. The launcher writes the values only to:
 
 ```text
-skillos-one-click-launcher\config.local.ps1
+skillwiki-launcher\config.local.ps1
 ```
 
 That file is ignored by Git and must not be committed.
@@ -67,15 +65,134 @@ If those ports are busy, the launcher chooses nearby free ports and prints the a
 The default demo uses the memory backend, so data is cleared after restart. To restore the small public demo fixtures, double-click:
 
 ```text
-RESTORE_SKILLOS_DEMO_STATE.bat
+RESTORE_SKILLWIKI_DEMO_STATE.bat
 ```
 
-### 4. Stop SkillOS
+### 4. Stop SkillWiki
 
 Double-click:
 
 ```text
-STOP_SKILLOS_DEMO.bat
+STOP_SKILLWIKI_DEMO.bat
+```
+
+## CLI Usage
+
+The `skillwiki` command gives agents and scripts direct access to all core operations without a browser.
+
+### Install the CLI
+
+```powershell
+cd <repo-root>\skillwiki
+venv\Scripts\activate
+pip install -e .
+```
+
+### Start the backend
+
+```bash
+skillwiki serve
+# or with options:
+skillwiki serve --host 127.0.0.1 --port 8001 --backend memory
+```
+
+### Ingest experience
+
+Accepts a file path or raw text. The `SOURCE_TYPE` tells the pipeline how to process the input.
+
+| SOURCE_TYPE | Typical formats | Description |
+|---|---|---|
+| `trajectory` | `.txt`, `.md` | Operation sequences / conversation traces |
+| `document` | `.md`, `.txt` | Knowledge docs, tutorials, specifications |
+| `api_doc` | `.md`, `.txt`, `.yaml` | API endpoint documentation |
+| `script` | `.sh`, `.md` | Shell / automation scripts (static analysis, not executed) |
+| `past_skills` | `.json`, `.jsonl` | Existing skill definitions for bulk import |
+
+```bash
+# From file
+skillwiki ingest run document ./tutorial.md
+skillwiki ingest run script ./installer.sh --create
+skillwiki ingest run past_skills ./skills.json --max-candidates 20
+
+# From raw text
+skillwiki ingest run trajectory "open browser -> search -> copy link"
+
+# Auto-create S1 candidates after parsing
+skillwiki ingest run document ./guide.md --create
+
+# Check ingestion status
+skillwiki ingest status <candidate_id>
+```
+
+### Verify a skill (execute-verify loop)
+
+Runs the skill, checks postconditions, repairs and retries until pass or max-retries reached.
+
+```bash
+# Basic — mock harness, 3 retries, auto-promote to S3 on pass
+skillwiki verify <skill_id>
+
+# Watch each attempt, use Claude Code harness, 5 retries
+skillwiki verify <skill_id> --harness claude_code --max-retries 5 --watch
+
+# Verify without promoting state
+skillwiki verify <skill_id> --no-promote
+```
+
+### Audit a skill (static checks)
+
+Checks schema completeness, safety patterns, and postcondition alignment.
+
+```bash
+skillwiki audit <skill_id>
+```
+
+### Promote lifecycle state
+
+Manually advance a skill through the S0→S4 state machine.
+
+```bash
+# States: S0 (raw) → S1 (candidate) → S2 (draft) → S3 (verified) → S4 (released)
+skillwiki promote <skill_id> S3
+skillwiki promote <skill_id> released
+```
+
+### Browse and execute skills
+
+```bash
+# List all skills
+skillwiki skill list
+
+# Filter by state or tag
+skillwiki skill list --state S3
+skillwiki skill list --tag pdf
+
+# View skill details
+skillwiki skill get <skill_id>
+skillwiki skill get <skill_id> --full
+
+# Execute a skill directly
+skillwiki skill exec <skill_id> --input '{"url": "https://example.com"}'
+```
+
+### Run a natural language task
+
+Dispatches through the full Planner → Retrieval → Execution → Verifier pipeline.
+
+```bash
+skillwiki run "analyze this PDF and summarize the key points"
+skillwiki run "create an Excel report from this data" --verbose
+```
+
+### Global options
+
+```bash
+# Point CLI at a non-default backend
+skillwiki --api-url http://192.168.1.10:8001 skill list
+
+# All commands support --help
+skillwiki verify --help
+skillwiki ingest run --help
 ```
 
 ## Useful Pages
@@ -106,7 +223,7 @@ Recommended demo order:
 - Skill graph visualization with Nebula/Readable/Debug presets.
 - Version Lab with business-readable diffs and re-verification after implementation/interface changes.
 - Local harness verification for selected Skills.
-- SkillsBench P0 sparse-subset analysis: oracle `5/5`, no-skill `2/5`, SkillOS generated skills `3/5` using clean combined evidence.
+- SkillsBench P0 sparse-subset analysis: oracle `5/5`, no-skill `2/5`, SkillWiki generated skills `3/5` using clean combined evidence.
 
 ## Documentation
 
@@ -123,8 +240,8 @@ docs\SKILLOS_SKILLSBENCH_FIVE_TASK_DEEP_ANALYSIS_20260529.md
 
 Commit code, lightweight fixtures, scripts, and documentation. Do not commit:
 
-- `skillos-one-click-launcher\config.local.ps1`
-- `skillos-one-click-launcher\runtime\`
+- `skillwiki-launcher\config.local.ps1`
+- `skillwiki-launcher\runtime\`
 - raw benchmark run directories
 - Docker installers/images/cache
 - `.venv`, `node_modules`, or build caches

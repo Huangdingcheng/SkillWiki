@@ -181,6 +181,69 @@ skillos/skillos/
 
 ---
 
+## 开发顺序与模块依赖
+
+### 依赖关系
+
+```
+Member A（Repository）
+    ├─→ Member C 依赖：SearchResult 结构、embedding 检索接口
+    └─→ Member D 依赖：wiki.create / graph 写入接口
+
+Member B（Governance）
+    └─→ Member C 依赖：版本回滚端点（Reflection → 自动修复流程）
+
+Member C + D 完成后
+    └─→ Member E 才能完整展示执行历史、演化周期告警
+```
+
+### 开发顺序
+
+| 阶段 | 成员 | 说明 |
+|------|------|------|
+| 第一批（并行） | **A + B** | 底层存储和治理，无外部依赖，优先完成 |
+| 第二批（并行） | **C + D** | 依赖 A 的检索接口；B 的 rollback 可后接 |
+| 最后 | **E** | 依赖 C/D 新增的 API endpoint 和 WebSocket 事件 |
+
+### 跨模块接口约定（修改前必须沟通）
+
+以下 3 个接口被多个模块共用，**任何改动需提前在群里通知相关成员**：
+
+**1. `SearchResult`（A 负责定义，C/E 消费）**
+```python
+@dataclass
+class SearchResult:
+    skill: Skill
+    score: float        # [0, 1]，语义不变（无论 BM25 还是 embedding）
+    match_reason: str
+```
+> A 引入 embedding 检索后，`score` 的计算方式可以变，但取值范围和语义（越高越相关）不能变。
+
+**2. `ExecutionResult.retrieved_skills`（C 负责填充，E 负责展示）**
+```python
+class RetrievedSkill(BaseModel):
+    skill_id: str
+    name: str
+    description: str
+    skill_type: str
+    score: float
+    match_reason: str
+```
+> C 和 E 不得单方面修改此结构，需双方协商后同步改动。
+
+**3. WebSocket 事件格式（D 新增告警事件，E 消费）**
+```json
+{
+  "type": "event_type_snake_case",
+  "payload": { ... },
+  "timestamp": "ISO8601"
+}
+```
+> 现有事件类型：`plan_started` / `step_completed` / `step_failed` / `plan_completed`
+> D 新增健康告警时，命名规范：`health_degraded` / `health_critical` / `evolution_cycle_done`，需提前告知 E。
+
+---
+
 ## 工作规范
 
 ### 提交规范
@@ -215,7 +278,7 @@ PR 描述模板：
 
 ### 禁止事项
 
-- ❌ **不要修改 `docs/architecture.md`**（由负责人统一维护）
+- ❌ **不要修改 `docs/architecture.md`** 和 **`docs/interfaces.md`**（由负责人统一维护）
 - ❌ **不要直接 push 到 main 分支**
 - ❌ **不要修改其他成员负责的核心文件**（如有交叉，先沟通）
 - ❌ **不要提交 `.env` 文件或 API Key**

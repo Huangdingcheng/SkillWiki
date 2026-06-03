@@ -1,0 +1,44 @@
+{
+  "schema_version": "skillos.maintenance_store.v1",
+  "updated_at": "2026-06-02T23:44:55.053953+00:00",
+  "items": [
+    {
+      "proposal_id": "098e97ca-b8de-4005-8bca-eeb5c153982f",
+      "skill_id": "demo_degraded_submit_form",
+      "trigger": "low_success_rate",
+      "recommended_action": "repair",
+      "evidence": [
+        "成功率严重偏低: 20.0%"
+      ],
+      "root_cause": "成功率严重偏低: 20.0%",
+      "patch_hint": "立即修复或废弃该 Skill",
+      "feedback_sources": [
+        "health_monitor"
+      ],
+      "targets_to_fix": [
+        "成功率严重偏低: 20.0%"
+      ],
+      "invariants_to_preserve": [
+        "Preserve public Skill inputs, outputs, and successful recent behavior."
+      ],
+      "validation_plan": [
+        "Review recent execution history for repeated failure patterns.",
+        "Rerun the affected benchmark or verifier after the proposed change."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.8,
+      "requires_human_review": true,
+      "status": "pending",
+      "source": "skill_monitor",
+      "metadata": {
+        "health_status": "critical",
+        "success_rate": 0.2
+      },
+      "created_at": "2026-06-02T23:44:55.053953Z",
+      "updated_at": "2026-06-02T23:44:55.053953Z"
+    }
+  ]
+}

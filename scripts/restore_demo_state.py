@@ -13,7 +13,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = REPO_ROOT / "docs" / "demo-fixtures"
-RUNTIME_DIR = REPO_ROOT / "skillos-one-click-launcher" / "runtime" / "demo-state-runs"
+RUNTIME_DIR = REPO_ROOT / "skillwiki-launcher" / "runtime" / "demo-state-runs"
 
 APPROVED_PAST_SKILL_NAMES = {
     "brand_guidelines",

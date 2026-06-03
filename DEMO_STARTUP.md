@@ -17,7 +17,7 @@ The launcher will:
 - start the Vite frontend on `127.0.0.1:5174`
 - proxy frontend API requests to the backend
 - open the browser at `/wiki`
-- write logs and PID state under `skillos-one-click-launcher\runtime`
+- write logs and PID state under `skillwiki-launcher\runtime`
 
 To stop both services, double-click:
 
@@ -50,7 +50,7 @@ python -m skillos.api.main --host 127.0.0.1 --port 8001 --repository-backend mem
 Frontend:
 
 ```powershell
-cd .\skillos-frontend
+cd .\skillwiki-frontend
 $env:SKILLOS_API_TARGET = "http://127.0.0.1:8001"
 $env:VITE_SKILLOS_DISABLE_WS = "1"
 npm run dev -- --host 127.0.0.1 --port 5174
@@ -65,7 +65,7 @@ http://127.0.0.1:5174/wiki
 ## LLM Configuration
 
 The one-click launcher requires a real DeepSeek/OpenAI-compatible configuration by default.
-If `skillos-one-click-launcher\config.local.ps1` does not exist, the startup
+If `skillwiki-launcher\config.local.ps1` does not exist, the startup
 window prompts for:
 
 ```text
@@ -77,7 +77,7 @@ DeepSeek API key
 The key input is hidden. The values are saved only to:
 
 ```text
-skillos-one-click-launcher\config.local.ps1
+skillwiki-launcher\config.local.ps1
 ```
 
 `config.local.ps1` is ignored by Git and must not be committed.
@@ -85,7 +85,7 @@ skillos-one-click-launcher\config.local.ps1
 You can also create it manually by copying:
 
 ```text
-skillos-one-click-launcher\config.example.ps1
+skillwiki-launcher\config.example.ps1
 ```
 
 Then fill:
