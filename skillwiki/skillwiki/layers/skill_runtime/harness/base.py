@@ -13,7 +13,7 @@ from ....models.skill_model import Skill
 class HarnessKind(str, Enum):
     """Supported execution harness adapters."""
 
-    LOCAL_SKILLOS = "local_skillos"
+    LOCAL_SKILLWIKI = "local_skillwiki"
     CODEX_CLI = "codex_cli"
     CLAUDE_CODE = "claude_code"
 

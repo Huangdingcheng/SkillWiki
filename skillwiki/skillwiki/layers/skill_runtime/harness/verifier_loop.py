@@ -19,7 +19,7 @@ from ....models.skill_model import (
 from ..executor import SkillExecutor
 from .base import HarnessKind, HarnessRunResult, HarnessTestCase, VerificationLoopResult
 from .codex_cli import CodexCliHarness
-from .local_skillos import LocalSkillWikiHarness
+from .local_skillwiki import LocalSkillWikiHarness
 from .workspace import HarnessWorkspace
 
 
@@ -45,7 +45,7 @@ class VerificationLoop:
         self,
         skill_id: str,
         *,
-        harness_kind: HarnessKind = HarnessKind.LOCAL_SKILLOS,
+        harness_kind: HarnessKind = HarnessKind.LOCAL_SKILLWIKI,
         max_attempts: int = 3,
         promote_on_pass: bool = True,
         test_cases: Optional[List[HarnessTestCase]] = None,
@@ -126,7 +126,7 @@ class VerificationLoop:
         return skill
 
     def _harness(self, kind: HarnessKind) -> Any:
-        if kind == HarnessKind.LOCAL_SKILLOS:
+        if kind == HarnessKind.LOCAL_SKILLWIKI:
             return LocalSkillWikiHarness(self._executor, registry=self._wiki)
         if kind == HarnessKind.CODEX_CLI:
             return CodexCliHarness()

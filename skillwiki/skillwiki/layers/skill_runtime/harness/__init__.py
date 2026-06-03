@@ -2,7 +2,7 @@
 
 from .base import HarnessKind, HarnessRunResult, HarnessTestCase, VerificationLoopResult
 from .codex_cli import CodexCliHarness
-from .local_skillos import LocalSkillWikiHarness
+from .local_skillwiki import LocalSkillWikiHarness
 from .verifier_loop import VerificationLoop
 from .workspace import HarnessEvidenceStore, HarnessWorkspace
 
