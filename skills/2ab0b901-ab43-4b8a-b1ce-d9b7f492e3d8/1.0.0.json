@@ -1,0 +1,351 @@
+{
+  "component_ids": [
+    "click_element",
+    "type_text"
+  ],
+  "dependency_ids": [],
+  "description": "Reusable capability to interact with an autocomplete input: focus, type a partial query, select a suggestion that matches a given pattern, and submit the form.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:autocomplete_select_and_submit"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Execute the autocomplete selection and submission: first click the input ({{input_selector}}), type {{query_prefix}}, wait for suggestions, select the suggestion matching {{target_pattern}}, then click submit ({{submit_selector}}). If no suggestion matches and fallback_manual is True, type the full target value.",
+    "sub_skill_ids": [
+      "click_element",
+      "type_text"
+    ],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "fallback_manual": {
+          "description": "If true, type the full target string if no suggestion matches",
+          "type": "boolean"
+        },
+        "input_selector": {
+          "description": "CSS or XPath selector for the autocomplete input element",
+          "type": "string"
+        },
+        "query_prefix": {
+          "description": "The partial string to type (e.g., 'Aust')",
+          "type": "string"
+        },
+        "submit_selector": {
+          "description": "CSS or XPath selector for the submit button",
+          "type": "string"
+        },
+        "target_pattern": {
+          "description": "Regex or exact pattern that the selected suggestion must match (e.g., 'Aust.*lia')",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_selector",
+        "submit_selector",
+        "query_prefix",
+        "target_pattern"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "selected_value": {
+          "description": "The value that was entered or selected",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "failure"
+          ],
+          "type": "string"
+        },
+        "submitted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "The input contains the selected value.",
+      "The form has been submitted (if submission was part of the task)."
+    ],
+    "preconditions": [
+      "The autocomplete input is visible and enabled.",
+      "The submit button is visible and enabled.",
+      "The form is ready to receive input."
+    ],
+    "side_effects": []
+  },
+  "name": "autocomplete_select_and_submit_trajectory_rci_autocomplete_submit",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "940fea26c1738abab1d2fa9c817472987f796357649a8056c09b715604a4b069",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "autocomplete_select_and_submit",
+            "passed_challenges": 3,
+            "score": 0.85
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "The form is submitted and a confirmation page or message appears.",
+            "failure_signal": "The form does not submit, the input remains empty, or an error is shown (e.g., invalid selection).",
+            "rubric": [
+              "The autocomplete input is focused by clicking.",
+              "The typed query triggers the correct suggestion.",
+              "The suggestion 'Australia' is selected (e.g., by clicking or pressing Enter).",
+              "The submit button is clicked after selection.",
+              "The form submits successfully, which can be verified by a success message or navigation change."
+            ],
+            "task": "Enter 'Australia' using the autocomplete and submit the form.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The selected option fills the input correctly, and submission succeeds.",
+            "failure_signal": "No dropdown appears, or the selected option does not match the pattern, or submission fails.",
+            "rubric": [
+              "Click the input to focus.",
+              "Type a partial prefix like 'Aus'.",
+              "Wait for the dropdown to appear.",
+              "Identify the first option that matches the full pattern 'Aust...lia' (e.g., 'Australia').",
+              "Select that option.",
+              "Submit the form."
+            ],
+            "task": "Open the autocomplete dropdown with a partial input and select the first matching option that starts with 'Aust' and ends with 'lia'.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "The form submits with the manually typed value.",
+            "failure_signal": "The form rejects manual input, or the autocomplete forces an invalid selection.",
+            "rubric": [
+              "Focus the input.",
+              "Type 'Australia' manually.",
+              "Verify that no matching suggestion was provided (or dismiss any suggestion).",
+              "Click submit.",
+              "The form should still accept the input and submit."
+            ],
+            "task": "If the autocomplete does not offer a matching suggestion, manually type the full string 'Australia' and submit.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "No external APIs or tools are involved; it is a client-side autocomplete component."
+          ],
+          "constraints": [
+            "The input must trigger autocomplete suggestions.",
+            "The selected suggestion must start with 'Aust' and end with 'lia'.",
+            "The form must be submitted only after a valid selection is made."
+          ],
+          "examples": [
+            "Typing 'Aust' should bring up 'Australia' as a suggestion, which is then selected and submitted."
+          ],
+          "facts": [
+            "The autocomplete input has HTML id 'tags'.",
+            "The submit button has HTML id 'subbtn'.",
+            "The required input matches the pattern 'Aust...lia' (starts with 'Aust', ends with 'lia').",
+            "The autocomplete provides suggestions as the user types."
+          ],
+          "procedures": [
+            "Click on the autocomplete input to focus it.",
+            "Type a query that matches the required pattern (e.g., 'Aust').",
+            "Wait for the autocomplete dropdown to appear.",
+            "Select the suggestion that matches the full required string (e.g., 'Australia').",
+            "Click the submit button to submit the form."
+          ],
+          "summary": "A web form with an autocomplete input field (id='tags') and a submit button (id='subbtn'). The task is to enter a word that starts with 'Aust' and ends with 'lia' (e.g., 'Australia') by interacting with the autocomplete suggestions, then submit the form."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "autocomplete_select_and_submit",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "autocomplete_select_and_submit",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "autocomplete_select_and_submit",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [
+            "click_element",
+            "type_text"
+          ],
+          "components": [
+            "click_element",
+            "type_text",
+            "wait_for_element",
+            "select_dropdown_option"
+          ],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Reusable capability to interact with an autocomplete input: focus, type a partial query, select a suggestion that matches a given pattern, and submit the form.",
+          "input_schema": {
+            "properties": {
+              "fallback_manual": {
+                "description": "If true, type the full target string if no suggestion matches",
+                "type": "boolean"
+              },
+              "input_selector": {
+                "description": "CSS or XPath selector for the autocomplete input element",
+                "type": "string"
+              },
+              "query_prefix": {
+                "description": "The partial string to type (e.g., 'Aust')",
+                "type": "string"
+              },
+              "submit_selector": {
+                "description": "CSS or XPath selector for the submit button",
+                "type": "string"
+              },
+              "target_pattern": {
+                "description": "Regex or exact pattern that the selected suggestion must match (e.g., 'Aust.*lia')",
+                "type": "string"
+              }
+            },
+            "required": [
+              "input_selector",
+              "submit_selector",
+              "query_prefix",
+              "target_pattern"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "autocomplete_select_and_submit",
+          "output_schema": {
+            "properties": {
+              "selected_value": {
+                "description": "The value that was entered or selected",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "success",
+                  "failure"
+                ],
+                "type": "string"
+              },
+              "submitted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "The input contains the selected value.",
+            "The form has been submitted (if submission was part of the task)."
+          ],
+          "preconditions": [
+            "The autocomplete input is visible and enabled.",
+            "The submit button is visible and enabled.",
+            "The form is ready to receive input."
+          ],
+          "prompt_template": "Execute the autocomplete selection and submission: first click the input ({{input_selector}}), type {{query_prefix}}, wait for suggestions, select the suggestion matching {{target_pattern}}, then click submit ({{submit_selector}}). If no suggestion matches and fallback_manual is True, type the full target value.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [
+            "click_element",
+            "type_text"
+          ],
+          "tags": [
+            "trajectory",
+            "ctx2skill",
+            "autocomplete",
+            "form_submit",
+            "web_ui"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The candidate 'autocomplete_select_and_submit' directly addresses the observed trajectory and the expected skill name. It generalizes the specific task (enter 'Aust...lia') into a reusable pattern: given input and submit selectors, a query prefix, and a pattern, it can handle any similar autocomplete+submit scenario. The score reflects high relevance and moderate generality (0.85), as it may need adaptation for different autocomplete implementations (e.g., delay, selection method). The other potential candidate ('click_and_type_only') was less preferred because it would not handle the selection step explicitly, which is critical for autocomplete tasks."
+      },
+      "domain": "web",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub excerpt normalized as local test fixture",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\trajectory_021_9c3c9d63.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "RCI-agent / web trajectory sample",
+      "raw_content_preview": "Source: https://raw.githubusercontent.com/posgnu/rci-agent/main/prompt/use-autocomplete/example.txt\nExpected skill name: autocomplete_select_and_submit\n\nTask:\nEnter an item that starts with \"Aust\" and ends with \"lia\", then submit the form.\n\nTrajectory:\n1. Observation: The page has an autocomplete input with id \"tags\" and a submit button with id \"subbtn\".\n   Action: clickxpath //*[@id=\"tags\"]\n   Expected observation: The autocomplete input is focused.\n\n2. Observation: The input is focused and emp",
+      "source_id": "trajectory-rci-autocomplete-submit",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/posgnu/rci-agent",
+      "unit_id": "e19a389b-3c08-4781-b2ec-f3fa64b67571"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-rci-autocomplete-submit",
+      "e19a389b-3c08-4781-b2ec-f3fa64b67571"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "2ab0b901-ab43-4b8a-b1ce-d9b7f492e3d8",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "autocomplete",
+    "form_submit",
+    "web_ui",
+    "an",
+    "click",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:trajectory-rci-autocomplete-submit",
+    "domain:web"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
