@@ -1,0 +1,314 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:script:script_dry_run_analyzer"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.script_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.dry_run",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "input.allowed_paths",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.entrypoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.arguments",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.dependencies",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.side_effects",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.mutation_avoided",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Call fill_pdf_fields with the provided input_pdf_path, fields_json_path, and output_pdf_path.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "fields_json_path": {
+          "description": "Path to JSON file with field definitions (name, value, page).",
+          "type": "string"
+        },
+        "input_pdf_path": {
+          "description": "Path to the input fillable PDF.",
+          "type": "string"
+        },
+        "output_pdf_path": {
+          "description": "Path for the output filled PDF.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_pdf_path",
+        "fields_json_path",
+        "output_pdf_path"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "Output PDF is created with fields filled."
+    ],
+    "preconditions": [
+      "Input PDF exists and is readable.",
+      "JSON file exists and is valid.",
+      "Output directory is writable."
+    ],
+    "side_effects": []
+  },
+  "name": "script_dry_run_analyzer_script_skillsbench_18_fill_fillable_fields_scripts",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "bc31c4d246c0f4a4b01b40bf3a0dd063987ebeebada2ddc1ad55de70c690d471",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "script_dry_run_analyzer",
+            "passed_challenges": 2,
+            "score": 0.85
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "The output PDF has the specified fields filled with the values from the JSON.",
+            "failure_signal": "Any field is missing, incorrectly filled, or the output PDF is corrupted.",
+            "rubric": [
+              "Correctly reads the JSON file.",
+              "Groups fields by page number.",
+              "Fills all fields with the correct values.",
+              "Outputs a valid PDF file."
+            ],
+            "task": "Given a fillable PDF form with fields on multiple pages and a valid JSON file with field values, fill the form and verify the output PDF contains the filled values.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The script either raises an exception with a descriptive message or logs a warning and continues.",
+            "failure_signal": "Script crashes with an unhandled exception or produces a corrupted output.",
+            "rubric": [
+              "Detects the invalid page reference.",
+              "Does not crash or produce a malformed PDF.",
+              "Provides a clear error message or skips the invalid field.",
+              "Still fills valid fields if possible."
+            ],
+            "task": "Attempt to fill a PDF with a JSON file that contains a field for a page that does not exist in the PDF. Handle the error gracefully.",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "pypdf.PdfReader",
+            "pypdf.PdfWriter",
+            "json.load",
+            "sys"
+          ],
+          "constraints": [
+            "The input PDF must be a fillable form with AcroForm fields.",
+            "The JSON file must be valid and contain the necessary field information.",
+            "Output PDF path must be writable."
+          ],
+          "examples": [],
+          "facts": [
+            "The script uses pypdf's PdfReader and PdfWriter to manipulate PDFs.",
+            "It reads a JSON file containing field data.",
+            "Fields are grouped by page number before filling."
+          ],
+          "procedures": [
+            "Call fill_pdf_fields(input_pdf_path, fields_json_path, output_pdf_path) to fill the PDF.",
+            "The JSON file should contain an array of field objects, each with at least 'name', 'value', and 'page' keys."
+          ],
+          "summary": "Python script that fills fillable form fields in a PDF using a JSON file specifying field values, grouping fields by page number, utilizing the pypdf library."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [
+            "pypdf"
+          ],
+          "dependency_ids": [],
+          "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+          "input_schema": {
+            "properties": {
+              "fields_json_path": {
+                "description": "Path to JSON file with field definitions (name, value, page).",
+                "type": "string"
+              },
+              "input_pdf_path": {
+                "description": "Path to the input fillable PDF.",
+                "type": "string"
+              },
+              "output_pdf_path": {
+                "description": "Path for the output filled PDF.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "input_pdf_path",
+              "fields_json_path",
+              "output_pdf_path"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "script_dry_run_analyzer",
+          "output_schema": {
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "success",
+                  "error"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "Output PDF is created with fields filled."
+          ],
+          "preconditions": [
+            "Input PDF exists and is readable.",
+            "JSON file exists and is valid.",
+            "Output directory is writable."
+          ],
+          "prompt_template": "Call fill_pdf_fields with the provided input_pdf_path, fields_json_path, and output_pdf_path.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "script",
+            "ctx2skill",
+            "pdf",
+            "form_filling"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The fill_pdf_fields skill directly addresses the core functionality extracted from the context: filling fillable PDF fields from a JSON file. It is atomic, reusable for any PDF form-filling task with similar input requirements, and scored high due to its clear preconditions, postconditions, and straightforward implementation. The challenges test both normal operation and error handling, which the skill can accommodate with minor modifications."
+      },
+      "domain": "office",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "script",
+      "license_note": "Apache-2.0 benchmark script excerpt; run only in isolated harness/eval directories",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\script_011_3f0fc4fb.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench script/oracle/test utility",
+      "raw_content_preview": "# Source: tasks/court-form-filling/environment/skills/pdf/scripts/fill_fillable_fields.py\n# Project: SkillsBench\n\nimport json\nimport sys\n\nfrom extract_form_field_info import get_field_info\nfrom pypdf import PdfReader, PdfWriter\n\n# Fills fillable form fields in a PDF. See forms.md.\n\n\ndef fill_pdf_fields(input_pdf_path: str, fields_json_path: str, output_pdf_path: str):\n    with open(fields_json_path) as f:\n        fields = json.load(f)\n    # Group by page number.\n    fields_by_page = {}\n    for f",
+      "source_id": "script-skillsbench-18-fill-fillable-fields-scripts",
+      "source_type": "script",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/court-form-filling/environment/skills/pdf/scripts/fill_fillable_fields.py",
+      "unit_id": "0690a7f4-4445-4d54-9648-00800be62b22"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "script-skillsbench-18-fill-fillable-fields-scripts",
+      "0690a7f4-4445-4d54-9648-00800be62b22"
+    ],
+    "source_type": "script"
+  },
+  "skill_id": "ca413914-ec8a-45cb-95ca-e4e80dc1925d",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "script",
+    "candidate-review",
+    "ctx2skill",
+    "pdf",
+    "form_filling",
+    "fields",
+    "fill",
+    "form",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:script-skillsbench-18-fill-fillable-fields-scripts",
+    "domain:office"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
