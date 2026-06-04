@@ -1,0 +1,364 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reusable skill to generate structured CSV security audit reports from vulnerability JSON data, supporting severity-based filtering, field mapping, and computed columns.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:document:document_grounded_extractor"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.document_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.allowed_operations",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.answer",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.extracted_steps",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Given a list of vulnerability JSON objects, generate a CSV report using csv.DictWriter with severity-based filtering, field mapping, and optional computed fields.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "computed_fields": {
+          "description": "Optional computed fields with a Python expression string (e.g., 'risk_score = 3 if severity==\"HIGH\" else 4')",
+          "items": {
+            "properties": {
+              "func": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "field_mapping": {
+          "description": "Mapping from JSON keys to CSV column headers (e.g., {'id':'ID','severity':'Severity'})",
+          "type": "object"
+        },
+        "output_path": {
+          "description": "File path for output CSV",
+          "type": "string"
+        },
+        "severity_filter": {
+          "description": "List of severity levels to include (e.g., ['HIGH', 'CRITICAL'])",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vulnerabilities": {
+          "description": "List of vulnerability objects with fields like id, severity, description, package",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "vulnerabilities",
+        "output_path"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "csv_path": {
+          "description": "Path to generated CSV file",
+          "type": "string"
+        },
+        "row_count": {
+          "description": "Number of rows written",
+          "type": "integer"
+        },
+        "success": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "CSV file created at specified path with filtered and mapped fields",
+      "Severity filter applied"
+    ],
+    "preconditions": [
+      "Vulnerability data is available as a list of JSON objects",
+      "Python environment with csv module"
+    ],
+    "side_effects": []
+  },
+  "name": "document_grounded_extractor_document_skillsbench_14_skill_vulnerability_csv_reporting",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "5c3a3e6e1f3abc900bfbcd87979f96239e76ba6f0876f4779457de8098e7cae6",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 4,
+            "score": 0.85
+          },
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 4,
+            "score": 0.7
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A valid CSV file containing only HIGH and CRITICAL items with correct fields.",
+            "failure_signal": "CSV contains items with LOW or MEDIUM severity, or columns are misaligned, or script crashes.",
+            "rubric": [
+              "Correctly defines CSV column headers matching JSON keys",
+              "Applies severity filter for HIGH and CRITICAL only",
+              "Uses csv.DictWriter to write rows",
+              "Output CSV is properly formatted with no extra quoting issues"
+            ],
+            "task": "Write a Python script that reads a list of vulnerability JSON objects (each containing id, severity, description, package), filters to include only HIGH and CRITICAL severity items, and writes the result to a CSV file with columns id, severity, description, package using csv.DictWriter.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "CSV file with extra risk_score column, no rows with missing severity, warning printed to stderr.",
+            "failure_signal": "Script fails on missing severity, or risk_score values are incorrect, or column order is wrong.",
+            "rubric": [
+              "Correctly computes risk_score for existing severity values",
+              "Skips rows with missing severity and logs warning",
+              "Maintains correct csv.DictWriter usage",
+              "Includes risk_score column in output CSV"
+            ],
+            "task": "Extend the script from challenge_1 to add a computed field 'risk_score' in the CSV. risk_score = 3 for HIGH severity, 4 for CRITICAL. Also handle missing 'severity' field gracefully by skipping that row and logging a warning.",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "Python csv.DictWriter"
+          ],
+          "constraints": [
+            "Input vulnerabilities must be in JSON format",
+            "Output must be a valid CSV file",
+            "Field mapping must be consistent between JSON keys and CSV column headers",
+            "Severity filtering must honor defined levels"
+          ],
+          "examples": [
+            "Input: [{\"id\": \"CVE-2021-1234\", \"severity\": \"HIGH\", \"description\": \"Buffer overflow\", \"package\": \"openssl\"}]",
+            "Output CSV: id,severity,description,package; rows with only HIGH/CRITICAL severity"
+          ],
+          "facts": [
+            "Skill name: vulnerability-csv-reporting",
+            "Uses Python csv.DictWriter for CSV output",
+            "Applies severity-based filtering to vulnerability data",
+            "Maps JSON fields to CSV columns",
+            "Designed for security audit reporting"
+          ],
+          "procedures": [
+            "Define CSV schema with desired columns (e.g., CVE, severity, description, package)",
+            "Filter vulnerability data by severity levels (e.g., HIGH, CRITICAL)",
+            "Map JSON object fields to CSV row fields",
+            "Write rows to CSV using csv.DictWriter"
+          ],
+          "summary": "The vulnerability-csv-reporting skill generates structured CSV security audit reports from vulnerability data. It uses Python's csv.DictWriter, applies severity-based filtering, and maps JSON vulnerability fields to tabular CSV format."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.7,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.7,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reusable skill to generate structured CSV security audit reports from vulnerability JSON data, supporting severity-based filtering, field mapping, and computed columns.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+          "input_schema": {
+            "properties": {
+              "computed_fields": {
+                "description": "Optional computed fields with a Python expression string (e.g., 'risk_score = 3 if severity==\"HIGH\" else 4')",
+                "items": {
+                  "properties": {
+                    "func": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "field_mapping": {
+                "description": "Mapping from JSON keys to CSV column headers (e.g., {'id':'ID','severity':'Severity'})",
+                "type": "object"
+              },
+              "output_path": {
+                "description": "File path for output CSV",
+                "type": "string"
+              },
+              "severity_filter": {
+                "description": "List of severity levels to include (e.g., ['HIGH', 'CRITICAL'])",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "vulnerabilities": {
+                "description": "List of vulnerability objects with fields like id, severity, description, package",
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "vulnerabilities",
+              "output_path"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "document_grounded_extractor",
+          "output_schema": {
+            "properties": {
+              "csv_path": {
+                "description": "Path to generated CSV file",
+                "type": "string"
+              },
+              "row_count": {
+                "description": "Number of rows written",
+                "type": "integer"
+              },
+              "success": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "CSV file created at specified path with filtered and mapped fields",
+            "Severity filter applied"
+          ],
+          "preconditions": [
+            "Vulnerability data is available as a list of JSON objects",
+            "Python environment with csv module"
+          ],
+          "prompt_template": "Given a list of vulnerability JSON objects, generate a CSV report using csv.DictWriter with severity-based filtering, field mapping, and optional computed fields.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "document",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The candidate 'vulnerability_csv_reporting' directly matches the specialized domain of vulnerability security audit reporting, includes all necessary features (severity filtering, field mapping, computed fields) and achieves a higher cross-time replay lite score (0.85) due to its focused, reusable design aligned with the given context."
+      },
+      "domain": "security",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "document",
+      "license_note": "Apache-2.0 repository fixture excerpt; source path and task id recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\document_006_b7bba295.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench vulnerability CSV reporting documentation",
+      "raw_content_preview": "# SkillsBench vulnerability CSV reporting documentation\n\nSource path: `tasks/software-dependency-audit/environment/skills/vulnerability-csv-reporting/SKILL.md`\n\n---\nname: vulnerability-csv-reporting\ndescription: Generate structured CSV security audit reports from vulnerability data with proper filtering and formatting. This skill covers CSV schema design for security reports, using Python csv.DictWriter, severity-based filtering, and field mapping from JSON to tabular format.\n---\n\n# Vulnerabilit",
+      "source_id": "document-skillsbench-14-skill-vulnerability-csv-reporting",
+      "source_type": "document",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/software-dependency-audit/environment/skills/vulnerability-csv-reporting/SKILL.md",
+      "unit_id": "7de780c9-afa6-42ed-950c-bf1278ff0086"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "document-skillsbench-14-skill-vulnerability-csv-reporting",
+      "7de780c9-afa6-42ed-950c-bf1278ff0086"
+    ],
+    "source_type": "document"
+  },
+  "skill_id": "f9bb5a83-ca7f-4275-96c9-29e3f045ee36",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "document",
+    "candidate-review",
+    "ctx2skill",
+    "audit",
+    "by",
+    "csv",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:document-skillsbench-14-skill-vulnerability-csv-reporting",
+    "domain:security"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
