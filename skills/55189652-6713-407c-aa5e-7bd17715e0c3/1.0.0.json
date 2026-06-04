@@ -1,0 +1,295 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Perform vulnerability scanning on dependency files using Trivy in offline mode, outputting results in JSON format. Requires Trivy installed and vulnerability database pre-cached.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:document:document_grounded_extractor"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.document_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.allowed_operations",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.answer",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.extracted_steps",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Run Trivy offline scan on the given dependency file. Execute: trivy fs --offline-scan {dependency_file_path} --format json -o {output_path}. Capture exit code and output. If error, report issue.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "trivy"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "dependency_file_path": {
+          "description": "Path to the dependency lock file (e.g., package-lock.json).",
+          "type": "string"
+        },
+        "output_path": {
+          "description": "File path for the JSON report output.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dependency_file_path"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "report": {
+          "description": "Trivy JSON vulnerability report.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "JSON report file is created at specified output path (or printed to stdout if not specified).",
+      "No outbound network requests were made during execution."
+    ],
+    "preconditions": [
+      "Trivy CLI is installed and accessible.",
+      "Offline vulnerability database is cached (e.g., via trivy --cache-dir).",
+      "Dependency file exists and is readable."
+    ],
+    "side_effects": []
+  },
+  "name": "document_grounded_extractor_document_skillsbench_13_skill_trivy_offline_vulnerability_scanning",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "aacddaea358658dc217800b5d6d3a1532e12f2edb28aaf8f10db34212acae2d8",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 4,
+            "score": 0.85
+          },
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 4,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A JSON file with keys like 'Results', 'Target', 'Vulnerabilities' (if any).",
+            "failure_signal": "Trivy attempts to contact the internet, or the output is not valid JSON, or command fails with missing database error.",
+            "rubric": [
+              "Trivy command uses --offline-scan flag or equivalent.",
+              "Output file is valid JSON.",
+              "JSON report contains a 'Results' array with vulnerability entries (or empty if none)."
+            ],
+            "task": "Execute a Trivy offline vulnerability scan on a provided package-lock.json file and produce a JSON report.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "Trivy executes and returns exit code 0; no download attempts seen in logs.",
+            "failure_signal": "Trivy tries to download database or fails with 'no such file or directory' for cache.",
+            "rubric": [
+              "Database cache directory exists with required files (e.g., db/metadata.json, db/trivy.db).",
+              "Trivy scan command runs without network errors.",
+              "Scan completes and produces output (even if no vulnerabilities found)."
+            ],
+            "task": "Prepare a Trivy offline scanning environment by caching the vulnerability database, then verify that Trivy can scan a lock file without internet access.",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "Trivy CLI tool (command line interface)"
+          ],
+          "constraints": [
+            "No internet access allowed during scanning; all data must be pre-cached.",
+            "Trivy must be installed and accessible in the execution environment.",
+            "Dependency files must be in a format supported by Trivy (e.g., npm, pip, maven).",
+            "The vulnerability database must be current and compatible with the Trivy version."
+          ],
+          "examples": [
+            "trivy fs --offline-scan /path/to/package-lock.json --format json -o report.json"
+          ],
+          "facts": [
+            "Trivy is a vulnerability scanner for container images and filesystems.",
+            "Offline mode requires a pre-downloaded vulnerability database to avoid internet access.",
+            "Scanning works on common package lock files like package-lock.json and yarn.lock.",
+            "Output can be generated in JSON format for automated processing."
+          ],
+          "procedures": [
+            "Download the Trivy vulnerability database to a cache directory (e.g., using 'trivy --cache-dir <path> image --download-db-only alpine:latest' while online).",
+            "Set Trivy to use the cached database with --offline-scan flag or environment variable TRIVY_OFFLINE_SCAN=true.",
+            "Execute Trivy scan: trivy fs --offline-scan <path-to-lockfile> --format json -o <output-file>.",
+            "Read the JSON output to identify vulnerabilities, their severity, and package details."
+          ],
+          "summary": "Guide for using Trivy vulnerability scanner in offline mode to scan dependency files for security vulnerabilities, covering setup, execution, and JSON report generation without internet access."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Perform vulnerability scanning on dependency files using Trivy in offline mode, outputting results in JSON format. Requires Trivy installed and vulnerability database pre-cached.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+          "input_schema": {
+            "properties": {
+              "dependency_file_path": {
+                "description": "Path to the dependency lock file (e.g., package-lock.json).",
+                "type": "string"
+              },
+              "output_path": {
+                "description": "File path for the JSON report output.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "dependency_file_path"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "document_grounded_extractor",
+          "output_schema": {
+            "properties": {
+              "report": {
+                "description": "Trivy JSON vulnerability report.",
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "JSON report file is created at specified output path (or printed to stdout if not specified).",
+            "No outbound network requests were made during execution."
+          ],
+          "preconditions": [
+            "Trivy CLI is installed and accessible.",
+            "Offline vulnerability database is cached (e.g., via trivy --cache-dir).",
+            "Dependency file exists and is readable."
+          ],
+          "prompt_template": "Run Trivy offline scan on the given dependency file. Execute: trivy fs --offline-scan {dependency_file_path} --format json -o {output_path}. Capture exit code and output. If error, report issue.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "document",
+            "ctx2skill",
+            "security",
+            "vulnerability_scanning"
+          ],
+          "tool_calls": [
+            "trivy"
+          ]
+        },
+        "selected_reason": "The atomic skill 'trivy_offline_vulnerability_scan' is selected because it is more focused and reusable across different contexts. It assumes the environment is already prepared, which is the common use case for offline scanning tasks where database caching is handled separately. It scores higher (0.85) due to its simplicity and clear separation of concerns."
+      },
+      "domain": "security",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "document",
+      "license_note": "Apache-2.0 repository fixture excerpt; source path and task id recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\document_005_59cd68b6.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench Trivy offline scanning documentation",
+      "raw_content_preview": "# SkillsBench Trivy offline scanning documentation\n\nSource path: `tasks/software-dependency-audit/environment/skills/trivy-offline-vulnerability-scanning/SKILL.md`\n\n---\nname: trivy-offline-vulnerability-scanning\ndescription: Use Trivy vulnerability scanner in offline mode to discover security vulnerabilities in dependency files. This skill covers setting up offline scanning, executing Trivy against package lock files, and generating JSON vulnerability reports without requiring internet access.\n-",
+      "source_id": "document-skillsbench-13-skill-trivy-offline-vulnerability-scanning",
+      "source_type": "document",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/software-dependency-audit/environment/skills/trivy-offline-vulnerability-scanning/SKILL.md",
+      "unit_id": "4087970d-3570-4905-8833-efc0d3b72d3c"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "document-skillsbench-13-skill-trivy-offline-vulnerability-scanning",
+      "4087970d-3570-4905-8833-efc0d3b72d3c"
+    ],
+    "source_type": "document"
+  },
+  "skill_id": "55189652-6713-407c-aa5e-7bd17715e0c3",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "document",
+    "candidate-review",
+    "ctx2skill",
+    "security",
+    "vulnerability_scanning",
+    "files",
+    "lock",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:document-skillsbench-13-skill-trivy-offline-vulnerability-scanning",
+    "domain:security"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
