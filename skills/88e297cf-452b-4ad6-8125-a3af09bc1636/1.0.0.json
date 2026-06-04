@@ -1,0 +1,330 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:script:script_dry_run_analyzer"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.script_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.dry_run",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "input.allowed_paths",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.entrypoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.arguments",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.dependencies",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.side_effects",
+        "type": "json_array"
+      },
+      {
+        "path": "output.result.mutation_avoided",
+        "type": "json_equals",
+        "value": true
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are an AI that checks for overlapping bounding boxes in a JSON string. Parse the input JSON, extract fields with their bounding boxes (x1,y1,x2,y2). For each pair of fields, check if the rectangles overlap (i.e., not (a.x2 <= b.x1 or b.x2 <= a.x1 or a.y2 <= b.y1 or b.y2 <= a.y1)). Return a list of overlapping field IDs or an empty list. If the JSON is malformed or missing required keys, return an error message.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "fields_json": {
+          "description": "JSON string representing a list of fields, each with a 'bounding_box' key containing [x1, y1, x2, y2].",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fields_json"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "description": "Result of the overlap check.",
+      "properties": {
+        "error": {
+          "description": "Error message if input is invalid.",
+          "type": "string"
+        },
+        "overlaps": {
+          "description": "List of overlapping pairs. Empty if no overlaps.",
+          "items": {
+            "description": "Pair of field IDs that overlap.",
+            "properties": {
+              "field1": {
+                "type": "string"
+              },
+              "field2": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "If input is valid, overlaps are detected and reported.",
+      "If input is invalid, an error message is returned."
+    ],
+    "preconditions": [
+      "Input is a string that should be valid JSON.",
+      "Each field object in the JSON array must have a 'bounding_box' key with a list of four numbers."
+    ],
+    "side_effects": []
+  },
+  "name": "script_dry_run_analyzer_script_skillsbench_13_check_bounding_boxes_scripts",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "195477f8c40e40f52d0714d83a2d461d01c7660ebc723ef0bf266d2bd45d34cf",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "script_dry_run_analyzer",
+            "passed_challenges": 3,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "The output includes a message like 'Overlap detected between field A and field B'.",
+            "failure_signal": "The output says no overlaps or fails to parse the JSON.",
+            "rubric": [
+              "Correctly parses the JSON input.",
+              "Identifies the overlapping pair.",
+              "Outputs a clear report of the overlap."
+            ],
+            "task": "Given a JSON string representing fields with bounding boxes, detect and report any overlapping bounding boxes. The JSON contains two fields that overlap.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The output includes a message like 'No overlapping bounding boxes found'.",
+            "failure_signal": "The output incorrectly reports an overlap or fails to parse.",
+            "rubric": [
+              "Correctly parses the JSON input.",
+              "Checks all pairs and determines no overlaps.",
+              "Outputs a message indicating no overlaps."
+            ],
+            "task": "Given a JSON string representing fields with no overlapping bounding boxes, confirm that no overlaps exist.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "The output includes an error message like 'Invalid JSON input' or 'Missing bounding_box key'.",
+            "failure_signal": "The script crashes or produces no output.",
+            "rubric": [
+              "Attempts to parse the JSON.",
+              "Catches parsing errors or missing keys.",
+              "Outputs an appropriate error message without crashing."
+            ],
+            "task": "Given a malformed JSON string (e.g., missing field, invalid coordinates), handle the error gracefully and report the issue.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "json (Python standard library)",
+            "sys (Python standard library)"
+          ],
+          "constraints": [
+            "The input JSON must be valid and contain a list of fields with 'bounding_box' keys.",
+            "Bounding boxes must be axis-aligned rectangles defined by [x1, y1, x2, y2].",
+            "Overlapping bounding boxes are not allowed and must be flagged."
+          ],
+          "examples": [
+            "Input: {\"fields\": [{\"id\": \"name\", \"bounding_box\": [10, 10, 100, 50]}, {\"id\": \"date\", \"bounding_box\": [20, 20, 120, 60]}]} -> Overlap detected between 'name' and 'date'.",
+            "Input: {\"fields\": [{\"id\": \"name\", \"bounding_box\": [10, 10, 100, 50]}, {\"id\": \"date\", \"bounding_box\": [150, 10, 250, 50]}]} -> No overlaps detected."
+          ],
+          "facts": [
+            "The script is part of a larger system for automated court form filling.",
+            "Bounding boxes are represented as a list of four floats [x1, y1, x2, y2].",
+            "The dataclass RectAndField holds the rectangle list, its type, and the original field dictionary.",
+            "Overlapping bounding boxes are considered errors and must be reported."
+          ],
+          "procedures": [
+            "Parse the JSON file to extract field entries with bounding box coordinates.",
+            "For each field, create a RectAndField instance with its rectangle list, type, and field data.",
+            "Check all pairs of rectangles for overlap using coordinate comparison.",
+            "Output a list of overlapping rectangle pairs or a message indicating no overlaps."
+          ],
+          "summary": "A Python script from the SkillsBench project that checks a `fields.json` file for overlapping bounding boxes. It parses the JSON, represents each field as a RectAndField dataclass with rect coordinates and type, and detects overlapping rectangles to report issues. The script is used in a court form filling environment to ensure field bounding boxes do not overlap."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "script_dry_run_analyzer",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Analyze a script-grounded operation and produce a dry-run execution contract with entrypoints, arguments, dependencies, side effects, mutation_avoided=true, and verifier notes. It does not load, execute, mutate, or parse arbitrary files by itself.",
+          "input_schema": {
+            "properties": {
+              "fields_json": {
+                "description": "JSON string representing a list of fields, each with a 'bounding_box' key containing [x1, y1, x2, y2].",
+                "type": "string"
+              }
+            },
+            "required": [
+              "fields_json"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "script_dry_run_analyzer",
+          "output_schema": {
+            "description": "Result of the overlap check.",
+            "properties": {
+              "error": {
+                "description": "Error message if input is invalid.",
+                "type": "string"
+              },
+              "overlaps": {
+                "description": "List of overlapping pairs. Empty if no overlaps.",
+                "items": {
+                  "description": "Pair of field IDs that overlap.",
+                  "properties": {
+                    "field1": {
+                      "type": "string"
+                    },
+                    "field2": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "If input is valid, overlaps are detected and reported.",
+            "If input is invalid, an error message is returned."
+          ],
+          "preconditions": [
+            "Input is a string that should be valid JSON.",
+            "Each field object in the JSON array must have a 'bounding_box' key with a list of four numbers."
+          ],
+          "prompt_template": "You are an AI that checks for overlapping bounding boxes in a JSON string. Parse the input JSON, extract fields with their bounding boxes (x1,y1,x2,y2). For each pair of fields, check if the rectangles overlap (i.e., not (a.x2 <= b.x1 or b.x2 <= a.x1 or a.y2 <= b.y1 or b.y2 <= a.y1)). Return a list of overlapping field IDs or an empty list. If the JSON is malformed or missing required keys, return an error message.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "script",
+            "ctx2skill"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The candidate skill 'detect_bounding_box_overlaps' directly addresses all three challenges: parsing valid JSON with overlapping boxes, verifying no overlaps, and handling malformed input. It is atomic, reusable, and fits the context of the script. The score of 0.75 reflects its strong alignment with the context and challenges, though it could be improved with more robust coordinate validation or support for different bounding box formats."
+      },
+      "domain": "office",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "script",
+      "license_note": "Apache-2.0 benchmark script excerpt; run only in isolated harness/eval directories",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\script_003_6540b3b9.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench script/oracle/test utility",
+      "raw_content_preview": "# Source: tasks/court-form-filling/environment/skills/pdf/scripts/check_bounding_boxes.py\n# Project: SkillsBench\n\nimport json\nimport sys\nfrom dataclasses import dataclass\n\n# Script to check that the `fields.json` file that Claude creates when analyzing PDFs\n# does not have overlapping bounding boxes. See forms.md.\n\n\n@dataclass\nclass RectAndField:\n    rect: list[float]\n    rect_type: str\n    field: dict\n\n\n# Returns a list of messages that are printed to stdout for Claude to read.\ndef get_bounding",
+      "source_id": "script-skillsbench-13-check-bounding-boxes-scripts",
+      "source_type": "script",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/court-form-filling/environment/skills/pdf/scripts/check_bounding_boxes.py",
+      "unit_id": "349a9bc8-bb42-4fbc-95cb-93e14b7693da"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "script-skillsbench-13-check-bounding-boxes-scripts",
+      "349a9bc8-bb42-4fbc-95cb-93e14b7693da"
+    ],
+    "source_type": "script"
+  },
+  "skill_id": "88e297cf-452b-4ad6-8125-a3af09bc1636",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "script",
+    "candidate-review",
+    "ctx2skill",
+    "bounding",
+    "bounding_boxes",
+    "boxes",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:script-skillsbench-13-check-bounding-boxes-scripts",
+    "domain:office"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
