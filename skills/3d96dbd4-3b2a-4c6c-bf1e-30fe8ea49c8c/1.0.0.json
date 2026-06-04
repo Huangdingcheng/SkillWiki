@@ -1,0 +1,325 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Reusable skill to navigate to a PDF URL, go to a specified page number, and extract the text content from that page.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:trajectory:extract_pdf_page_content"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Navigate to the given PDF URL using a browser. Wait for the PDF to fully load. Then navigate to the specified page number (e.g., by simulating clicks on page controls or using the browser's PDF viewer API). Finally, extract all visible text from the current page view and return it as a string. If any step fails, return an error message describing the issue.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "browser.new_context",
+      "page.goto(url)",
+      "page.wait_for_selector(pdf_loaded_indicator)",
+      "page.type(page_input, page_number)",
+      "page.press(page_input, 'Enter')",
+      "page.evaluate(extract_text_script)"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "page_number": {
+          "description": "The page number to extract (1-indexed)",
+          "type": "integer"
+        },
+        "url": {
+          "description": "Full URL of the PDF document",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "page_number"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "error": {
+          "description": "Error message if extraction failed",
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "text": {
+          "description": "Extracted text from the specified page",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "The text content of the specified page has been extracted and returned",
+      "Any error during loading or extraction is reported"
+    ],
+    "preconditions": [
+      "The PDF URL is accessible without authentication",
+      "The PDF is not corrupted and can be rendered in a browser",
+      "The browser PDF viewer supports the page navigation method used"
+    ],
+    "side_effects": []
+  },
+  "name": "extract_pdf_page_content_trajectory_browser_use_12_extract_pdf_content",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "84df863111edb986617a6c70a5027b6b611f9dab799ef6807c1209fcb73845f4",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "extract_pdf_page_content",
+            "passed_challenges": 3,
+            "score": 0.8
+          },
+          {
+            "name": "extract_pdf_range_content",
+            "passed_challenges": 3,
+            "score": 0.7
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "The extracted text matches the content of the specified page of the PDF.",
+            "failure_signal": "Empty string returned, or text from wrong page, or navigation fails.",
+            "rubric": [
+              "Successfully navigates to the PDF URL",
+              "Correctly identifies and navigates to the specified page",
+              "Extracts text content from that page",
+              "Returns the text without errors"
+            ],
+            "task": "Given a PDF URL and a target page number (e.g., 5), navigate to that page and extract all visible text.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The first page text is extracted correctly.",
+            "failure_signal": "No output, or only partial text, or error due to missing page controls.",
+            "rubric": [
+              "Navigates to PDF and waits for initial render",
+              "Handles the default display of page 1 without explicit navigation",
+              "Extracts all text from the first page"
+            ],
+            "task": "Given a PDF URL and page number 1, extract the content of the first page (which may not have page controls).",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "An error message explaining the failure.",
+            "failure_signal": "Script hangs, crashes, or returns empty without explanation.",
+            "rubric": [
+              "Detects the failure to load the PDF (e.g., HTTP error, timeout)",
+              "Returns an informative error message rather than crashing or hanging",
+              "Does not attempt to navigate pages on a non-loaded PDF"
+            ],
+            "task": "Attempt to extract text from a PDF that is inaccessible (e.g., broken URL or requires authentication).",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "Browser navigation (e.g., page.goto)",
+            "Browser page operations (e.g., wait_for_selector, evaluate for PDF controls)",
+            "Text extraction from DOM or PDF viewer overlay"
+          ],
+          "constraints": [
+            "Must work within a browser environment that supports PDF rendering.",
+            "Page navigation methods depend on the PDF viewer (e.g., built-in browser PDF viewer).",
+            "Large or complex PDFs may cause longer load times or require explicit waiting."
+          ],
+          "examples": [],
+          "facts": [
+            "The target PDF is from docs.house.gov, a U.S. House of Representatives document.",
+            "The goal is to read and retrieve the content on page 3 of the PDF."
+          ],
+          "procedures": [
+            "Navigate to the specified PDF URL.",
+            "Wait for the PDF to fully load and render in the browser.",
+            "Go to the desired page (e.g., page 3) of the PDF document.",
+            "Extract the text content from the currently displayed page."
+          ],
+          "summary": "Extract text content from a specific page of a PDF document using a browser-based navigation and interaction workflow."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "extract_pdf_page_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.8,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "extract_pdf_page_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.8,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "extract_pdf_page_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.8,
+            "task_id": "challenge_3"
+          },
+          {
+            "candidate": "extract_pdf_range_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.7,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "extract_pdf_range_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.7,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "extract_pdf_range_content",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.7,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Reusable skill to navigate to a PDF URL, go to a specified page number, and extract the text content from that page.",
+          "input_schema": {
+            "properties": {
+              "page_number": {
+                "description": "The page number to extract (1-indexed)",
+                "type": "integer"
+              },
+              "url": {
+                "description": "Full URL of the PDF document",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "page_number"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "extract_pdf_page_content",
+          "output_schema": {
+            "properties": {
+              "error": {
+                "description": "Error message if extraction failed",
+                "type": "string"
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "text": {
+                "description": "Extracted text from the specified page",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "The text content of the specified page has been extracted and returned",
+            "Any error during loading or extraction is reported"
+          ],
+          "preconditions": [
+            "The PDF URL is accessible without authentication",
+            "The PDF is not corrupted and can be rendered in a browser",
+            "The browser PDF viewer supports the page navigation method used"
+          ],
+          "prompt_template": "Navigate to the given PDF URL using a browser. Wait for the PDF to fully load. Then navigate to the specified page number (e.g., by simulating clicks on page controls or using the browser's PDF viewer API). Finally, extract all visible text from the current page view and return it as a string. If any step fails, return an error message describing the issue.",
+          "score": 0.8,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "trajectory",
+            "ctx2skill",
+            "pdf",
+            "browser",
+            "extraction"
+          ],
+          "tool_calls": [
+            "browser.new_context",
+            "page.goto(url)",
+            "page.wait_for_selector(pdf_loaded_indicator)",
+            "page.type(page_input, page_number)",
+            "page.press(page_input, 'Enter')",
+            "page.evaluate(extract_text_script)"
+          ]
+        },
+        "selected_reason": "The `extract_pdf_page_content` skill is selected because it directly addresses the core requirement of extracting content from a single specific page (page 3 in the original task). It is atomic, has clear input/output schemas, and can be easily composed into more complex skills like `extract_pdf_range_content`. Its prompt template and pre/post conditions are well-defined for reuse across different PDF documents. The score of 0.8 reflects its high relevance and reliability for the given trajectory."
+      },
+      "domain": "data",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "trajectory",
+      "license_note": "public GitHub example excerpt normalized for repeatable local testing",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\trajectory_025_acd7deec.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "browser-use public example normalized as trajectory",
+      "raw_content_preview": "# Browser-use normalized trajectory: extract-pdf-content\n\nSource file: `examples/use-cases/extract_pdf_content.py`\n\n## Original task excerpt\n\nObjective: Navigate to the following UR, what is on page 3?\n\n        URL: https://docs.house.gov/meetings/GO/GO00/20220929/115171/HHRG-117-GO00-20220929-SD010.pdf\n\n## Normalized trajectory\n\n1. Open the required browser context.\n2. Observe page state and task constraints.\n3. Choose the next safe browser action.\n4. Execute search/click/type/select/upload/ext",
+      "source_id": "trajectory-browser-use-12-extract-pdf-content",
+      "source_type": "trajectory",
+      "source_url": "https://github.com/browser-use/browser-use/blob/834269609082d187ca0250de2c06d93799dac92d/examples/use-cases/extract_pdf_content.py",
+      "unit_id": "8b4b35b0-cfcf-4fe2-abd6-45ad5884b26d"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "trajectory-browser-use-12-extract-pdf-content",
+      "8b4b35b0-cfcf-4fe2-abd6-45ad5884b26d"
+    ],
+    "source_type": "trajectory"
+  },
+  "skill_id": "3d96dbd4-3b2a-4c6c-bf1e-30fe8ea49c8c",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "trajectory",
+    "candidate-review",
+    "ctx2skill",
+    "pdf",
+    "browser",
+    "extraction",
+    "at",
+    "content",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:trajectory-browser-use-12-extract-pdf-content",
+    "domain:data"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
