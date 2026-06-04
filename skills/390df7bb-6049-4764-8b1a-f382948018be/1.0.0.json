@@ -1,0 +1,337 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Reusable skill to manage pets and orders in Swagger Petstore API. Covers CRUD operations on pets and placing orders.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:pet_store_management_skill"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Use the Swagger Petstore API to perform the requested operation. Follow the endpoint specifications: POST /pet to add, GET /pet/{petId} to retrieve, GET /pet/findByStatus to find by status, PUT /pet to update, DELETE /pet/{petId} to delete, POST /store/order to place order. Handle errors gracefully.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "POST /pet",
+      "GET /pet/{petId}",
+      "GET /pet/findByStatus",
+      "PUT /pet",
+      "DELETE /pet/{petId}",
+      "POST /store/order"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "operation": {
+          "description": "Operation to perform",
+          "enum": [
+            "addPet",
+            "getPetById",
+            "findPetsByStatus",
+            "updatePet",
+            "deletePet",
+            "placeOrder"
+          ],
+          "type": "string"
+        },
+        "parameters": {
+          "description": "Parameters for the operation (e.g., pet data, petId, status, order data)",
+          "type": "object"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "data": {
+          "description": "Response data from API",
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "failure"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "Pet or order state is updated according to operation",
+      "API returns appropriate status code"
+    ],
+    "preconditions": [
+      "API endpoint is reachable",
+      "Authentication if required is available (not specified)"
+    ],
+    "side_effects": []
+  },
+  "name": "pet_store_management_skill_api_doc_swagger_petstore_openapi",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "c10bdfdb59708b184799bcf0ef0483940f0c012dd8f2fe467f1be6a7dfe9eab9",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "pet_store_management_skill",
+            "passed_challenges": 3,
+            "score": 0.92
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "HTTP 200 response for GET request with pet data matching the added pet.",
+            "failure_signal": "HTTP 404 or 500 errors, or mismatched pet data.",
+            "rubric": [
+              "Successfully send POST /pet with valid pet data.",
+              "Successfully send GET /pet/{petId} and receive the pet matching added data.",
+              "Handle non-existent pet ID gracefully (optional)."
+            ],
+            "task": "Add a new pet to the store and then retrieve it by ID to verify it was added correctly.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "Status field of the pet changes from 'available' to 'sold' after update.",
+            "failure_signal": "No pets found for available status, update fails, or status remains unchanged.",
+            "rubric": [
+              "Successfully call GET /pet/findByStatus?status=available and get a non-empty list.",
+              "Successfully call PUT /pet with updated status for one pet.",
+              "Successfully call GET /pet/{petId} and confirm status changed to 'sold'."
+            ],
+            "task": "Find pets by status 'available', then update one of them to 'sold', and verify the update by fetching that pet.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "Order placed successfully, pet deletion returns 200/204, subsequent GET returns 404.",
+            "failure_signal": "Order placement fails, deletion fails, or pet still exists after deletion.",
+            "rubric": [
+              "Place order via POST /store/order with a valid pet ID and receive order confirmation.",
+              "Delete the pet via DELETE /pet/{petId} with success.",
+              "Attempt to GET the deleted pet and receive a 404."
+            ],
+            "task": "Place an order for a pet that exists, then delete the pet, and verify the pet is gone.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /pet (Add a new pet)",
+            "GET /pet/findByStatus (Find pets by status)",
+            "PUT /pet (Update an existing pet)",
+            "DELETE /pet/{petId} (Delete a pet)",
+            "GET /pet/{petId} (Get pet by ID)",
+            "POST /store/order (Place order for a pet)"
+          ],
+          "constraints": [
+            "API endpoints may require authentication (not detailed in snippet).",
+            "Pet IDs must be unique and valid.",
+            "Order placement expects a valid pet ID."
+          ],
+          "examples": [
+            "POST /pet with body: { \"id\": 1, \"name\": \"Buddy\", \"status\": \"available\" }",
+            "GET /pet/findByStatus?status=available returns list of pets with status available."
+          ],
+          "facts": [
+            "The API is based on OpenAPI 3.0 specification.",
+            "It is a sample Pet Store Server for demonstration.",
+            "Baseline actions include adding, finding, updating, deleting pets, and placing orders."
+          ],
+          "procedures": [
+            "Add a new pet: POST /pet with pet data.",
+            "Find pets by status: GET /pet/findByStatus?status=available.",
+            "Update an existing pet: PUT /pet with updated pet data.",
+            "Delete a pet: DELETE /pet/{petId}.",
+            "Get pet by ID: GET /pet/{petId}.",
+            "Place order: POST /store/order with order data."
+          ],
+          "summary": "Swagger Petstore API (OpenAPI 3.0) provides endpoints to manage pets (add, find by status, update, delete, get by ID) and place orders for pets. It follows a design-first approach."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "pet_store_management_skill",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.92,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "pet_store_management_skill",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.92,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "pet_store_management_skill",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.92,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Reusable skill to manage pets and orders in Swagger Petstore API. Covers CRUD operations on pets and placing orders.",
+          "input_schema": {
+            "properties": {
+              "operation": {
+                "description": "Operation to perform",
+                "enum": [
+                  "addPet",
+                  "getPetById",
+                  "findPetsByStatus",
+                  "updatePet",
+                  "deletePet",
+                  "placeOrder"
+                ],
+                "type": "string"
+              },
+              "parameters": {
+                "description": "Parameters for the operation (e.g., pet data, petId, status, order data)",
+                "type": "object"
+              }
+            },
+            "required": [
+              "operation"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "pet_store_management_skill",
+          "output_schema": {
+            "properties": {
+              "data": {
+                "description": "Response data from API",
+                "type": "object"
+              },
+              "status": {
+                "enum": [
+                  "success",
+                  "failure"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "Pet or order state is updated according to operation",
+            "API returns appropriate status code"
+          ],
+          "preconditions": [
+            "API endpoint is reachable",
+            "Authentication if required is available (not specified)"
+          ],
+          "prompt_template": "Use the Swagger Petstore API to perform the requested operation. Follow the endpoint specifications: POST /pet to add, GET /pet/{petId} to retrieve, GET /pet/findByStatus to find by status, PUT /pet to update, DELETE /pet/{petId} to delete, POST /store/order to place order. Handle errors gracefully.",
+          "score": 0.92,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill",
+            "petstore",
+            "api"
+          ],
+          "tool_calls": [
+            "POST /pet",
+            "GET /pet/{petId}",
+            "GET /pet/findByStatus",
+            "PUT /pet",
+            "DELETE /pet/{petId}",
+            "POST /store/order"
+          ]
+        },
+        "selected_reason": "The 'pet_store_management_skill' candidate covers all baseline actions and the challenge tasks directly. It has a high cross-time replay lite score (0.92) because it is self-contained, reusable across multiple pet store scenarios, and requires minimal adaptation. The skill's input/output schema is general enough to handle all operations, and the prompt template clearly guides execution."
+      },
+      "domain": "api",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public OpenAPI sample",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_024_701ad9e1.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "OpenAPI Petstore / API skill extraction",
+      "raw_content_preview": "openapi: 3.0.4\ninfo:\n  title: Swagger Petstore - OpenAPI 3.0\n  description: |-\n    This is a sample Pet Store Server based on the OpenAPI 3.0 specification.  You can find out more about\n    Swagger at [https://swagger.io](https://swagger.io). In the third iteration of the pet store, we've switched to the design first approach!\n    You can now help us improve the API whether it's by making changes to the definition itself or to the code.\n    That way, with time, we can improve the API in general,",
+      "source_id": "api-doc-swagger-petstore-openapi",
+      "source_type": "api_doc",
+      "source_url": "https://github.com/swagger-api/swagger-petstore",
+      "unit_id": "8d58d6ae-baf6-4a1d-bbf8-6fb98ce0f069"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-swagger-petstore-openapi",
+      "8d58d6ae-baf6-4a1d-bbf8-6fb98ce0f069"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "390df7bb-6049-4764-8b1a-f382948018be",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "petstore",
+    "api",
+    "crud",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-swagger-petstore-openapi",
+    "domain:api"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
