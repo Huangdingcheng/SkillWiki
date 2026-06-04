@@ -1,0 +1,469 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Creates a Claude message response by calling the Anthropic API with model, messages, tools, and max_tokens, including the required request_id header.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:anthropic_create_message"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "To create a Claude message, use the anthropic_create_message skill. Provide the model, messages array, max_tokens, and optionally tools. Include a request_id header (e.g., a UUID). The skill will call POST /v1/messages and return the response object containing the assistant's reply.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "{'operation': 'POST /v1/messages', 'parameters': {'header': {'request_id': '$input.request_id'}, 'body': {'model': '$input.model', 'messages': '$input.messages', 'max_tokens': '$input.max_tokens', 'tools': '$input.tools'}}}"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "max_tokens": {
+          "description": "Maximum tokens to generate",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "messages": {
+          "description": "Conversation messages",
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "user",
+                  "assistant"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "model": {
+          "description": "Claude model identifier (e.g., claude-3-sonnet-20240229)",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Unique identifier for the request (header)",
+          "type": "string"
+        },
+        "tools": {
+          "description": "Tools available to Claude",
+          "items": {
+            "description": "Tool definition object",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "model",
+        "messages",
+        "max_tokens",
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "content": {
+          "items": {
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "assistant"
+          ],
+          "type": "string"
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "stop_sequence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "enum": [
+            "message"
+          ],
+          "type": "string"
+        },
+        "usage": {
+          "properties": {
+            "input_tokens": {
+              "type": "integer"
+            },
+            "output_tokens": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "A message response is generated and returned with the requested content."
+    ],
+    "preconditions": [
+      "A valid API key is configured for the Anthropic service."
+    ],
+    "side_effects": []
+  },
+  "name": "anthropic_create_message_api_doc_anthropic_create_message",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "a069b5a358dd10af4d17b5b2b92884652fccc272c7e1769932f6cedbda6f4fcc",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "anthropic_create_message",
+            "passed_challenges": 3,
+            "score": 0.85
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A successful API call returning a valid message response with the summary content.",
+            "failure_signal": "Missing required parameters, incorrect header, or improper handling of the response.",
+            "rubric": [
+              "Correctly constructs the request body with model, messages, and max_tokens.",
+              "Includes the request_id header.",
+              "Uses the correct HTTP method and path.",
+              "Handles the API response to extract the generated message."
+            ],
+            "task": "Given a user request to generate a summary of a text, call the Anthropic create message endpoint with the appropriate model, messages, and max_tokens.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "A response that includes tool use blocks or indications that tools were considered.",
+            "failure_signal": "Tools parameter missing or malformed, leading to a validation error.",
+            "rubric": [
+              "Includes the tools field in the request body with proper schema.",
+              "The messages array correctly reflects the conversation history.",
+              "Sets appropriate max_tokens for tool use.",
+              "Ensures request_id header is present."
+            ],
+            "task": "Given a conversation history and a tool definition, create a message that includes tool use instructions, ensuring tools are passed correctly.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "A clean error message displayed to the user and appropriate logging of the failure.",
+            "failure_signal": "Crash or unhandled exception, or exposing raw API error to the user.",
+            "rubric": [
+              "Detects non-success HTTP status codes or error payloads.",
+              "Parses the error details from the response body.",
+              "Returns a user-friendly error message without leaking internal details.",
+              "Logs the error for debugging."
+            ],
+            "task": "Handle an error response (e.g., invalid model) from the API gracefully and provide a meaningful error message to the user.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /v1/messages (anthropic_create_message)"
+          ],
+          "constraints": [
+            "The request_id header must be provided.",
+            "The model field must be a valid Claude model identifier.",
+            "The messages array must contain valid message objects with role and content.",
+            "max_tokens must be a positive integer.",
+            "The API endpoint is for demonstration only (example.invalid)."
+          ],
+          "examples": [
+            "No examples provided in the context."
+          ],
+          "facts": [
+            "The endpoint is POST /v1/messages.",
+            "The operation ID is anthropic_create_message.",
+            "A request_id header parameter is required.",
+            "The summary indicates model, messages, tools, and max_tokens are needed.",
+            "The server URL is https://example.invalid."
+          ],
+          "procedures": [
+            "Send a POST request to /v1/messages with the API key in the Authorization header.",
+            "Include the request_id header with a unique identifier.",
+            "Provide a JSON body containing model, messages, tools (optional), and max_tokens.",
+            "Handle the response which includes the generated message content."
+          ],
+          "summary": "Anthropic API endpoint to create a Claude message response, requiring model, messages, tools, and max_tokens, with a request_id header."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "anthropic_create_message",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "anthropic_create_message",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "anthropic_create_message",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Creates a Claude message response by calling the Anthropic API with model, messages, tools, and max_tokens, including the required request_id header.",
+          "input_schema": {
+            "properties": {
+              "max_tokens": {
+                "description": "Maximum tokens to generate",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "messages": {
+                "description": "Conversation messages",
+                "items": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "content"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "model": {
+                "description": "Claude model identifier (e.g., claude-3-sonnet-20240229)",
+                "type": "string"
+              },
+              "request_id": {
+                "description": "Unique identifier for the request (header)",
+                "type": "string"
+              },
+              "tools": {
+                "description": "Tools available to Claude",
+                "items": {
+                  "description": "Tool definition object",
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "model",
+              "messages",
+              "max_tokens",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "anthropic_create_message",
+          "output_schema": {
+            "properties": {
+              "content": {
+                "items": {
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              "stop_reason": {
+                "type": "string"
+              },
+              "stop_sequence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "message"
+                ],
+                "type": "string"
+              },
+              "usage": {
+                "properties": {
+                  "input_tokens": {
+                    "type": "integer"
+                  },
+                  "output_tokens": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "A message response is generated and returned with the requested content."
+          ],
+          "preconditions": [
+            "A valid API key is configured for the Anthropic service."
+          ],
+          "prompt_template": "To create a Claude message, use the anthropic_create_message skill. Provide the model, messages array, max_tokens, and optionally tools. Include a request_id header (e.g., a UUID). The skill will call POST /v1/messages and return the response object containing the assistant's reply.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill",
+            "anthropic",
+            "message",
+            "claude"
+          ],
+          "tool_calls": [
+            "{'operation': 'POST /v1/messages', 'parameters': {'header': {'request_id': '$input.request_id'}, 'body': {'model': '$input.model', 'messages': '$input.messages', 'max_tokens': '$input.max_tokens', 'tools': '$input.tools'}}}"
+          ]
+        },
+        "selected_reason": "The anthropic_create_message skill directly maps to the single API operation described in the context. It encapsulates the required parameters, headers, and response handling, making it a reusable atomic skill. The high score (0.85) reflects its completeness and close alignment with the provided documentation, though minor improvements (like error handling integration) prevent a perfect score."
+      },
+      "domain": "api",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public API documentation normalized into a focused OpenAPI-style fixture; source URL recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_023_d70eaf96.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic API docs",
+      "raw_content_preview": "openapi: 3.0.3\ninfo:\n  title: Focused Anthropic API docs fixture - anthropic-create-message\n  version: '1.0'\n  description: Focused public API documentation excerpt normalized for SkillOS API-doc-to-skill testing.\nservers:\n  - url: https://example.invalid\npaths:\n  /v1/messages:\n    post:\n      operationId: anthropic_create_message\n      summary: Create a Claude message response with model, messages, tools, and max_tokens.\n      parameters:\n        - name: request_id\n          in: header\n        ",
+      "source_id": "api-doc-anthropic-create-message",
+      "source_type": "api_doc",
+      "source_url": "https://docs.anthropic.com/en/api/messages",
+      "unit_id": "39696759-1e08-4be7-b667-91b3c34e7626"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-anthropic-create-message",
+      "39696759-1e08-4be7-b667-91b3c34e7626"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "78a472f1-b07f-4d71-acf7-ee76d64e15c4",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "anthropic",
+    "message",
+    "claude",
+    "api",
+    "as",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-anthropic-create-message",
+    "domain:api"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
