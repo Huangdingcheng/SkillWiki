@@ -1,0 +1,317 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Adds a new pet record to the Petstore via the POST /pet endpoint, handling authentication and request body formatting.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:add_pet_to_store"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "To add a new pet to the store, perform a POST request to /pet with the pet object as JSON. Include the API key as a header or query parameter. The pet must have a name and at least one photo URL (optional but array). Optionally include a status from available/pending/sold.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "name": {
+          "description": "Name of the pet",
+          "type": "string"
+        },
+        "photoUrls": {
+          "description": "URLs of pet photos",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "Pet status in the store",
+          "enum": [
+            "available",
+            "pending",
+            "sold"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "photoUrls"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "id": {
+          "description": "Assigned pet ID",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "photoUrls": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "A new pet resource is created and returned with an ID"
+    ],
+    "preconditions": [
+      "API key 'special-key' is available",
+      "Petstore server is reachable at http://petstore.swagger.io/v2"
+    ],
+    "side_effects": []
+  },
+  "name": "add_pet_to_store_api_doc_petstore_addpet_only",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "ea248b1cc299917b5d910fa9f2e571b6af0e8d30ea85aa1d31d6f260ad9748a0",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "add_pet_to_store",
+            "passed_challenges": 2,
+            "score": 0.85
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A complete curl command or raw HTTP request that executes correctly and returns a 200 or 201 response",
+            "failure_signal": "Missing authorization, wrong endpoint, missing required fields in body, or incorrect HTTP method",
+            "rubric": [
+              "Uses HTTP method POST",
+              "URL is http://petstore.swagger.io/v2/pet",
+              "Sets Content-Type: application/json",
+              "Includes authorization (e.g., via header api_key or query param)",
+              "Request body is valid JSON with required fields",
+              "Uses the specified values for name, photoUrls, status"
+            ],
+            "task": "Given the Petstore API spec, construct the exact HTTP request to add a pet named 'Buddy' with an empty photoUrls array and status 'available'. Assume the API key is 'special-key' and include it appropriately.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "A coherent explanation of the API flow from creation to retrieval",
+            "failure_signal": "Confuses POST and GET semantics or misses the resource creation pattern",
+            "rubric": [
+              "Identifies that status values might be an enum in the API spec",
+              "Acknowledges the POST creates a resource that can later be retrieved via GET",
+              "Uses the base URL and path patterns consistently"
+            ],
+            "task": "Describe the steps to discover the pet's available status values from the API spec (though not fully provided, infer from standard OpenAPI conventions). Then explain how the POST endpoint for adding a pet relates to the GET endpoint for getting a pet by ID (assume GET /pet/{petId} exists).",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /pet - Add a new pet to the store"
+          ],
+          "constraints": [
+            "Authorization is required; the API key must be provided, likely via header or parameter",
+            "The request body must contain the pet object fields (name, photoUrls, etc.)"
+          ],
+          "examples": [
+            "This is a sample server Petstore server. For this sample, you can use the api key"
+          ],
+          "facts": [
+            "The API server base URL is http://petstore.swagger.io/v2",
+            "The spec is version 1.0.0, licensed under Apache-2.0",
+            "The 'pet' tag is associated with operations about pets",
+            "The baseline extracted action is 'Add a new pet to the store'"
+          ],
+          "procedures": [
+            "To add a pet, send a POST request to /pet with the pet data in the request body",
+            "The request should include the API key 'special-key' for authorization"
+          ],
+          "summary": "OpenAPI spec for a Petstore server with a POST /pet endpoint to add a new pet. Authentication via API key 'special-key'."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "add_pet_to_store",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "add_pet_to_store",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Adds a new pet record to the Petstore via the POST /pet endpoint, handling authentication and request body formatting.",
+          "input_schema": {
+            "properties": {
+              "name": {
+                "description": "Name of the pet",
+                "type": "string"
+              },
+              "photoUrls": {
+                "description": "URLs of pet photos",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "description": "Pet status in the store",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "photoUrls"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "add_pet_to_store",
+          "output_schema": {
+            "properties": {
+              "id": {
+                "description": "Assigned pet ID",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "photoUrls": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "A new pet resource is created and returned with an ID"
+          ],
+          "preconditions": [
+            "API key 'special-key' is available",
+            "Petstore server is reachable at http://petstore.swagger.io/v2"
+          ],
+          "prompt_template": "To add a new pet to the store, perform a POST request to /pet with the pet object as JSON. Include the API key as a header or query parameter. The pet must have a name and at least one photo URL (optional but array). Optionally include a status from available/pending/sold.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill",
+            "petstore",
+            "api"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "The candidate 'add_pet_to_store' directly addresses the baseline action and the challenges. It is atomic, well-scoped, and covers authentication, request structure, and expected output. The score reflects high reusability and correctness given the available context."
+      },
+      "domain": "api",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public OpenAPI sample",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_003_97dfe322.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "OpenAPI sample / API skill extraction",
+      "raw_content_preview": "openapi: 3.0.0\nservers:\n  - url: 'http://petstore.swagger.io/v2'\ninfo:\n  description: >-\n    This is a sample server Petstore server. For this sample, you can use the api key\n    `special-key` to test the authorization filters.\n  version: 1.0.0\n  title: OpenAPI Petstore\n  license:\n    name: Apache-2.0\n    url: 'https://www.apache.org/licenses/LICENSE-2.0.html'\ntags:\n  - name: pet\n    description: Everything about your Pets\npaths:\n  /pet:\n    post:\n      tags:\n        - pet\n      summary: Add a n",
+      "source_id": "api-doc-petstore-addpet-only",
+      "source_type": "api_doc",
+      "source_url": "https://github.com/OAI/OpenAPI-Specification",
+      "unit_id": "2e9c2adb-ef2e-4d0d-a3ad-16d4189cf27e"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-petstore-addpet-only",
+      "2e9c2adb-ef2e-4d0d-a3ad-16d4189cf27e"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "40719acb-197c-4a60-be27-99042bb08b09",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "petstore",
+    "api",
+    "add",
+    "crud",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-petstore-addpet-only",
+    "domain:api"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
