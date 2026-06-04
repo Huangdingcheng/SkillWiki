@@ -1,0 +1,255 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Subscribes a client to receive out-of-band data by providing a callback URL via the POST /streams endpoint.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:subscribe_to_stream"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "To subscribe to the data stream, send a POST request to the /streams endpoint with the callbackUrl as a query parameter.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "POST /streams"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "callbackUrl": {
+          "description": "The URL where data will be sent. Must be network accessible by the source server.",
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "callbackUrl"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "status": {
+          "description": "Result of the subscription request.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "A subscription is created; out-of-band data will be sent to the callbackUrl."
+    ],
+    "preconditions": [
+      "The callbackUrl must be a valid URI and network accessible."
+    ],
+    "side_effects": []
+  },
+  "name": "subscribe_to_stream_api_doc_openapi_callbacks",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "1b4cbb1a2a065eeb6b8819fcd79ee0d56c6cfadb280152563f9ae360bad0773f",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "subscribe_to_stream",
+            "passed_challenges": 2,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A successful HTTP POST request to /streams with the proper parameter results in a subscription confirmation or an appropriate status code.",
+            "failure_signal": "A 4xx or 5xx error, or the request is missing the required callbackUrl parameter.",
+            "rubric": [
+              "Correctly constructs and sends a POST request to /streams with the callbackUrl query parameter.",
+              "Ensures the callbackUrl is a valid URI and network-accessible as required.",
+              "Successfully interprets the response (even if minimal)."
+            ],
+            "task": "Subscribe a client to receive out-of-band data given a valid callback URL.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The skill outputs an error indicating the callbackUrl is required or invalid, and no HTTP request is made.",
+            "failure_signal": "An HTTP request is sent with an invalid or missing parameter, resulting in a server error.",
+            "rubric": [
+              "Detects missing or malformed callbackUrl before making the request.",
+              "Returns a clear error message explaining the issue.",
+              "Does not send an invalid request to the server."
+            ],
+            "task": "Handle the case where the callbackUrl is missing or invalid (e.g., not a proper URI or not network-accessible).",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /streams"
+          ],
+          "constraints": [
+            "The callbackUrl must be network accessible by the source server.",
+            "The callbackUrl must be a valid URI (format: uri)."
+          ],
+          "examples": [
+            "POST /streams?callbackUrl=https://tonys-server.com"
+          ],
+          "facts": [
+            "The endpoint is POST /streams.",
+            "The required query parameter is callbackUrl, which must be a network-accessible URI.",
+            "The response or further details are not specified; the API description states 'subscribes a client to receive out-of-band data'."
+          ],
+          "procedures": [
+            "Send a POST request to /streams?callbackUrl={uri} with the callback URL as a query parameter."
+          ],
+          "summary": "This is an OpenAPI 3.0 specification for a single endpoint that allows clients to subscribe to receive out-of-band data by providing a callback URL."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "subscribe_to_stream",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "subscribe_to_stream",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Subscribes a client to receive out-of-band data by providing a callback URL via the POST /streams endpoint.",
+          "input_schema": {
+            "properties": {
+              "callbackUrl": {
+                "description": "The URL where data will be sent. Must be network accessible by the source server.",
+                "format": "uri",
+                "type": "string"
+              }
+            },
+            "required": [
+              "callbackUrl"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "subscribe_to_stream",
+          "output_schema": {
+            "properties": {
+              "status": {
+                "description": "Result of the subscription request.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "A subscription is created; out-of-band data will be sent to the callbackUrl."
+          ],
+          "preconditions": [
+            "The callbackUrl must be a valid URI and network accessible."
+          ],
+          "prompt_template": "To subscribe to the data stream, send a POST request to the /streams endpoint with the callbackUrl as a query parameter.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill"
+          ],
+          "tool_calls": [
+            "POST /streams"
+          ]
+        },
+        "selected_reason": "The context describes a single API endpoint with a straightforward action. The atomic 'subscribe_to_stream' skill directly maps to this action, is reusable in any scenario requiring a callback-based subscription, and scores well on the cross-time replay lite assessment due to its clear input/output and minimal dependencies."
+      },
+      "domain": "api",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public OpenAPI sample",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_009_a59a9a35.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "OpenAPI callback sample / API skill extraction",
+      "raw_content_preview": "openapi: 3.0.0\ninfo:\n  title: Callback Example\n  version: 1.0.0\npaths:\n  /streams:\n    post:\n      description: subscribes a client to receive out-of-band data\n      parameters:\n        - name: callbackUrl\n          in: query\n          required: true\n          description: |\n            the location where data will be sent.  Must be network accessible\n            by the source server\n          schema:\n            type: string\n            format: uri\n            example: https://tonys-server.com\n",
+      "source_id": "api-doc-openapi-callbacks",
+      "source_type": "api_doc",
+      "source_url": "https://github.com/OAI/OpenAPI-Specification",
+      "unit_id": "58c9b85a-66b6-4e62-95d7-eae77eedfff5"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-openapi-callbacks",
+      "58c9b85a-66b6-4e62-95d7-eae77eedfff5"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "e8fa1b0a-074d-4abc-b6ce-f98ee5428cae",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "band",
+    "callback",
+    "client",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-openapi-callbacks",
+    "domain:api"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
