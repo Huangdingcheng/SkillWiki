@@ -1,0 +1,328 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Create a GitHub issue in a repository with title, body, and labels using the GitHub REST API.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:create_github_issue"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Create a GitHub issue with the given details: title, body, and labels in the specified repository.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "{'operationId': 'github_create_issue', 'parameters': {'owner': '{input.owner}', 'repo': '{input.repo}', 'title': '{input.title}', 'body': '{input.body}', 'labels': '{input.labels}'}}"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "body": {
+          "description": "Issue body",
+          "type": "string"
+        },
+        "labels": {
+          "description": "List of label names",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "owner": {
+          "description": "Repository owner",
+          "type": "string"
+        },
+        "repo": {
+          "description": "Repository name",
+          "type": "string"
+        },
+        "title": {
+          "description": "Issue title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "title"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "issue_number": {
+          "type": "integer"
+        },
+        "issue_url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "A new issue is created in the specified repository"
+    ],
+    "preconditions": [
+      "Repository exists and is accessible",
+      "Authentication is configured"
+    ],
+    "side_effects": []
+  },
+  "name": "create_github_issue_api_doc_github_create_issue",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "7e82514046cd0da4340135f20ae67b1c62d62332c90938b12337b48912e5429b",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "create_github_issue",
+            "passed_challenges": 3,
+            "score": 0.95
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Issue is created and response includes issue number and URL.",
+            "failure_signal": "HTTP error or missing required field.",
+            "rubric": [
+              "Correctly identifies owner and repo from context.",
+              "Sends POST request with JSON body containing title.",
+              "Returns success with issue URL or number."
+            ],
+            "task": "Create a GitHub issue with only a title.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "Issue created with all fields reflected in response.",
+            "failure_signal": "Missing labels or body not included.",
+            "rubric": [
+              "Constructs request body with title, body string, and labels array.",
+              "Handles labels as array of strings.",
+              "Returns success with issue details."
+            ],
+            "task": "Create a GitHub issue with title, body, and multiple labels.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "Skill returns error indicating invalidity or non-existence.",
+            "failure_signal": "Attempts request and receives 404 without proper handling.",
+            "rubric": [
+              "Detects missing repository condition.",
+              "Returns appropriate error message or code.",
+              "Does not proceed with request or handles error gracefully."
+            ],
+            "task": "Create a GitHub issue where the repository does not exist (error handling).",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /repos/{owner}/{repo}/issues"
+          ],
+          "constraints": [
+            "Owner and repo must exist and be accessible.",
+            "Authentication is required but details are not in the snippet.",
+            "The request_id header is optional and not critical."
+          ],
+          "examples": [
+            "url: https://example.invalid"
+          ],
+          "facts": [
+            "The API endpoint is POST /repos/{owner}/{repo}/issues.",
+            "Requires owner and repo in the path.",
+            "Accepts title, body, and labels in the JSON request body.",
+            "The operationId is github_create_issue."
+          ],
+          "procedures": [
+            "Send a POST request to /repos/{owner}/{repo}/issues with a JSON body containing 'title' (required), optionally 'body' (string), and 'labels' (array of strings).",
+            "Assume authentication is provided via standard GitHub API token."
+          ],
+          "summary": "Focused GitHub REST API for creating an issue with title, body, and labels."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "create_github_issue",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.95,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "create_github_issue",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.95,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "create_github_issue",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.95,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Create a GitHub issue in a repository with title, body, and labels using the GitHub REST API.",
+          "input_schema": {
+            "properties": {
+              "body": {
+                "description": "Issue body",
+                "type": "string"
+              },
+              "labels": {
+                "description": "List of label names",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "owner": {
+                "description": "Repository owner",
+                "type": "string"
+              },
+              "repo": {
+                "description": "Repository name",
+                "type": "string"
+              },
+              "title": {
+                "description": "Issue title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "title"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "create_github_issue",
+          "output_schema": {
+            "properties": {
+              "issue_number": {
+                "type": "integer"
+              },
+              "issue_url": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "A new issue is created in the specified repository"
+          ],
+          "preconditions": [
+            "Repository exists and is accessible",
+            "Authentication is configured"
+          ],
+          "prompt_template": "Create a GitHub issue with the given details: title, body, and labels in the specified repository.",
+          "score": 0.95,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill"
+          ],
+          "tool_calls": [
+            "{'operationId': 'github_create_issue', 'parameters': {'owner': '{input.owner}', 'repo': '{input.repo}', 'title': '{input.title}', 'body': '{input.body}', 'labels': '{input.labels}'}}"
+          ]
+        },
+        "selected_reason": "The 'create_github_issue' candidate is directly derived from the API context, covers all required inputs (owner, repo, title, optional body/labels), and provides a clear mapping to the documented endpoint. Its high score reflects strong alignment with the single focused action required by the source."
+      },
+      "domain": "software",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public API documentation normalized into a focused OpenAPI-style fixture; source URL recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_006_228fc681.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "GitHub REST API",
+      "raw_content_preview": "openapi: 3.0.3\ninfo:\n  title: Focused GitHub REST API fixture - github-create-issue\n  version: '1.0'\n  description: Focused public API documentation excerpt normalized for SkillOS API-doc-to-skill testing.\nservers:\n  - url: https://example.invalid\npaths:\n  /repos/{owner}/{repo}/issues:\n    post:\n      operationId: github_create_issue\n      summary: Create a GitHub issue with title/body/labels.\n      parameters:\n        - name: request_id\n          in: header\n          required: false\n          s",
+      "source_id": "api-doc-github-create-issue",
+      "source_type": "api_doc",
+      "source_url": "https://docs.github.com/en/rest/issues/issues#create-an-issue",
+      "unit_id": "094bb400-2230-428d-aef5-b782fbe48fa6"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-github-create-issue",
+      "094bb400-2230-428d-aef5-b782fbe48fa6"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "32227bb3-82cc-4113-85ce-d7de50768b26",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "body",
+    "collaboration",
+    "create",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-github-create-issue",
+    "domain:software"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
