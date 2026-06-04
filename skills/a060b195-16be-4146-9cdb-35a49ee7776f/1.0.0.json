@@ -1,0 +1,296 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Create a batch of Messages API requests to the Anthropic API.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:create_message_batch"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.result.endpoint",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.parameters",
+        "type": "json_object"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "To create a batch of Messages API requests, send a POST request to the endpoint /v1/messages/batches with a JSON body containing the batch details. Optionally, include a request_id header to identify the batch. The response will contain the batch object with its ID and status.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "POST /v1/messages/batches"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "messages": {
+          "description": "List of messages to include in the batch.",
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "description": "Optional custom identifier for the batch.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messages"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "batch_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "Batch is created and pending processing."
+    ],
+    "preconditions": [
+      "User has valid API credentials for Anthropic API."
+    ],
+    "side_effects": []
+  },
+  "name": "create_message_batch_api_doc_anthropic_create_message_batch",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "e79b1b03d76f2241a289203e7850aa7a36da8a48ff6b805f2c2327f5990f2a18",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "create_message_batch",
+            "passed_challenges": 2,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "API call is made with proper structure to create the batch.",
+            "failure_signal": "Missing endpoint or incorrect HTTP method; no batch content provided.",
+            "rubric": [
+              "Uses the correct endpoint POST /v1/messages/batches.",
+              "Specifies the batch content (list of messages).",
+              "Optionally includes a request_id header.",
+              "Uses HTTP POST method."
+            ],
+            "task": "Create a batch of messages to ask Claude to summarize three documents.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "Clear explanation of using request_id header.",
+            "failure_signal": "Omits the header parameter or misstates its role.",
+            "rubric": [
+              "Identifies the request_id header parameter.",
+              "Explains that it is optional.",
+              "Describes the benefit of custom identifier for tracking or idempotency."
+            ],
+            "task": "Explain how to include a custom identifier for the batch and why it might be useful.",
+            "task_id": "challenge_2"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "POST /v1/messages/batches"
+          ],
+          "constraints": [
+            "The request_id header is optional."
+          ],
+          "examples": [
+            "Example request: POST /v1/messages/batches with header request_id: my-batch-123 and body containing list of messages."
+          ],
+          "facts": [
+            "The endpoint is POST /v1/messages/batches.",
+            "It has an optional request_id header parameter.",
+            "The operation ID is anthropic_create_message_batch.",
+            "The summary describes creating a batch of Messages API requests."
+          ],
+          "procedures": [
+            "To create a batch, send a POST request to /v1/messages/batches with the required request body (not fully specified here) and optionally include a request_id header."
+          ],
+          "summary": "Focused API documentation for creating a batch of Messages API requests using Anthropic API."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "create_message_batch",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "create_message_batch",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Create a batch of Messages API requests to the Anthropic API.",
+          "input_schema": {
+            "properties": {
+              "messages": {
+                "description": "List of messages to include in the batch.",
+                "items": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "content"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "request_id": {
+                "description": "Optional custom identifier for the batch.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "messages"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "create_message_batch",
+          "output_schema": {
+            "properties": {
+              "batch_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "Batch is created and pending processing."
+          ],
+          "preconditions": [
+            "User has valid API credentials for Anthropic API."
+          ],
+          "prompt_template": "To create a batch of Messages API requests, send a POST request to the endpoint /v1/messages/batches with a JSON body containing the batch details. Optionally, include a request_id header to identify the batch. The response will contain the batch object with its ID and status.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "api_doc",
+            "ctx2skill"
+          ],
+          "tool_calls": [
+            "POST /v1/messages/batches"
+          ]
+        },
+        "selected_reason": "The skill directly corresponds to the single endpoint documented and matches the baseline action 'Create a batch of Messages API requests.' It is atomic and reusable for any batch creation task within the Anthropic API."
+      },
+      "domain": "api",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "atomic",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "api_doc",
+      "license_note": "public API documentation normalized into a focused OpenAPI-style fixture; source URL recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\api_doc_017_5f691233.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic API docs",
+      "raw_content_preview": "openapi: 3.0.3\ninfo:\n  title: Focused Anthropic API docs fixture - anthropic-create-message-batch\n  version: '1.0'\n  description: Focused public API documentation excerpt normalized for SkillOS API-doc-to-skill testing.\nservers:\n  - url: https://example.invalid\npaths:\n  /v1/messages/batches:\n    post:\n      operationId: anthropic_create_message_batch\n      summary: Create a batch of Messages API requests.\n      parameters:\n        - name: request_id\n          in: header\n          required: false",
+      "source_id": "api-doc-anthropic-create-message-batch",
+      "source_type": "api_doc",
+      "source_url": "https://docs.anthropic.com/en/api/messages-batch-examples",
+      "unit_id": "69b1cef3-e749-418c-81b7-030ce0af8954"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "api-doc-anthropic-create-message-batch",
+      "69b1cef3-e749-418c-81b7-030ce0af8954"
+    ],
+    "source_type": "api_doc"
+  },
+  "skill_id": "a060b195-16be-4146-9cdb-35a49ee7776f",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "anthropic",
+    "api",
+    "as",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:api-doc-anthropic-create-message-batch",
+    "domain:api"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
