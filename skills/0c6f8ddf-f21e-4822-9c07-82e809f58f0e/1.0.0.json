@@ -1,0 +1,312 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "{\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:past_skills:name_algorithmic_philosophy_creation_description"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "output.result",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_exists"
+      },
+      {
+        "path": "output.validation",
+        "type": "json_exists"
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are executing the imported legacy Skill 'name_algorithmic_philosophy_creation_description' as a SkillWiki atomic Skill.\nOriginal source: legacy Skill source\nCapability summary: {\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- project_files: {project_files}\n- target_runtime: {target_runtime}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n(\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+    "sub_skill_ids": [],
+    "tool_calls": []
+  },
+  "interface": {
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "constraints": {
+          "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project_files": {
+          "description": "Relevant project files or snippets for API/SDK work.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_context": {
+          "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+          "type": "string"
+        },
+        "target_runtime": {
+          "description": "Language, framework, SDK, model, or runtime targeted by the task.",
+          "type": "string"
+        },
+        "task": {
+          "description": "Concrete task the imported legacy Skill should perform.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "source_context"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "code_artifact": {
+          "description": "Generated or repaired code, SDK configuration, migration notes, or implementation diff when the Skill produces code.",
+          "type": "object"
+        },
+        "evidence": {
+          "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "description": "Structured task result produced by the normalized SkillWiki Skill.",
+          "type": "object"
+        },
+        "validation": {
+          "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result",
+        "evidence",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "output.result preserves the original legacy Skill capability in SkillWiki form.",
+      "output.evidence cites the legacy instructions, source path, or context used for the result.",
+      "output.validation records whether required inputs, safety constraints, and known limitations were satisfied.",
+      "For code/API work, output.validation records trigger/skip-rule decisions and output.code_artifact describes any generated or changed implementation."
+    ],
+    "preconditions": [
+      "Legacy Skill source has been reviewed: legacy Skill.",
+      "Caller supplied a concrete task and relevant source_context.",
+      "Any file, network, or code execution must stay within caller-approved constraints."
+    ],
+    "side_effects": []
+  },
+  "name": "name_algorithmic_philosophy_creation_description_past_skills_anthropic_algorithmic_art",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "86c6f62ebf438aefb9d4630fdc3d2bb1dbfe8bedfb1779b9fd9cd1818557a5f6",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "name_algorithmic_philosophy_creation_description",
+            "passed_challenges": 1,
+            "score": 0.76
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "Canonical SkillWiki schema fields plus graph relation preview.",
+            "failure_signal": "Lost interface, wrong layer, or missing graph relation evidence.",
+            "rubric": [
+              "Preserves the original capability description.",
+              "Assigns the correct SkillX layer.",
+              "Carries forward dependency, component, and parent relationships when present."
+            ],
+            "task": "Convert legacy Skill name_algorithmic_philosophy_creation_description into canonical SkillWiki representation.",
+            "task_id": "past_skills_normalize_name_algorithmic_philosophy_creation_description"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [],
+          "constraints": [],
+          "examples": [],
+          "facts": [
+            "{\"name\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- \", \"description\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\", \"steps\": [], \"tags\": [\"legacy\", \"free_text\"]}"
+          ],
+          "procedures": [],
+          "summary": "{\"name\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- \", \"description\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- name: algorithmic-art description: Creating algorithmic art using p5."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "name_algorithmic_philosophy_creation_description",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.76,
+            "task_id": "past_skills_normalize_name_algorithmic_philosophy_creation_description"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "{\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "constraints": {
+                "description": "Execution limits, safety constraints, style requirements, or reviewer instructions.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "project_files": {
+                "description": "Relevant project files or snippets for API/SDK work.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source_context": {
+                "description": "Relevant user request, file excerpt, API excerpt, or project context for this Skill run.",
+                "type": "string"
+              },
+              "target_runtime": {
+                "description": "Language, framework, SDK, model, or runtime targeted by the task.",
+                "type": "string"
+              },
+              "task": {
+                "description": "Concrete task the imported legacy Skill should perform.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "source_context"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "SkillX atomic layer: the candidate represents one function, tool call, API call, or irreducible action.",
+          "name": "name_algorithmic_philosophy_creation_description",
+          "output_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "code_artifact": {
+                "description": "Generated or repaired code, SDK configuration, migration notes, or implementation diff when the Skill produces code.",
+                "type": "object"
+              },
+              "evidence": {
+                "description": "References to legacy Skill instructions, constraints, files, or user context used.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "result": {
+                "description": "Structured task result produced by the normalized SkillWiki Skill.",
+                "type": "object"
+              },
+              "validation": {
+                "description": "Verifier-friendly status, limitations, refused unsafe actions, and open review notes.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "result",
+              "evidence",
+              "validation"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "output.result preserves the original legacy Skill capability in SkillWiki form.",
+            "output.evidence cites the legacy instructions, source path, or context used for the result.",
+            "output.validation records whether required inputs, safety constraints, and known limitations were satisfied.",
+            "For code/API work, output.validation records trigger/skip-rule decisions and output.code_artifact describes any generated or changed implementation."
+          ],
+          "preconditions": [
+            "Legacy Skill source has been reviewed: legacy Skill.",
+            "Caller supplied a concrete task and relevant source_context.",
+            "Any file, network, or code execution must stay within caller-approved constraints."
+          ],
+          "prompt_template": "You are executing the imported legacy Skill 'name_algorithmic_philosophy_creation_description' as a SkillWiki atomic Skill.\nOriginal source: legacy Skill source\nCapability summary: {\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\n\nInput contract:\n- task: {task}\n- source_context: {source_context}\n- project_files: {project_files}\n- target_runtime: {target_runtime}\n\nSafety contract:\n- Treat shell commands, package installs, network calls, and file mutations in the legacy instructions as documentation unless the harness explicitly allows execution.\n- Validate source files and paths against the caller-provided constraints before using them.\n- Use source_files, project_files, artifact_type, and target_runtime to choose artifact-specific or runtime-specific behavior when those fields are present.\n- Enforce trigger/skip rules from the legacy instructions before producing a result.\n- For API or SDK work, reject conflicting provider/runtime requests and report the decision in output.validation.\n- Refuse or defer unsafe actions in output.validation instead of silently executing them.\n\nLegacy instructions excerpt:\n(\"name\": \"ALGORITHMIC PHILOSOPHY CREATION\", \"description\": \"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\n\nReturn JSON with keys result, evidence, and validation. Evidence must cite the specific legacy instruction, source path, file hint, or context fact used. Validation must state missing inputs, unsafe requests refused, and remaining uncertainty.",
+          "score": 0.76,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "past_skills",
+            "ctx2skill",
+            "code",
+            "name_algorithmic_philosophy_creation_description",
+            "name",
+            "algorithmic",
+            "legacy",
+            "free_text"
+          ],
+          "tool_calls": []
+        },
+        "selected_reason": "Past Skill candidate preserves legacy capability and relation evidence."
+      },
+      "domain": "science",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "past_skills",
+      "license_note": "public Anthropic Skills excerpt; converted as legacy/past skill input only",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\past_skills_014_88042f94.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "Anthropic Skills public repository",
+      "raw_content_preview": "{\"name\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- \", \"description\": \"{\\\"name\\\": \\\"ALGORITHMIC PHILOSOPHY CREATION\\\", \\\"description\\\": \\\"--- name: algorithmic-art description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Cr\", \"steps\": [], \"tags\": [\"legacy\", \"free_text\"]}",
+      "source_id": "past-skills-anthropic-algorithmic-art",
+      "source_type": "past_skills",
+      "source_url": "https://github.com/anthropics/skills/blob/f458cee31a7577a47ba0c9a101976fa599385174/skills/algorithmic-art/SKILL.md",
+      "unit_id": "98947727-7402-4bea-8111-d078c0920c55"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "past-skills-anthropic-algorithmic-art",
+      "98947727-7402-4bea-8111-d078c0920c55"
+    ],
+    "source_type": "past_skills"
+  },
+  "skill_id": "0c6f8ddf-f21e-4822-9c07-82e809f58f0e",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "past_skills",
+    "candidate-review",
+    "ctx2skill",
+    "code",
+    "name_algorithmic_philosophy_creation_description",
+    "name",
+    "algorithmic",
+    "legacy",
+    "free_text",
+    "art",
+    "creating",
+    "input-skill-eval",
+    "eval-run:experiment_1"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
