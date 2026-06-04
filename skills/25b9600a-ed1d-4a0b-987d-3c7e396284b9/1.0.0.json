@@ -1,0 +1,376 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reusable skill to render PDF pages to image files using the pypdfium2 library.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:document:document_grounded_extractor"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.document_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.allowed_operations",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.answer",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.extracted_steps",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "Use pypdfium2 to render the PDF at {pdf_file_path} into images. Import pypdfium2 as pypdfium2. Load the PDF, get page count, iterate over the requested page range, render each page at the specified DPI to a bitmap, convert to PIL Image or directly save using pypdfium2's save method. Save with appropriate format and quality. Return list of output file paths.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "pypdfium2.PdfDocument",
+      "pypdfium2.PdfPage.render"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "dpi": {
+          "default": 300,
+          "description": "Resolution in DPI.",
+          "type": "integer"
+        },
+        "format": {
+          "default": "png",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "type": "string"
+        },
+        "output_dir": {
+          "description": "Directory to save output images.",
+          "type": "string"
+        },
+        "page_range": {
+          "description": "Page range to render, e.g., 'all' or '1-3'.",
+          "type": "string"
+        },
+        "pdf_file_path": {
+          "description": "Path to the input PDF file.",
+          "type": "string"
+        },
+        "quality": {
+          "default": 85,
+          "description": "JPEG quality (1-100), ignored for PNG.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pdf_file_path",
+        "output_dir"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "page_count": {
+          "description": "Number of pages rendered.",
+          "type": "integer"
+        },
+        "rendered_images": {
+          "items": {
+            "description": "Paths to generated image files.",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rendered_images",
+        "page_count"
+      ],
+      "type": "object"
+    },
+    "postconditions": [
+      "Image files are created in the output directory for the requested pages.",
+      "Each image file is named according to the page number and format."
+    ],
+    "preconditions": [
+      "pypdfium2 is installed in the Python environment.",
+      "The PDF file exists at the specified path.",
+      "The output directory exists or can be created."
+    ],
+    "side_effects": []
+  },
+  "name": "document_grounded_extractor_document_skillsbench_09_reference_pdf",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "5fa88aa11d914965cc7fb80d71fa17650158fc1f926fab5edc33974b11b04967",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 3,
+            "score": 0.85
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "A PNG file is generated that visually represents the first page of the PDF at high resolution.",
+            "failure_signal": "No image is produced, the image is blank, or an unhandled exception occurs.",
+            "rubric": [
+              "Correctly imports pypdfium2.",
+              "Loads the PDF document from a given file path.",
+              "Renders page 0 (first page) to an image.",
+              "Saves the image as a PNG with resolution of at least 300 DPI.",
+              "Handles potential errors (e.g., file not found)."
+            ],
+            "task": "Render the first page of a PDF to a high-resolution PNG image using pypdfium2.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "A set of JPEG files (page_1.jpg, page_2.jpg, etc.) is produced, each corresponding to a PDF page with acceptable visual quality.",
+            "failure_signal": "Only some pages are converted, images are corrupted, or program crashes.",
+            "rubric": [
+              "Iterates over all pages in the PDF.",
+              "Renders each page to a JPEG image.",
+              "Applies a user-specified quality parameter (e.g., 85).",
+              "Outputs images with filenames indicating page numbers.",
+              "Ensures memory efficiency (e.g., not loading all pages at once)."
+            ],
+            "task": "Convert all pages of a multi-page PDF into separate JPEG images using pypdfium2, with customizable quality.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "A cropped image containing only the specified region of the PDF page.",
+            "failure_signal": "The cropped image is empty, misaligned, or includes content outside the region.",
+            "rubric": [
+              "Loads the PDF and selects the target page.",
+              "Renders the entire page to an image.",
+              "Crops the image to the specified bounding box (x, y, width, height).",
+              "Saves the cropped region as a PNG.",
+              "Accepts coordinates in either points or pixels and documents the assumption."
+            ],
+            "task": "Extract a specific region from a PDF page as a cropped image using pypdfium2, given coordinates.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "pypdfium2 library (Python package)"
+          ],
+          "constraints": [
+            "pypdfium2 requires a Python environment.",
+            "Proper installation of pypdfium2 and its dependencies is necessary.",
+            "Rendering can be resource-intensive for large PDFs."
+          ],
+          "examples": [
+            "Example: render page 1 of a PDF to a PNG image at 300 DPI using pypdfium2."
+          ],
+          "facts": [
+            "pypdfium2 is a Python binding for PDFium.",
+            "pypdfium2 enables fast PDF rendering.",
+            "pypdfium2 can generate image representations of PDF pages.",
+            "PDFium is Chromium's PDF library."
+          ],
+          "procedures": [
+            "Install pypdfium2 using pip.",
+            "Use pypdfium2 to load a PDF document.",
+            "Render pages to images by specifying page indices and parameters such as scale and format.",
+            "Save or process the resulting images."
+          ],
+          "summary": "This context describes the pypdfium2 library, a Python binding for PDFium (Chromium's PDF library). It is excellent for fast PDF rendering and generating image representations of PDF documents."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.85,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [
+            "pypdfium2",
+            "PIL (optional for JPEG quality)"
+          ],
+          "dependency_ids": [],
+          "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reusable skill to render PDF pages to image files using the pypdfium2 library.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+          "input_schema": {
+            "properties": {
+              "dpi": {
+                "default": 300,
+                "description": "Resolution in DPI.",
+                "type": "integer"
+              },
+              "format": {
+                "default": "png",
+                "enum": [
+                  "png",
+                  "jpeg"
+                ],
+                "type": "string"
+              },
+              "output_dir": {
+                "description": "Directory to save output images.",
+                "type": "string"
+              },
+              "page_range": {
+                "description": "Page range to render, e.g., 'all' or '1-3'.",
+                "type": "string"
+              },
+              "pdf_file_path": {
+                "description": "Path to the input PDF file.",
+                "type": "string"
+              },
+              "quality": {
+                "default": 85,
+                "description": "JPEG quality (1-100), ignored for PNG.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "pdf_file_path",
+              "output_dir"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "document_grounded_extractor",
+          "output_schema": {
+            "properties": {
+              "page_count": {
+                "description": "Number of pages rendered.",
+                "type": "integer"
+              },
+              "rendered_images": {
+                "items": {
+                  "description": "Paths to generated image files.",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "rendered_images",
+              "page_count"
+            ],
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "Image files are created in the output directory for the requested pages.",
+            "Each image file is named according to the page number and format."
+          ],
+          "preconditions": [
+            "pypdfium2 is installed in the Python environment.",
+            "The PDF file exists at the specified path.",
+            "The output directory exists or can be created."
+          ],
+          "prompt_template": "Use pypdfium2 to render the PDF at {pdf_file_path} into images. Import pypdfium2 as pypdfium2. Load the PDF, get page count, iterate over the requested page range, render each page at the specified DPI to a bitmap, convert to PIL Image or directly save using pypdfium2's save method. Save with appropriate format and quality. Return list of output file paths.",
+          "score": 0.85,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "document",
+            "ctx2skill",
+            "pdf",
+            "image",
+            "render",
+            "pypdfium2"
+          ],
+          "tool_calls": [
+            "pypdfium2.PdfDocument",
+            "pypdfium2.PdfPage.render"
+          ]
+        },
+        "selected_reason": "The candidate skill 'render_pdf_pages_to_images_with_pypdfium2' directly addresses the core capability described in the context—rendering PDF pages to images using pypdfium2. The challenges cover a range of realistic tasks (single page, multipage, cropped region) that this skill can solve with slight variations in input parameters. The skill is atomic, well-scoped, and reusable across multiple PDF rendering scenarios. A cross-time replay lite score of 0.85 is assigned due to its high relevance, clear input/output schema, and straightforward pre/postconditions, though the score is not 1.0 because the context lacks explicit details on error handling or edge cases."
+      },
+      "domain": "office",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "document",
+      "license_note": "Apache-2.0 repository fixture excerpt; source path and task id recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\document_008_fb543f73.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench PDF reference documentation",
+      "raw_content_preview": "# SkillsBench PDF reference documentation\n\nSource path: `tasks/court-form-filling/environment/skills/pdf/reference.md`\n\n# PDF Processing Advanced Reference\n\nThis document contains advanced PDF processing features, detailed examples, and additional libraries not covered in the main skill instructions.\n\n## pypdfium2 Library (Apache/BSD License)\n\n### Overview\npypdfium2 is a Python binding for PDFium (Chromium's PDF library). It's excellent for fast PDF rendering, image generation, and serves as a P",
+      "source_id": "document-skillsbench-09-reference-pdf",
+      "source_type": "document",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/court-form-filling/environment/skills/pdf/reference.md",
+      "unit_id": "b73c3642-73be-4215-a450-d72140c90f11"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "document-skillsbench-09-reference-pdf",
+      "b73c3642-73be-4215-a450-d72140c90f11"
+    ],
+    "source_type": "document"
+  },
+  "skill_id": "25b9600a-ed1d-4a0b-987d-3c7e396284b9",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "document",
+    "candidate-review",
+    "ctx2skill",
+    "pdf",
+    "image",
+    "render",
+    "pypdfium2",
+    "convert",
+    "documents",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:document-skillsbench-09-reference-pdf",
+    "domain:office"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
