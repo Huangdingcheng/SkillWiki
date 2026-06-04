@@ -1,0 +1,393 @@
+{
+  "component_ids": [],
+  "dependency_ids": [],
+  "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reads population data from a PDF and income data from an Excel file, then creates a multi-sheet Excel report with pivot tables based on specified sheet configurations.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+  "domain": "general",
+  "evaluation": {
+    "benchmark_task_ids": [],
+    "harness_validation": {},
+    "test_case_refs": [
+      "ctx2skill-lite:document:document_grounded_extractor"
+    ],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "verifier_specs": [
+      {
+        "path": "input.task",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.document_context",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "input.allowed_operations",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.result.answer",
+        "type": "json_nonempty"
+      },
+      {
+        "path": "output.result.extracted_steps",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.evidence",
+        "type": "json_array_nonempty"
+      },
+      {
+        "path": "output.verifier.passed",
+        "type": "json_equals",
+        "value": true
+      }
+    ]
+  },
+  "granularity_level": 1,
+  "implementation": {
+    "code": null,
+    "execution_order": null,
+    "language": "prompt",
+    "prompt_template": "You are an agent that creates demographic pivot reports. Follow these steps:\n1. Read the population PDF from {population_pdf_path} and extract the data into a table.\n2. Read the income Excel from {income_xlsx_path} and extract the data into a table.\n3. Merge the two datasets on 'STATE' if needed (depending on sheet configs).\n4. For each configuration in {sheet_configs}:\n   - Create a sheet named {sheet_name}.\n   - Create a pivot table using {row_field} as row, {value_field} as values, applying {aggregation}.\n5. Save the workbook to {output_report_path}.\n6. Return success with the output path.",
+    "sub_skill_ids": [],
+    "tool_calls": [
+      "read_pdf",
+      "read_excel",
+      "create_excel_workbook",
+      "add_pivot_table_sheet",
+      "save_workbook"
+    ]
+  },
+  "interface": {
+    "input_schema": {
+      "properties": {
+        "income_xlsx_path": {
+          "description": "Path to the income Excel file",
+          "type": "string"
+        },
+        "output_report_path": {
+          "description": "Path for the output report",
+          "type": "string"
+        },
+        "population_pdf_path": {
+          "description": "Path to the population PDF file",
+          "type": "string"
+        },
+        "sheet_configs": {
+          "description": "List of sheet definitions for pivot tables",
+          "items": {
+            "properties": {
+              "aggregation": {
+                "default": "sum",
+                "type": "string"
+              },
+              "row_field": {
+                "type": "string"
+              },
+              "sheet_name": {
+                "type": "string"
+              },
+              "value_field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sheet_name",
+              "row_field",
+              "value_field"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "population_pdf_path",
+        "income_xlsx_path",
+        "output_report_path",
+        "sheet_configs"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "output_path": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "success",
+            "failure"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postconditions": [
+      "An Excel file is created at the output path",
+      "The Excel file contains sheets as specified in sheet_configs",
+      "Each sheet has a valid pivot table with the specified aggregation"
+    ],
+    "preconditions": [
+      "Population PDF file exists at the specified path",
+      "Income Excel file exists at the specified path",
+      "Output directory exists and is writable"
+    ],
+    "side_effects": []
+  },
+  "name": "document_grounded_extractor_document_skillsbench_02_instruction_sales_pivot_analysis",
+  "provenance": {
+    "created_by_agent": "input_skill_eval_runner",
+    "creation_context": {
+      "content_sha256": "9d3c7374fbe11448607247c0eaa1adb9b859d880da67cc283922106897e26516",
+      "ctx2skill_evidence": {
+        "candidate_scores": [
+          {
+            "name": "document_grounded_extractor",
+            "passed_challenges": 3,
+            "score": 0.75
+          }
+        ],
+        "challenges": [
+          {
+            "expected_evidence": "The output file /root/demographic_analysis.xlsx exists, opens correctly, and contains the specified pivot tables with accurate sums.",
+            "failure_signal": "Missing sheets, incorrect pivot structure, data parsing errors (e.g., non-numeric values in sum fields), or file not created.",
+            "rubric": [
+              "Successfully reads population data from PDF",
+              "Successfully reads income data from Excel",
+              "Creates an Excel file with five sheets",
+              "Population by State sheet has correct pivot structure",
+              "Earners by State sheet has correct pivot structure"
+            ],
+            "task": "Given the raw context, create the demographic analysis report ensuring that the PDF parsing correctly extracts numeric population data even if the PDF contains text with commas or other formatting. Verify that the final Excel includes all required sheets and pivot tables with correct aggregation.",
+            "task_id": "challenge_1"
+          },
+          {
+            "expected_evidence": "The output report is generated with valid pivot tables, and missing data does not cause errors or incorrect totals.",
+            "failure_signal": "Script crashes, produces garbage values, or omits entire rows due to missing data.",
+            "rubric": [
+              "Handles missing data in PDF (e.g., blank cells) without crashing",
+              "Handles missing data in Excel (e.g., empty cells) without crashing",
+              "Pivot tables still reflect accurate sums of available data",
+              "No silent data corruption"
+            ],
+            "task": "Adapt the approach to handle missing or malformed data in the input files. For example, if the PDF has missing population values for some states, the skill should skip or default to zero. Similarly, if the Excel has empty cells, they should be handled gracefully.",
+            "task_id": "challenge_2"
+          },
+          {
+            "expected_evidence": "The skill can be invoked with different sheet definitions and produces correct output for each.",
+            "failure_signal": "Hardcoded behavior prevents generating new sheet types, or errors when configuration changes.",
+            "rubric": [
+              "Accepts a list of sheet configurations (sheet name, row field, value field, aggregation function)",
+              "Generates the corresponding pivot tables for each configuration",
+              "Outputs the expected sheets in the report"
+            ],
+            "task": "Extend the skill to dynamically accept sheet definitions as input (e.g., a list of sheets with row and value column names) and generate the pivot tables accordingly, rather than hardcoding only two sheets. This tests reusability.",
+            "task_id": "challenge_3"
+          }
+        ],
+        "context_pack": {
+          "apis_tools": [
+            "PDF reader (e.g., PyMuPDF, pdfplumber)",
+            "Excel reader/writer (e.g., openpyxl, pandas)",
+            "File system operations"
+          ],
+          "constraints": [
+            "The input PDF and Excel files exist at the specified paths",
+            "The output file must be a valid .xlsx format",
+            "Pivot tables must be structured correctly (rows and values as specified)",
+            "The report must contain exactly five sheets (the instruction mentions five different sheets)"
+          ],
+          "examples": [],
+          "facts": [
+            "Population data is available in /root/population.pdf",
+            "Income data is available in /root/income.xlsx",
+            "The output report must be saved as /root/demographic_analysis.xlsx",
+            "The report must contain at least two pivot table sheets: 'Population by State' and 'Earners by State'",
+            "The 'Population by State' sheet has rows: STATE, values: Sum of POPULATION_2023",
+            "The 'Earners by State' sheet has rows: STATE, values: Sum of earners (inferred)"
+          ],
+          "procedures": [
+            "Read population data from the PDF file using a PDF parsing tool",
+            "Read income data from the Excel file using a spreadsheet library",
+            "Create a new Excel workbook",
+            "For each required sheet, create a pivot table and populate it with aggregated data",
+            "Save the workbook to the specified output path"
+          ],
+          "summary": "The task instructs to read population data from a PDF file and income data from an Excel file, then create a new Excel report containing multiple pivot tables across several sheets. The report must include 'Population by State' and 'Earners by State' sheets, each with specific pivot table structures."
+        },
+        "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "judge_results": [
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_1"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_2"
+          },
+          {
+            "candidate": "document_grounded_extractor",
+            "passed": true,
+            "rationale": "Ctx2Skill-lite replay score meets the demo threshold.",
+            "score": 0.75,
+            "task_id": "challenge_3"
+          }
+        ],
+        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "selected_candidate": {
+          "component_ids": [],
+          "components": [],
+          "dependencies": [],
+          "dependency_ids": [],
+          "description": "Complete a document-grounded extraction and verification task from the imported context. Source candidate intent: Reads population data from a PDF and income data from an Excel file, then creates a multi-sheet Excel report with pivot tables based on specified sheet configurations.. The Skill returns a structured answer, extracted steps, evidence, and verifier notes; it does not perform self-play training, clone repositories, install packages, download datasets, or mutate local files by itself.",
+          "input_schema": {
+            "properties": {
+              "income_xlsx_path": {
+                "description": "Path to the income Excel file",
+                "type": "string"
+              },
+              "output_report_path": {
+                "description": "Path for the output report",
+                "type": "string"
+              },
+              "population_pdf_path": {
+                "description": "Path to the population PDF file",
+                "type": "string"
+              },
+              "sheet_configs": {
+                "description": "List of sheet definitions for pivot tables",
+                "items": {
+                  "properties": {
+                    "aggregation": {
+                      "default": "sum",
+                      "type": "string"
+                    },
+                    "row_field": {
+                      "type": "string"
+                    },
+                    "sheet_name": {
+                      "type": "string"
+                    },
+                    "value_field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sheet_name",
+                    "row_field",
+                    "value_field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "population_pdf_path",
+              "income_xlsx_path",
+              "output_report_path",
+              "sheet_configs"
+            ],
+            "type": "object"
+          },
+          "layering_reason": "",
+          "name": "document_grounded_extractor",
+          "output_schema": {
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "output_path": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "success",
+                  "failure"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "parent_skill_ids": [],
+          "parents": [],
+          "postconditions": [
+            "An Excel file is created at the output path",
+            "The Excel file contains sheets as specified in sheet_configs",
+            "Each sheet has a valid pivot table with the specified aggregation"
+          ],
+          "preconditions": [
+            "Population PDF file exists at the specified path",
+            "Income Excel file exists at the specified path",
+            "Output directory exists and is writable"
+          ],
+          "prompt_template": "You are an agent that creates demographic pivot reports. Follow these steps:\n1. Read the population PDF from {population_pdf_path} and extract the data into a table.\n2. Read the income Excel from {income_xlsx_path} and extract the data into a table.\n3. Merge the two datasets on 'STATE' if needed (depending on sheet configs).\n4. For each configuration in {sheet_configs}:\n   - Create a sheet named {sheet_name}.\n   - Create a pivot table using {row_field} as row, {value_field} as values, applying {aggregation}.\n5. Save the workbook to {output_report_path}.\n6. Return success with the output path.",
+          "score": 0.75,
+          "skill_type": "atomic",
+          "sub_skill_ids": [],
+          "tags": [
+            "document",
+            "ctx2skill"
+          ],
+          "tool_calls": [
+            "read_pdf",
+            "read_excel",
+            "create_excel_workbook",
+            "add_pivot_table_sheet",
+            "save_workbook"
+          ]
+        },
+        "selected_reason": "The candidate skill 'create_demographic_pivot_report' directly addresses the core task of reading heterogeneous data sources and producing a multi-sheet pivot report. It includes flexible sheet configurations, which makes it reusable for similar tasks beyond the two-sheet example. Its atomic nature and clear pre/post conditions align with the SkillWiki Ctx2Skill approach, and the rubric criteria from the challenges can be satisfied by this skill's design. The score of 0.75 reflects that while the skill is strong, it could be improved with error handling (challenge 2) and dynamic input (challenge 3), but it is the best candidate among the proposed options."
+      },
+      "domain": "finance",
+      "eval_run_id": "experiment_1",
+      "expected_skill_shape": "functional",
+      "fixture_import_mode": "isolated_eval_candidate",
+      "human_review_required": true,
+      "input_type": "document",
+      "license_note": "Apache-2.0 repository fixture excerpt; source path and task id recorded",
+      "local_path": "E:\\NLP\\skill wiki\\experiment_1\\fixtures\\document_013_09d91ed5.txt",
+      "paper_backlog_task": "E-P0-1",
+      "paper_or_project": "SkillsBench task instruction",
+      "raw_content_preview": "# SkillsBench task instruction\n\nSource path: `tasks/sales-pivot-analysis/instruction.md`\n\nread through the population data in `/root/population.pdf` and income daya in `/root/income.xlsx` and create a new report called `/root/demographic_analysis.xlsx`\n\nthe new Excel file should contain four new pivot tables and five different sheets:\n\n1. \"Population by State\"\nThis sheet contains a pivot table with the following structure:\nRows: STATE\nValues: Sum of POPULATION_2023\n\n2. \"Earners by State\"\nThis sh",
+      "source_id": "document-skillsbench-02-instruction-sales-pivot-analysis",
+      "source_type": "document",
+      "source_url": "https://github.com/benchflow-ai/skillsbench/blob/d86a55c0c31d37785a03c029c0814341b70dd486/tasks/sales-pivot-analysis/instruction.md",
+      "unit_id": "9956c016-56f6-4b19-ad92-88942589056c"
+    },
+    "parent_skill_ids": [],
+    "source_ids": [
+      "document-skillsbench-02-instruction-sales-pivot-analysis",
+      "9956c016-56f6-4b19-ad92-88942589056c"
+    ],
+    "source_type": "document"
+  },
+  "skill_id": "ca85a055-e400-466a-92b6-383a0614f93c",
+  "skill_type": "atomic",
+  "state": "S1",
+  "tags": [
+    "document",
+    "candidate-review",
+    "ctx2skill",
+    "create",
+    "data",
+    "demographic",
+    "input-skill-eval",
+    "eval-run:experiment_1",
+    "source-id:document-skillsbench-02-instruction-sales-pivot-analysis",
+    "domain:finance"
+  ],
+  "test_cases": [],
+  "version": "1.0.0"
+}
