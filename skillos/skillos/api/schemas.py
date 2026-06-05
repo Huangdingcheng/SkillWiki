@@ -113,6 +113,9 @@ class SkillSummary(BaseModel):
     skill_id: str
     name: str
     description: str
+    source_format: str = "skillos"
+    is_final: bool = False
+    immutable: bool = False
     skill_type: SkillType
     state: SkillState
     tags: List[str]
@@ -220,6 +223,15 @@ class ExecutePlanRequest(BaseModel):
     max_skills: int = Field(default=10, ge=1, le=50)
 
 
+class ResumeExecutionRequest(BaseModel):
+    plan_id: str
+    goal: str
+    guidance: str
+    final_state: Dict[str, Any] = Field(default_factory=dict)
+    assistance_request: Dict[str, Any] = Field(default_factory=dict)
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ExecutionStepResult(BaseModel):
     step_id: str
     step_index: int = 0
@@ -253,6 +265,7 @@ class ExecutionResult(BaseModel):
     retrieved_skills: List[RetrievedSkill] = Field(default_factory=list)
     experience_recorded: bool = False
     suggested_skill: Optional[Dict[str, Any]] = None
+    assistance_request: Optional[Dict[str, Any]] = None
     agent_trace: List[Dict[str, Any]] = Field(default_factory=list)
 
 

@@ -217,6 +217,18 @@ class Skill(BaseModel):
     display_name: str = Field(default="", description="人类可读的展示名称")
     description: str = Field(default="", description="Skill 功能描述")
     tags: List[str] = Field(default_factory=list, description="标签列表")
+    source_format: str = Field(
+        default="skillos",
+        description="原始 Skill 格式: skillos | anthropic_agent_skill | ...",
+    )
+    is_final: bool = Field(
+        default=False,
+        description="最终版 Skill。final Skill 不允许被自动修改、合并、降级或删除。",
+    )
+    immutable: bool = Field(
+        default=False,
+        description="不可变 Skill。通常用于第三方官方 Skill 或已锁定基线。",
+    )
 
     # --- Classification ---
     skill_type: SkillType = Field(default=SkillType.ATOMIC)
@@ -352,6 +364,8 @@ class Skill(BaseModel):
 
     def transition_to(self, new_state: SkillState) -> None:
         """执行状态转换，验证合法性。"""
+        if self.is_locked and new_state != self.state:
+            raise ValueError(f"Final immutable Skill cannot change lifecycle state: {self.name} v{self.version}")
         valid_transitions: Dict[SkillState, List[SkillState]] = {
             SkillState.RAW_EXPERIENCE: [SkillState.SKILL_CANDIDATE],
             SkillState.SKILL_CANDIDATE: [SkillState.DRAFT],
@@ -381,6 +395,8 @@ class Skill(BaseModel):
 
     def bump_version(self, part: str = "patch") -> None:
         """递增版本号。part: major | minor | patch"""
+        if self.is_locked:
+            raise ValueError(f"Final immutable Skill cannot create a new version: {self.name} v{self.version}")
         major, minor, patch = map(int, self.version.split("."))
         if part == "major":
             self.version = f"{major + 1}.0.0"
@@ -408,6 +424,11 @@ class Skill(BaseModel):
         )
         self.updated_at = now
 
+    @property
+    def is_locked(self) -> bool:
+        """Whether business content/lifecycle changes are blocked."""
+        return bool(self.is_final or self.immutable)
+
     def to_graph_node(self) -> Dict[str, Any]:
         """导出为 Neo4j 节点属性字典（仅标量属性）。"""
         return {
@@ -416,6 +437,9 @@ class Skill(BaseModel):
             "version": self.version,
             "display_name": self.display_name,
             "description": self.description,
+            "source_format": self.source_format,
+            "is_final": self.is_final,
+            "immutable": self.immutable,
             "skill_type": self.skill_type.value,
             "meta_category": self.meta_category.value if self.meta_category else None,
             "domain": self.domain,

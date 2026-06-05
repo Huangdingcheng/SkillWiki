@@ -42,6 +42,21 @@ class IngestResponse(BaseModel):
     agent_trace: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class AnthropicSkillImportRequest(BaseModel):
+    path: str = Field(..., description="Local path to anthropics/skills repo, a skills directory, or one SKILL.md")
+    namespace: str = Field(default="anthropic", description="Prefix used to avoid name collisions")
+    overwrite_existing: bool = Field(default=False, description="Deprecated. Final Anthropic Skills are never overwritten.")
+
+
+class AnthropicSkillImportResponse(BaseModel):
+    success: bool
+    imported_count: int
+    skipped_count: int
+    errors: List[str] = Field(default_factory=list)
+    created_skill_ids: List[str] = Field(default_factory=list)
+    imported_skills: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 def _unit_to_out(unit: Any) -> ExperienceUnitOut:
     return ExperienceUnitOut(
         unit_id=unit.unit_id,
@@ -140,4 +155,58 @@ async def parse_and_create_skills(
         graph_nodes_created=graph_nodes_created,
         graph_edges_created=graph_edges_created,
         agent_trace=agent_trace,
+    )
+
+
+@router.post("/anthropic-skills", response_model=AnthropicSkillImportResponse)
+async def import_anthropic_skills(
+    req: AnthropicSkillImportRequest,
+    app: AppState = Depends(get_app_state),
+) -> AnthropicSkillImportResponse:
+    """Import Anthropic Agent Skills as final immutable SkillOS skills."""
+    if not app.wiki:
+        raise HTTPException(status_code=503, detail="Skill Wiki 未初始化")
+
+    from ...layers.input_knowledge.anthropic_skills import load_anthropic_skills
+
+    result = load_anthropic_skills(req.path, namespace=req.namespace)
+    created_skill_ids: List[str] = []
+    imported: List[Dict[str, Any]] = []
+
+    for skill in result.skills:
+        existing = await app.wiki.get_by_name(skill.name, skill.version)
+        if existing:
+            result.skipped.append(skill.name)
+            continue
+        try:
+            created = await app.wiki.create(skill)
+            created_skill_ids.append(created.skill_id)
+            imported.append({
+                "skill_id": created.skill_id,
+                "name": created.name,
+                "original_name": created.provenance.creation_context.get("original_name") if created.provenance else "",
+                "version": created.version,
+                "source_format": created.source_format,
+                "is_final": created.is_final,
+                "immutable": created.immutable,
+            })
+            graph = getattr(app, "graph", None)
+            if graph is not None:
+                await graph.sync_skill(created)
+        except Exception as exc:
+            result.errors.append(f"{skill.name}: {exc}")
+
+    if app.search and hasattr(app.search, "warmup"):
+        try:
+            await app.search.warmup()
+        except Exception:
+            pass
+
+    return AnthropicSkillImportResponse(
+        success=not result.errors,
+        imported_count=len(created_skill_ids),
+        skipped_count=len(result.skipped),
+        errors=result.errors,
+        created_skill_ids=created_skill_ids,
+        imported_skills=imported,
     )

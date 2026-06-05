@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Seed demo data, then mirror the Wiki state into the in-memory graph.
     if app.state.seed_demo:
         await _seed_demo_skills(wiki)
+        await _seed_anthropic_skills(wiki)
         await _sync_graph_from_wiki(wiki, graph_mgr)
         await _seed_static_knowledge_graph(wiki, graph_mgr)
         await _warmup_semantic_index(app_state.search, graph_mgr)
@@ -113,6 +114,37 @@ async def _sync_graph_from_wiki(wiki: Any, graph_mgr: MemoryGraphManager) -> Non
                 await graph_mgr.sync_auto_edges(skill, skill_ids)
     except Exception as exc:  # pragma: no cover - startup should survive graph issues
         logger.warning("Failed to sync seeded Skills into graph: %s", exc)
+
+
+async def _seed_anthropic_skills(wiki: Any) -> None:
+    """Import vendored Anthropic Agent Skills as final immutable baselines."""
+    from ..layers.input_knowledge.anthropic_skills import load_anthropic_skills
+
+    vendor_dir = Path(__file__).resolve().parents[3] / "vendor" / "anthropic-skills"
+    if not vendor_dir.exists():
+        return
+    result = load_anthropic_skills(vendor_dir, namespace="anthropic")
+    imported = 0
+    skipped = 0
+    for skill in result.skills:
+        try:
+            existing = await wiki.get_by_name(skill.name, skill.version)
+            if existing:
+                skipped += 1
+                continue
+            await wiki.create(skill)
+            imported += 1
+        except Exception as exc:
+            result.errors.append(f"{skill.name}: {exc}")
+    if imported or result.errors:
+        logger.info(
+            "Anthropic Skill import completed: imported=%s skipped=%s errors=%s",
+            imported,
+            skipped + len(result.skipped),
+            len(result.errors),
+        )
+        for error in result.errors[:5]:
+            logger.warning("Anthropic Skill import error: %s", error)
 
 
 async def _seed_static_knowledge_graph(wiki: Any, graph_mgr: MemoryGraphManager) -> None:

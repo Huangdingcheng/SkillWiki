@@ -6,7 +6,7 @@ import {
 import {
   PlayCircleOutlined, ThunderboltOutlined, CheckCircleOutlined,
   CloseCircleOutlined, SearchOutlined, DatabaseOutlined,
-  BranchesOutlined, NodeIndexOutlined,
+  BranchesOutlined, NodeIndexOutlined, QuestionCircleOutlined, PictureOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
 import { executionApi } from '@/api/client'
@@ -21,6 +21,7 @@ const STATUS_COLOR: Record<string, string> = {
   running: '#1677ff',
   pending: '#d9d9d9',
   skipped: '#faad14',
+  waiting_for_user: '#faad14',
 }
 
 const SKILL_TYPE_COLOR: Record<string, string> = {
@@ -51,6 +52,7 @@ const TRACE_LABEL: Record<string, string> = {
   browser_observe_decide_act_loop: 'Browser observe-decide-act loop',
   validate_expected_outcome: 'Outcome validation',
   retry_after_mismatch: 'Mismatch repair retry',
+  request_user_assistance: 'Human-in-the-loop pause',
   execute_on_host_runtime: 'Host runtime execution',
   reflect_and_update_skill_memory: 'Execution learning',
 }
@@ -80,7 +82,7 @@ function asArray(value: unknown): unknown[] {
 
 function traceStatusColor(status: string) {
   if (['success', 'completed', 'created', 'reused'].includes(status)) return 'green'
-  if (['partial', 'empty', 'skipped', 'mismatch'].includes(status)) return 'gold'
+  if (['partial', 'empty', 'skipped', 'mismatch', 'waiting_for_user'].includes(status)) return 'gold'
   if (['failed', 'error'].includes(status)) return 'red'
   return 'blue'
 }
@@ -127,7 +129,11 @@ function getHostInformationUsed(result: ExecutionResult | null) {
 }
 
 function getBrowserLoopTrace(result: ExecutionResult | null) {
-  return result?.agent_trace?.find(trace => trace.action === 'browser_observe_decide_act_loop') || null
+  return result?.agent_trace?.find(trace =>
+    trace.action === 'desktop_resume_observe_decide_act'
+    || trace.action === 'browser_resume_observe_decide_act'
+    || trace.action === 'browser_observe_decide_act_loop'
+  ) || null
 }
 
 function compactValue(value: unknown, max = 90) {
@@ -220,11 +226,136 @@ function BrowserLoopPanel({ result }: { result: ExecutionResult | null }) {
   )
 }
 
+function collectScreenshotObservations(result: ExecutionResult | null) {
+  const screenshots: Record<string, unknown>[] = []
+  for (const step of result?.steps || []) {
+    for (const packet of step.observations || []) {
+      const packetRecord = asRecord(packet)
+      for (const obs of asArray(packetRecord.observations)) {
+        const obsRecord = asRecord(obs)
+        const evidence = asRecord(obsRecord.evidence)
+        if (obsRecord.type === 'screenshot' || evidence.path) {
+          screenshots.push({
+            step_id: step.step_id,
+            skill_name: step.skill_name,
+            phase: packetRecord.phase,
+            status: obsRecord.status,
+            ...evidence,
+          })
+        }
+      }
+    }
+    const output = asRecord(step.outputs)
+    for (const obs of asArray(output.observations)) {
+      const obsRecord = asRecord(obs)
+      const evidence = asRecord(obsRecord.evidence)
+      if (obsRecord.observation_type === 'screenshot' || evidence.path) {
+        screenshots.push({
+          step_id: step.step_id,
+          skill_name: step.skill_name,
+          phase: 'browser_round',
+          status: 'success',
+          ...evidence,
+        })
+      }
+    }
+  }
+  return screenshots
+}
+
+function AssistancePanel({
+  result,
+  onResume,
+  loading = false,
+}: {
+  result: ExecutionResult | null
+  onResume: (guidance: string) => void
+  loading?: boolean
+}) {
+  const [guidance, setGuidance] = useState('')
+  const request = asRecord(result?.assistance_request)
+  if (Object.keys(request).length === 0) return null
+  const needed = asArray(request.needed_information)
+  const accepted = asArray(request.accepted_inputs)
+  const currentObservations = asArray(request.current_observations)
+  const screenshots = currentObservations.length > 0 ? currentObservations : collectScreenshotObservations(result)
+
+  return (
+    <Card
+      title={<span><QuestionCircleOutlined style={{ color: '#faad14', marginRight: 6 }} />Agent Paused For Guidance</span>}
+      bordered={false}
+      size="small"
+      style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16, borderLeft: '4px solid #faad14' }}
+    >
+      <Alert
+        type="warning"
+        showIcon
+        message={String(request.summary || 'The agent paused before the next action.')}
+        description={String(request.reason || 'More perception guidance is needed.')}
+        style={{ marginBottom: 12 }}
+      />
+      <Row gutter={[12, 12]}>
+        <Col xs={24} md={12}>
+          <Card size="small" title="What The Agent Needs" style={{ height: '100%' }}>
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {needed.map((item, index) => (
+                <Text key={`need-${index}`}>• {String(item)}</Text>
+              ))}
+              <Space wrap>
+                {accepted.map(item => <Tag key={String(item)} color="gold">{String(item)}</Tag>)}
+              </Space>
+            </Space>
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card size="small" title={<span><PictureOutlined /> Current Visual Evidence</span>} style={{ height: '100%' }}>
+            {screenshots.length === 0 ? (
+              <Text type="secondary">No screenshot evidence was captured or permission was unavailable.</Text>
+            ) : (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {screenshots.slice(-4).map((item, index) => {
+                  const obs = asRecord(item)
+                  return (
+                    <div key={`screenshot-${index}`} style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}>
+                      <Space wrap>
+                        <Tag color={String(obs.status) === 'success' ? 'magenta' : 'volcano'}>{String(obs.status || 'unknown')}</Tag>
+                        <Text strong>{String(obs.skill_name || obs.step_id || 'screen')}</Text>
+                      </Space>
+                      <div><Text code style={{ fontSize: 11 }}>{String(obs.path || 'no path')}</Text></div>
+                    </div>
+                  )
+                })}
+              </Space>
+            )}
+          </Card>
+        </Col>
+      </Row>
+      <Divider style={{ margin: '12px 0' }} />
+      <TextArea
+        value={guidance}
+        onChange={e => setGuidance(e.target.value)}
+        placeholder={String(request.resume_instruction || 'Tell the agent what to click/type next, or describe the visible target.')}
+        rows={3}
+        style={{ marginBottom: 8 }}
+      />
+      <Button
+        type="primary"
+        disabled={!guidance.trim()}
+        loading={loading}
+        onClick={() => onResume(guidance)}
+      >
+        Resume With Guidance
+      </Button>
+    </Card>
+  )
+}
+
 function observationColor(type: string) {
   if (type === 'filesystem') return 'gold'
   if (type === 'terminal') return 'green'
   if (type === 'browser') return 'blue'
   if (type === 'application') return 'purple'
+  if (type === 'screenshot') return 'magenta'
   if (type === 'runtime') return 'default'
   return 'cyan'
 }
@@ -236,6 +367,26 @@ function getExecutionContextForGoal(goalText: string) {
     || goalText.includes('登录')
     || goalText.includes('表单')
   return needsFormFixture ? DEFAULT_EXECUTION_CONTEXT : {}
+}
+
+function mergeResumeResult(previous: ExecutionResult, resumed: ExecutionResult): ExecutionResult {
+  const existingStepIds = new Set(resumed.steps.map(step => step.step_id))
+  const mergedSteps = [
+    ...resumed.steps,
+    ...previous.steps.filter(step => !existingStepIds.has(step.step_id)),
+  ]
+  return {
+    ...previous,
+    ...resumed,
+    steps: mergedSteps,
+    total_latency_ms: previous.total_latency_ms + resumed.total_latency_ms,
+    retrieved_skills: previous.retrieved_skills,
+    agent_trace: [
+      ...(resumed.agent_trace || []),
+      ...(previous.agent_trace || []),
+    ],
+    experience_recorded: previous.experience_recorded || resumed.experience_recorded,
+  }
 }
 
 function StepCard({ step, index }: { step: ExecutionStepResult; index: number }) {
@@ -333,17 +484,41 @@ export default function AgentExecution() {
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const handleExecute = async () => {
-    if (!goal.trim()) return
+  const executeGoal = async (goalText: string) => {
+    if (!goalText.trim()) return
     setLoading(true)
     setError(null)
     setResult(null)
     try {
-      const res = await executionApi.executePlan(goal, getExecutionContextForGoal(goal))
+      const res = await executionApi.executePlan(goalText, getExecutionContextForGoal(goalText))
       setResult(res)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string; error?: string } }; message?: string }
       setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || '执行失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleExecute = async () => executeGoal(goal)
+
+  const handleResumeWithGuidance = async (guidance: string) => {
+    if (!result) return
+    setLoading(true)
+    setError(null)
+    try {
+      const resumed = await executionApi.resume({
+        plan_id: result.plan_id,
+        goal: result.goal || goal,
+        guidance,
+        final_state: result.final_state,
+        assistance_request: result.assistance_request,
+        context: getExecutionContextForGoal(result.goal || goal),
+      })
+      setResult(mergeResumeResult(result, resumed))
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string; error?: string } }; message?: string }
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || '继续执行失败')
     } finally {
       setLoading(false)
     }
@@ -423,40 +598,7 @@ export default function AgentExecution() {
       <AnimatePresence>
         {result && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          {/* 检索到的 Skill */}
-            {retrieved.length > 0 && (
-              <Card
-                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />检索到的 Skill ({retrieved.length})</span>}
-                bordered={false}
-                size="small"
-                style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
-              >
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {retrieved.map(sk => (
-                    <Tooltip key={sk.skill_id} title={sk.match_reason}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '4px 10px', borderRadius: 20,
-                        background: '#f5f7fa', border: '1px solid #e8e8e8',
-                        cursor: 'default',
-                      }}>
-                        <Tag color={SKILL_TYPE_COLOR[sk.skill_type]} style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
-                          {sk.skill_type}
-                        </Tag>
-                        <Text style={{ fontSize: 12 }}>{sk.name}</Text>
-                        <Progress
-                          type="circle"
-                          percent={Math.round(sk.score * 100)}
-                          width={24}
-                          strokeColor={sk.score > 0.6 ? '#52c41a' : '#faad14'}
-                          format={p => <span style={{ fontSize: 8 }}>{p}</span>}
-                        />
-                      </div>
-                    </Tooltip>
-                  ))}
-                </div>
-              </Card>
-            )}
+            <AssistancePanel result={result} onResume={handleResumeWithGuidance} loading={loading} />
 
             {/* 执行摘要 */}
             <Card
@@ -487,6 +629,21 @@ export default function AgentExecution() {
                 </Col>
               </Row>
             </Card>
+
+            {/* 执行步骤 */}
+            <Card
+              title={<><ThunderboltOutlined /> Latest Execution Steps</>}
+              bordered={false}
+              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+            >
+              {result.steps.length === 0 ? (
+                <Alert type="warning" message="未找到可执行的 Skill，请尝试更具体的任务描述" />
+              ) : (
+                result.steps.map((step, i) => <StepCard key={step.step_id} step={step} index={i} />)
+              )}
+            </Card>
+
+            <BrowserLoopPanel result={result} />
 
             {result.agent_trace && result.agent_trace.length > 0 && (
               <Card
@@ -724,20 +881,40 @@ export default function AgentExecution() {
               </Card>
             )}
 
-            <BrowserLoopPanel result={result} />
-
-            {/* 执行步骤 */}
-            <Card
-              title={<><ThunderboltOutlined /> 执行步骤</>}
-              bordered={false}
-              style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
-            >
-              {result.steps.length === 0 ? (
-                <Alert type="warning" message="未找到可执行的 Skill，请尝试更具体的任务描述" />
-              ) : (
-                result.steps.map((step, i) => <StepCard key={step.step_id} step={step} index={i} />)
-              )}
-            </Card>
+            {/* 检索到的 Skill */}
+            {retrieved.length > 0 && (
+              <Card
+                title={<span><SearchOutlined style={{ color: '#1677ff', marginRight: 6 }} />Retrieved Skills ({retrieved.length})</span>}
+                bordered={false}
+                size="small"
+                style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {retrieved.map(sk => (
+                    <Tooltip key={sk.skill_id} title={sk.match_reason}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '4px 10px', borderRadius: 20,
+                        background: '#f5f7fa', border: '1px solid #e8e8e8',
+                        cursor: 'default',
+                      }}>
+                        <Tag color={SKILL_TYPE_COLOR[sk.skill_type]} style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+                          {sk.skill_type}
+                        </Tag>
+                        <Text style={{ fontSize: 12 }}>{sk.name}</Text>
+                        <Progress
+                          type="circle"
+                          percent={Math.round(sk.score * 100)}
+                          width={24}
+                          strokeColor={sk.score > 0.6 ? '#52c41a' : '#faad14'}
+                          format={p => <span style={{ fontSize: 8 }}>{p}</span>}
+                        />
+                      </div>
+                    </Tooltip>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {/* 最终状态 */}
             {Object.keys(result.final_state).length > 0 && (

@@ -30,7 +30,13 @@ from ...utils.logger import get_logger
 logger = get_logger(__name__)
 
 _SKILL_GENERATE_PROMPT = """
-请根据以下 Skill 候选提案，生成一个完整的 Skill 定义。
+你是 SkillOS 的 Skill Formalizer。
+
+请根据候选提案生成一个完整 Skill 定义，并遵守：
+- SkillX 三层粒度：atomic 只做最小动作；functional 组合动作；strategic 表示完整任务。
+- SkillOpt 泛化原则：不要硬编码示例 URL/path/query/app/selector，除非它是特殊知识。
+- 接口优先：把可变化部分放进 input_schema，把可验证结果放进 output_schema。
+- 每个 Skill 都必须有 validation gate/test cases，方便后续 review/update。
 
 ## Skill 候选提案
 名称: {proposed_name}
@@ -54,6 +60,7 @@ _SKILL_GENERATE_PROMPT = """
 4. 实现方式（code 或 prompt_template）
 5. 3-5 个测试用例
 6. 粒度级别（1-5）
+7. 三层分解、参数化说明、验证 gate
 
 ## 输出格式（严格 JSON）
 {{
@@ -65,6 +72,16 @@ _SKILL_GENERATE_PROMPT = """
   "domain": "web",
   "granularity_level": 1,
   "tags": ["tag1", "tag2"],
+  "three_layer_decomposition": {{
+    "high": [],
+    "functional": [],
+    "atomic": []
+  }},
+  "generic_scope": "这个 Skill 可迁移到哪些任务",
+  "specialized_scope": "仅在什么场景成立，没有则为空",
+  "parameterization_notes": [
+    {{"hardcoded_example": "", "parameter": "target_url", "reason": "why parameterized"}}
+  ],
   "interface": {{
     "input_schema": {{
       "type": "object",
@@ -99,14 +116,21 @@ _SKILL_GENERATE_PROMPT = """
       "expected_state_changes": {{}},
       "tags": ["basic"]
     }}
-  ]
+  ],
+  "validation_gate": ["接受为可用 Skill 前必须观察到的条件"]
 }}
 
 只输出 JSON，不要其他内容。
 """
 
 _COMPOSITE_SKILL_PROMPT = """
-请根据以下信息，生成一个组合 Skill 的定义。
+你是 SkillOS 的 Composite Skill Designer。
+
+请把多个子 Skill 组合成一个 functional/strategic workflow，但不要简单堆叠：
+- 先说明每个子 Skill 覆盖哪个 functional/atomic 子步骤。
+- 如果某子 Skill 与目标漂移，只能作为参考，不要放进 execution_order。
+- 输入接口必须参数化，避免继承子 Skill 的硬编码示例。
+- 输出 validation gate，确保最终目标达成。
 
 ## 组合 Skill 候选
 名称: {proposed_name}
@@ -121,6 +145,7 @@ _COMPOSITE_SKILL_PROMPT = """
 2. 定义执行顺序（支持顺序/并行）
 3. 定义组合 Skill 的接口（输入/输出）
 4. 生成测试用例
+5. 给出三层 decomposition 和 task-drift guard
 
 ## 输出格式（严格 JSON）
 {{
@@ -128,6 +153,12 @@ _COMPOSITE_SKILL_PROMPT = """
   "description": "功能 Skill 描述",
   "skill_type": "functional",
   "granularity_level": 2,
+  "three_layer_decomposition": {{
+    "high": [],
+    "functional": [],
+    "atomic": []
+  }},
+  "task_drift_guard": "如何确保组合 Skill 不改变用户目标",
   "interface": {{
     "input_schema": {{}},
     "output_schema": {{}},
@@ -140,7 +171,8 @@ _COMPOSITE_SKILL_PROMPT = """
     "execution_order": ["id1", "id2"],
     "prompt_template": "执行步骤描述"
   }},
-  "test_cases": []
+  "test_cases": [],
+  "validation_gate": []
 }}
 
 只输出 JSON，不要其他内容。

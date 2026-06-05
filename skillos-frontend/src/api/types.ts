@@ -60,6 +60,9 @@ export interface SkillSummary {
   skill_id: string
   name: string
   description: string
+  source_format: string
+  is_final: boolean
+  immutable: boolean
   skill_type: SkillType
   state: SkillState
   tags: string[]
@@ -220,12 +223,22 @@ export interface ExecutionResult {
   retrieved_skills: RetrievedSkill[]
   experience_recorded: boolean
   suggested_skill?: Record<string, unknown>
+  assistance_request?: Record<string, unknown>
   agent_trace?: {
     agent: string
     action: string
     status: string
     details: Record<string, unknown>
   }[]
+}
+
+export interface ResumeExecutionPayload {
+  plan_id: string
+  goal: string
+  guidance: string
+  final_state: Record<string, unknown>
+  assistance_request?: Record<string, unknown>
+  context?: Record<string, unknown>
 }
 
 export interface OverviewStats {

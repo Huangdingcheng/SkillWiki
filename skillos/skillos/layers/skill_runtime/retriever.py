@@ -47,7 +47,14 @@ class RetrievalResult:
 
 
 _RETRIEVAL_PROMPT = """
-给定以下任务描述和可用 Skill 列表，请选择最合适的 Skill 来完成任务。
+你是 SkillOS 的 Skill Retrieval + Relevance Filtering Agent。
+
+工作方式参考 MS-Agent / ReMe：
+1. 检索结果只是候选记忆，可能有噪声。
+2. 先判断任务本身需要什么能力，再判断 Skill 是否能作为辅助知识。
+3. Skill 不应统治任务；如果 Skill 会改变用户目标，必须拒绝。
+4. 若多个 Skill 只覆盖局部步骤，可以选择 compose 或 adapt。
+5. 若没有 Skill 能覆盖关键步骤，应选择 generate，并给出通用新 Skill 方向。
 
 ## 任务描述
 {task_description}
@@ -58,27 +65,36 @@ _RETRIEVAL_PROMPT = """
 ## 可用 Skill（按相关性排序）
 {available_skills}
 
-## 检索策略
-请按以下优先级选择：
-1. reuse：直接使用某个 Skill（最优先）
-2. compose：组合多个 Skill 完成任务
-3. adapt：使用某个 Skill 但需要调整参数
-4. generate：没有合适的 Skill，需要生成新 Skill
+## 决策策略
+请按以下顺序判断：
+1. reject drift：先拒绝会把任务带偏的 Skill。
+2. reuse：只有当某 Skill 的目标、输入、输出、副作用都与任务匹配时直接复用。
+3. compose：多个 Skill 能覆盖 functional/atomic 子步骤时组合。
+4. adapt：Skill 的执行骨架有用，但参数、URL、路径、应用名、选择器或 prompt 过于硬编码时适配。
+5. generate：没有足够覆盖时生成新 Skill，且要描述它的通用适用范围。
 
 ## 输出格式（严格 JSON）
 {{
-  "strategy": "reuse",
+  "strategy": "reuse | compose | adapt | generate",
   "selected_skill_ids": ["skill_id_1"],
   "execution_order": ["skill_id_1"],
   "confidence": 0.9,
-  "rationale": "选择理由",
+  "rationale": "选择理由，必须说明为什么没有发生 task drift",
+  "coverage": {{
+    "covers_full_task": false,
+    "covered_parts": ["functional or atomic part covered"],
+    "missing_parts": ["parts that still require agent generation or observation"]
+  }},
+  "rejected_skill_ids": [
+    {{"skill_id": "skill_id_2", "reason": "why it would drift from the task"}}
+  ],
   "parameter_mapping": {{
     "skill_id_1": {{
-      "param1": "从任务描述中提取的值"
+      "param1": "从任务描述、当前状态或 observation 中提取的值"
     }}
   }},
   "needs_generation": false,
-  "generation_hint": ""
+  "generation_hint": "通用新 Skill 的目标、输入槽、输出槽和三层粒度"
 }}
 
 只输出 JSON，不要其他内容。
@@ -216,8 +232,8 @@ class SkillRetriever:
         )
         response = self._llm.chat([
             Message.system(
-                "你是 SkillOS 的 Skill 检索专家，负责为任务选择最合适的 Skill。"
-                "严格按照 JSON 格式输出。"
+                "你是 SkillOS 的 Skill 检索与相关性过滤专家。"
+                "用户任务永远优先于检索结果；严格按照 JSON 格式输出。"
             ),
             Message.user(prompt),
         ])

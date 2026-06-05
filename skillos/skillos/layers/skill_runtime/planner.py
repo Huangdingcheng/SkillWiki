@@ -115,7 +115,10 @@ class ExecutionPlan:
 
 
 _PLAN_PROMPT = """
-请为以下任务制定详细的 Skill 执行计划。
+你是 SkillOS 的 DAG Planning Agent。
+
+请根据用户任务、预期结果和已通过 relevance filtering 的 Skill，生成一个可执行 DAG。
+Skill 是辅助能力，不是任务本身。计划必须保留用户目标，并在每个关键步骤标明需要什么 observation。
 
 ## 任务描述
 {task_description}
@@ -130,12 +133,13 @@ _PLAN_PROMPT = """
 {available_skills}
 
 ## 规划要求
-1. 将任务分解为有序的执行步骤
-2. 每个步骤对应一个 Skill
-3. 明确步骤间的依赖关系
-4. 为每个步骤提供参数映射（从任务描述、预期输出或前序步骤结果中提取）
-5. 如果某个步骤可以并行执行，在 depends_on 中不列出其他步骤
-6. 不要因为 Skill 名称相似就偏离用户任务；最终步骤输出必须匹配“用户任务预期输出”
+1. 使用 SkillX 风格三层规划：strategic/high outcome -> functional workflow -> atomic observable actions。
+2. 每个步骤可以引用一个 Skill，也可以说明该步骤需要 agent 生成具体 action。
+3. 明确 depends_on，形成 DAG；不要无意义重复同一任务。
+4. input_mapping 必须绑定用户任务里的参数、当前状态、前序步骤输出或 observation，不要硬编码旧 Skill 示例。
+5. 每个步骤 description 要说明“为什么做这步”和“用什么证据判断完成”。
+6. 如果 Skill 只覆盖局部能力，仍然可以使用，但不能让它改变最终目标。
+7. 最终步骤必须验证“用户任务预期输出”，不是验证 Skill 是否执行过。
 
 ## 输出格式（严格 JSON）
 {{
@@ -144,11 +148,14 @@ _PLAN_PROMPT = """
       "step_index": 0,
       "skill_id": "skill_id_here",
       "skill_name": "skill_name",
-      "description": "步骤描述",
+      "description": "步骤描述，包括目标和完成证据",
       "input_mapping": {{
         "param1": "值或 ${{step_0.result.field}} 引用"
       }},
-      "depends_on": []
+      "depends_on": [],
+      "layer": "high | functional | atomic",
+      "observation_required": ["screen | stdout | filesystem | browser_dom | app_state | api_response"],
+      "fallback_if_unmatched": "如果 Skill 不适用，agent 应如何生成动作"
     }},
     {{
       "step_index": 1,
@@ -159,7 +166,9 @@ _PLAN_PROMPT = """
       "depends_on": ["step_0_id"]
     }}
   ],
-  "plan_rationale": "规划理由"
+  "plan_rationale": "规划理由，说明如何防止 task drift",
+  "skill_usage_policy": "哪些 Skill 是主执行，哪些只是参考知识",
+  "validation_plan": ["最终如何验证是否达到用户目标"]
 }}
 
 只输出 JSON，不要其他内容。
@@ -204,7 +213,7 @@ class SkillPlanner:
         try:
             response = self._llm.chat([
                 Message.system(
-                    "你是 SkillOS 的任务规划专家，擅长将复杂任务分解为有序的 Skill 执行步骤。"
+                    "你是 SkillOS DAG Planning Agent。Skill 是辅助知识，用户目标是最高优先级。"
                     "严格按照 JSON 格式输出。"
                 ),
                 Message.user(prompt),
@@ -220,12 +229,24 @@ class SkillPlanner:
 
         skill_map = {s.skill_id: s for s in available_skills}
         step_id_map: Dict[str, str] = {}  # step_index → step_id
+        skipped_non_executable: List[Dict[str, Any]] = []
 
         for step_data in data["steps"]:
+            raw_skill_id = str(step_data.get("skill_id") or "").strip()
+            raw_skill_name = str(step_data.get("skill_name") or "").strip()
+            if raw_skill_id not in skill_map:
+                skipped_non_executable.append({
+                    "step_index": step_data.get("step_index", len(plan.steps)),
+                    "skill_id": raw_skill_id,
+                    "skill_name": raw_skill_name,
+                    "description": step_data.get("description", ""),
+                    "reason": "Planner step is validation/agent narrative or references an unavailable Skill; it is kept as metadata, not executed.",
+                })
+                continue
             step = PlanStep(
                 step_index=step_data.get("step_index", len(plan.steps)),
-                skill_id=step_data.get("skill_id", ""),
-                skill_name=step_data.get("skill_name", ""),
+                skill_id=raw_skill_id,
+                skill_name=raw_skill_name or skill_map[raw_skill_id].name,
                 description=step_data.get("description", ""),
                 input_mapping=step_data.get("input_mapping", {}),
             )
@@ -242,6 +263,10 @@ class SkillPlanner:
             plan.steps.append(step)
 
         plan.metadata["rationale"] = data.get("plan_rationale", "")
+        plan.metadata["skipped_non_executable_steps"] = skipped_non_executable
+        if not plan.steps and available_skills:
+            logger.warning("规划器没有返回可执行 Skill step，使用顺序执行降级计划")
+            return self._fallback_plan(plan, available_skills)
         logger.info(f"执行计划生成: {len(plan.steps)} 步骤, 任务={task_description[:50]}")
         return plan
 

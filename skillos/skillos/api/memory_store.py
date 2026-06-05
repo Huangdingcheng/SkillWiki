@@ -104,6 +104,8 @@ class MemoryWikiManager:
         skill = self._store.get(skill_id)
         if not skill:
             return None
+        if getattr(skill, "is_locked", False):
+            raise ValueError(f"Final immutable Skill cannot be modified: {skill.name} v{skill.version}")
         updated = skill.model_copy(deep=True)
         for key, value in kwargs.items():
             if key in {"skill_id", "created_at"}:
@@ -118,6 +120,9 @@ class MemoryWikiManager:
         return updated
 
     async def delete(self, skill_id: str) -> bool:
+        skill = self._store.get(skill_id)
+        if skill and getattr(skill, "is_locked", False):
+            raise ValueError(f"Final immutable Skill cannot be deleted: {skill.name} v{skill.version}")
         return self._store.pop(skill_id, None) is not None
 
     async def create_new_version(
@@ -129,6 +134,8 @@ class MemoryWikiManager:
         source = await self.get(source_skill_id)
         if not source:
             raise ValueError(f"Source Skill does not exist: {source_skill_id}")
+        if getattr(source, "is_locked", False):
+            raise ValueError(f"Final immutable Skill cannot create a new version: {source.name} v{source.version}")
         new_skill = source.model_copy(deep=True)
         object.__setattr__(new_skill, "skill_id", str(uuid.uuid4()))
         new_skill.bump_version(bump)
@@ -154,6 +161,8 @@ class MemoryWikiManager:
         skill = await self.get(skill_id)
         if not skill:
             raise ValueError(f"Skill does not exist: {skill_id}")
+        if getattr(skill, "is_locked", False) and new_state != skill.state:
+            raise ValueError(f"Final immutable Skill cannot change lifecycle state: {skill.name} v{skill.version}")
         skill.transition_to(new_state)
         if new_state == SkillState.DEPRECATED and reason:
             object.__setattr__(skill, "deprecation_reason", reason)
@@ -317,6 +326,92 @@ class MemoryGraphManager:
             if existing.edge_id != edge.edge_id
         ]
         self._hetero_edges.append(edge)
+
+    async def record_execution_observations(
+        self,
+        execution_id: str,
+        goal: str,
+        steps: Iterable[Any],
+    ) -> None:
+        """Persist runtime observations as perception memory nodes.
+
+        These are kernel memories, not user-facing Skills. They let future
+        execution retrieve evidence such as screenshots, terminal stdout, and
+        filesystem checks alongside procedural Skills.
+        """
+        task_id = f"execution_task:{execution_id}"
+        await self.upsert_node(HeterogeneousGraphNode(
+            node_id=task_id,
+            node_type=GraphNodeType.TASK,
+            name=f"Execution task: {goal[:80]}",
+            description=goal,
+            labels=["execution", "runtime_task"],
+            metadata={
+                "execution_id": execution_id,
+                "memory_layer": "episodic",
+                "memory_node_role": "task_episode",
+            },
+        ))
+        for step in steps:
+            step_id = getattr(step, "step_id", "") or ""
+            skill_id = getattr(step, "skill_id", "") or ""
+            skill_name = getattr(step, "skill_name", "") or skill_id
+            observations = getattr(step, "observations", []) or []
+            for packet_index, packet in enumerate(observations):
+                if not isinstance(packet, dict):
+                    continue
+                for obs_index, obs in enumerate(packet.get("observations", []) or []):
+                    if not isinstance(obs, dict):
+                        continue
+                    obs_type = str(obs.get("type") or "observation")
+                    evidence = obs.get("evidence") if isinstance(obs.get("evidence"), dict) else {}
+                    node_id = f"observation:{execution_id}:{step_id}:{packet_index}:{obs_index}"
+                    await self.upsert_node(HeterogeneousGraphNode(
+                        node_id=node_id,
+                        node_type=GraphNodeType.FEEDBACK,
+                        name=f"{obs_type} observation for {skill_name}",
+                        description=_observation_description(goal, skill_name, obs_type, evidence),
+                        labels=["runtime_observation", "perception_memory", obs_type],
+                        metadata={
+                            "execution_id": execution_id,
+                            "step_id": step_id,
+                            "skill_id": skill_id,
+                            "skill_name": skill_name,
+                            "phase": packet.get("phase"),
+                            "observation_type": obs_type,
+                            "status": obs.get("status"),
+                            "confidence": obs.get("confidence"),
+                            "evidence": evidence,
+                            "memory_layer": "perception",
+                            "memory_node_role": "runtime_evidence",
+                            "retrieval_profile": {
+                                "layer": "perception",
+                                "use_when": "task requires screen, GUI, filesystem, terminal, browser, or app-state evidence",
+                                "selection_policy": "retrieve as evidence; never execute as a procedural Skill",
+                            },
+                        },
+                    ))
+                    await self.upsert_edge(HeterogeneousGraphEdge(
+                        edge_id=f"edge:produced_by:{node_id}:{task_id}",
+                        source_id=node_id,
+                        target_id=task_id,
+                        relation_type=GraphRelationType.PRODUCED_BY,
+                        weight=0.9,
+                        confidence=0.85,
+                        description="Runtime observation produced during execution task.",
+                        metadata={"source": "execution_observation"},
+                    ))
+                    if skill_id:
+                        await self.upsert_edge(HeterogeneousGraphEdge(
+                            edge_id=f"edge:feeds_back_to:{node_id}:{skill_id}",
+                            source_id=node_id,
+                            target_id=skill_id,
+                            relation_type=GraphRelationType.FEEDS_BACK_TO,
+                            weight=0.7,
+                            confidence=0.75,
+                            description="Runtime observation feeds back to the procedural Skill used by this step.",
+                            metadata={"source": "execution_observation"},
+                        ))
 
     async def get_heterogeneous_graph(
         self,
@@ -574,15 +669,37 @@ def _skill_to_graph_node(skill: Skill) -> SkillGraphNode:
 
 
 def _skill_to_hetero_node(skill: Skill) -> HeterogeneousGraphNode:
+    memory_layer = _skill_memory_layer(skill)
+    retrieval_profile = {
+        "layer": memory_layer,
+        "granularity": skill.skill_type.value,
+        "trigger_terms": _skill_trigger_terms(skill),
+        "selection_policy": (
+            "Use as helper procedural memory. The agent must compare this Skill against the user task contract "
+            "and adapt/generate a runtime plan when it only partially matches."
+        ),
+        "immutable": bool(getattr(skill, "is_final", False) or getattr(skill, "immutable", False)),
+    }
     return HeterogeneousGraphNode(
         node_id=skill.skill_id,
         node_type=GraphNodeType.SKILL,
         name=skill.display_name or skill.name,
         description=skill.description,
-        labels=skill.tags,
+        labels=_unique_labels([*skill.tags, memory_layer, "procedural_memory"]),
         metadata={
             "canonical_name": skill.name,
             "visibility": skill.visibility.value,
+            "source_format": getattr(skill, "source_format", "skillos"),
+            "is_final": getattr(skill, "is_final", False),
+            "immutable": getattr(skill, "immutable", False),
+            "memory_layer": memory_layer,
+            "memory_node_role": "procedural_skill",
+            "retrieval_profile": retrieval_profile,
+            "original_name": (
+                skill.provenance.creation_context.get("original_name")
+                if skill.provenance and skill.provenance.creation_context
+                else ""
+            ),
             "created_at": skill.created_at.isoformat(),
             "updated_at": skill.updated_at.isoformat(),
         },
@@ -596,6 +713,55 @@ def _skill_to_hetero_node(skill: Skill) -> HeterogeneousGraphNode:
         usage_count=skill.metrics.usage_count,
         source_type=skill.provenance.source_type if skill.provenance else None,
     )
+
+
+def _skill_memory_layer(skill: Skill) -> str:
+    if skill.skill_type == SkillType.STRATEGIC:
+        return "strategic_memory"
+    if skill.skill_type == SkillType.FUNCTIONAL:
+        return "workflow_memory"
+    return "atomic_memory"
+
+
+def _skill_trigger_terms(skill: Skill) -> List[str]:
+    words = [skill.name.replace("_", " "), skill.display_name or "", skill.domain or ""]
+    words.extend(skill.tags[:8])
+    if skill.interface:
+        properties = skill.interface.input_schema.get("properties", {})
+        if isinstance(properties, dict):
+            words.extend(properties.keys())
+    return [item.strip() for item in words if item and item.strip()][:16]
+
+
+def _unique_labels(labels: Iterable[str]) -> List[str]:
+    seen: Set[str] = set()
+    result: List[str] = []
+    for label in labels:
+        cleaned = str(label).strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        result.append(cleaned)
+    return result
+
+
+def _observation_description(goal: str, skill_name: str, obs_type: str, evidence: Dict[str, Any]) -> str:
+    if obs_type == "screenshot":
+        return (
+            f"Screen observation captured while executing '{goal}' with {skill_name}. "
+            f"Path: {evidence.get('path') or 'unavailable'}"
+        )
+    if obs_type == "terminal":
+        return (
+            f"Terminal observation for '{goal}' with command "
+            f"{evidence.get('command') or '<unknown>'}."
+        )
+    if obs_type == "filesystem":
+        return (
+            f"Filesystem observation for '{goal}' at "
+            f"{evidence.get('path') or '<unknown path>'}."
+        )
+    return f"{obs_type} runtime observation for '{goal}' while using {skill_name}."
 
 
 def _dedupe_edges(edges: Iterable[SkillEdge]) -> List[SkillEdge]:

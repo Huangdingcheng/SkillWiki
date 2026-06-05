@@ -10,6 +10,8 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+import uuid
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -47,6 +49,8 @@ class ObservationManager:
             observations.append(_browser_observation(input_data, output=output))
         if _needs_application(tool_calls, input_data, output):
             observations.append(_application_observation(input_data, output=output))
+        if _needs_screenshot(phase, tool_calls, input_data, output, error):
+            observations.append(_screenshot_observation(phase, step, skill))
 
         return {
             "phase": phase,
@@ -244,6 +248,93 @@ def _application_observation(input_data: Dict[str, Any], *, output: Optional[Dic
     }
 
 
+def _screenshot_observation(phase: str, step: PlanStep, skill: Optional[Skill]) -> Dict[str, Any]:
+    """Capture a low-frequency screen frame for GUI feedback loops."""
+    output_dir = Path("/tmp") / "skillos_observations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"screen_{phase}_{step.step_index}_{uuid.uuid4().hex[:10]}.png"
+    system = platform.system().lower()
+    method = ""
+    error = ""
+    commands: List[List[str]] = []
+
+    if system == "darwin" and shutil.which("screencapture"):
+        method = "macos_screencapture"
+        commands = [["screencapture", "-x", str(path)]]
+    elif system == "linux":
+        if shutil.which("gnome-screenshot"):
+            method = "gnome_screenshot"
+            commands = [["gnome-screenshot", "-f", str(path)]]
+        elif shutil.which("scrot"):
+            method = "scrot"
+            commands = [["scrot", str(path)]]
+        elif shutil.which("import"):
+            method = "imagemagick_import"
+            commands = [["import", "-window", "root", str(path)]]
+    elif system == "windows" and shutil.which("powershell"):
+        method = "windows_powershell_screenshot"
+        script_path = str(path).replace("'", "''")
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "Add-Type -AssemblyName System.Drawing;"
+            "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
+            "$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height;"
+            "$g=[System.Drawing.Graphics]::FromImage($bmp);"
+            "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);"
+            f"$bmp.Save('{script_path}');"
+            "$g.Dispose();$bmp.Dispose();"
+        )
+        commands = [["powershell", "-NoProfile", "-Command", script]]
+
+    for command in commands:
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=6)
+        except Exception as exc:
+            error = str(exc)
+            continue
+        if completed.returncode == 0 and path.exists():
+            try:
+                data = path.read_bytes()
+                return {
+                    "type": "screenshot",
+                    "source": "ScreenshotObservationProvider",
+                    "target": step.skill_name,
+                    "status": "success",
+                    "evidence": {
+                        "phase": phase,
+                        "path": str(path),
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                        "bytes": len(data),
+                        "platform": platform.system(),
+                        "capture_method": method,
+                        "skill_id": skill.skill_id if skill else step.skill_id,
+                        "note": "Raw screen frame captured for perception-decision-action feedback.",
+                        "pixel_targeting": "available_after_visual_agent_or_user_guidance",
+                    },
+                    "confidence": 0.72,
+                }
+            except OSError as exc:
+                error = str(exc)
+        else:
+            error = (completed.stderr or completed.stdout or "").strip()
+
+    return {
+        "type": "screenshot",
+        "source": "ScreenshotObservationProvider",
+        "target": step.skill_name,
+        "status": "unavailable",
+        "evidence": {
+            "phase": phase,
+            "path": str(path),
+            "platform": platform.system(),
+            "capture_method": method or "none",
+            "error": error or "No supported screenshot command or permission was available.",
+            "note": "Screenshot capture is optional but improves GUI feedback loops.",
+        },
+        "confidence": 0.1,
+    }
+
+
 def _frontmost_application() -> str:
     if not shutil.which("osascript"):
         return ""
@@ -299,6 +390,33 @@ def _needs_application(tool_calls: set[str], input_data: Dict[str, Any], output:
         "host.open_or_create_file_in_vscode",
         "host.create_wps_document_from_text_file",
     })
+
+
+def _needs_screenshot(
+    phase: str,
+    tool_calls: set[str],
+    input_data: Dict[str, Any],
+    output: Optional[Dict[str, Any]],
+    error: Optional[str],
+) -> bool:
+    output = output or {}
+    gui_tool = bool(tool_calls & {
+        "host.open_chrome",
+        "host.open_url_in_chrome",
+        "host.open_search_first_result",
+        "host.complete_chatgpt_note_task",
+        "host.browser_gui_workflow",
+        "host.open_application",
+        "host.open_or_create_file_in_vscode",
+        "host.create_wps_document_from_text_file",
+    })
+    requested = bool(
+        input_data.get("needs_visual_observation")
+        or input_data.get("required_observation") == "screen"
+        or output.get("requires_visual_controller")
+    )
+    browser_workflow = output.get("host_action") == "browser_gui_workflow"
+    return bool((phase in {"after", "error"} and (gui_tool or browser_workflow)) or requested or error)
 
 
 def _tool_calls(skill: Optional[Skill]) -> set[str]:

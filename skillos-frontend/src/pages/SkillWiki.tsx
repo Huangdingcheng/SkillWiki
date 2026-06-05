@@ -77,14 +77,16 @@ export default function SkillWiki() {
   const [focusGraphSkillId, setFocusGraphSkillId] = useState<string | null>(null)
   const [selectedHealth, setSelectedHealth] = useState<HealthReport | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [remoteQuery, setRemoteQuery] = useState('')
 
   const load = async () => {
     setLoading(true)
     setLoadError(null)
     try {
+      const query = remoteQuery.trim() || undefined
       let data: SkillSummary[] = []
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        data = await skillsApi.list({ state: stateFilter, skill_type: typeFilter, visibility: visibilityFilter, limit: 500 })
+        data = await skillsApi.list({ state: stateFilter, skill_type: typeFilter, visibility: visibilityFilter, query, limit: 500 })
         if (data.length > 0 || attempt === 2) break
         await sleep(500 * (attempt + 1))
       }
@@ -101,13 +103,22 @@ export default function SkillWiki() {
     }
   }
 
-  useEffect(() => { load() }, [stateFilter, typeFilter, visibilityFilter])
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setRemoteQuery(search.trim())
+    }, 250)
+    return () => window.clearTimeout(handle)
+  }, [search])
+
+  useEffect(() => { load() }, [stateFilter, typeFilter, visibilityFilter, remoteQuery])
 
   const filtered = skills.filter(s => {
     const q = search.trim().toLowerCase()
     return !q
       || s.name.toLowerCase().includes(q)
       || s.description.toLowerCase().includes(q)
+      || s.source_format.toLowerCase().includes(q)
+      || ((s.is_final || s.immutable) && ['final', 'immutable', 'baseline'].some(token => token.includes(q) || q.includes(token)))
       || s.tags.some(t => t.toLowerCase().includes(q))
   })
 
@@ -167,9 +178,13 @@ export default function SkillWiki() {
       title: 'Name',
       dataIndex: 'name',
       render: (name: string, r: SkillSummary) => (
-        <Button type="link" onClick={() => openDetail(r.skill_id)} style={{ padding: 0, fontWeight: 600 }}>
-          {name}
-        </Button>
+        <Space wrap size={4}>
+          <Button type="link" onClick={() => openDetail(r.skill_id)} style={{ padding: 0, fontWeight: 600 }}>
+            {name}
+          </Button>
+          {r.source_format === 'anthropic_agent_skill' && <Tag color="geekblue">Anthropic</Tag>}
+          {(r.is_final || r.immutable) && <Tag color="gold">Final</Tag>}
+        </Space>
       ),
     },
     {
@@ -343,6 +358,12 @@ export default function SkillWiki() {
                   <Descriptions column={1} bordered size="small">
                     <Descriptions.Item label="ID"><Text code copyable>{selected.skill_id}</Text></Descriptions.Item>
                     <Descriptions.Item label="Version"><Text code>{selected.version}</Text></Descriptions.Item>
+                    <Descriptions.Item label="Source Format"><Text code>{selected.source_format || 'skillos'}</Text></Descriptions.Item>
+                    <Descriptions.Item label="Protection">
+                      {selected.is_final || selected.immutable
+                        ? <Tag color="gold">Final Immutable Baseline</Tag>
+                        : <Tag>Editable</Tag>}
+                    </Descriptions.Item>
                     <Descriptions.Item label="Scope">
                       <Tag color={selected.visibility === 'kernel' ? 'volcano' : 'green'}>
                         {selected.visibility === 'kernel' ? 'Kernel Skill' : 'User Skill'}

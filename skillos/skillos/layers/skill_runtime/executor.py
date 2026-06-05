@@ -367,6 +367,8 @@ class SkillExecutor:
             result = await asyncio.to_thread(_open_search_first_result, effective_input)
         elif "host.browser_gui_workflow" in tool_names:
             result = await asyncio.to_thread(_run_browser_gui_workflow, effective_input)
+        elif "host.desktop_gui_resume" in tool_names:
+            result = await asyncio.to_thread(resume_desktop_gui_workflow, effective_input)
         else:
             result = None
 
@@ -414,6 +416,7 @@ class SkillExecutor:
             "host.run_terminal_command",
             "host.open_search_first_result",
             "host.browser_gui_workflow",
+            "host.desktop_gui_resume",
         }
         return bool(tool_calls & side_effect_tools)
 
@@ -1347,6 +1350,312 @@ def _run_browser_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
             "Started an observation-driven browser GUI workflow. "
             "This run now attempts DOM-backed browser actions on macOS Chrome and records screenshots/DOM evidence."
         ),
+    }
+
+
+def resume_browser_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Continue an existing browser GUI workflow from the current page.
+
+    Unlike _run_browser_gui_workflow, this never reopens the entry URL. It
+    assumes the previous execution left Chrome at an intermediate state and
+    applies the user's guidance to the current page.
+    """
+    goal = str(input_data.get("goal") or "")
+    guidance = str(input_data.get("guidance") or "").strip()
+    query = str(input_data.get("query") or _infer_browser_gui_query(goal) or goal).strip()
+    controller = _BrowserGuiController(goal=goal, query=query)
+    observations: List[Dict[str, Any]] = []
+    actions: List[Dict[str, Any]] = []
+
+    before = controller.observe(0)
+    observations.append(_browser_workflow_observation(
+        0,
+        "resume_current_page",
+        goal,
+        query,
+        str(before.get("url") or input_data.get("url") or "current browser page"),
+        controller=controller,
+        dom_snapshot=before,
+        action_result={"status": "observed", "guidance": guidance},
+    ))
+
+    decision = _browser_resume_decision(goal, query, guidance, before)
+    action_result = controller.act(decision)
+    actions.append({"round": 1, **decision, "execution": action_result})
+    time.sleep(0.6 if action_result.get("status") == "success" else 0.15)
+    after = controller.observe(1)
+    observations.append(_browser_workflow_observation(
+        1,
+        decision.get("observation_type", "resume_guided_action"),
+        goal,
+        query,
+        str(action_result.get("target") or decision.get("target") or after.get("url") or "current browser page"),
+        controller=controller,
+        dom_snapshot=after,
+        action_result=action_result,
+    ))
+
+    completed = bool(action_result.get("goal_satisfied") or decision.get("goal_satisfied"))
+    if not completed:
+        completed = _browser_goal_satisfied(goal, action_result, after)
+    requires_visual = not completed and (
+        action_result.get("status") != "success"
+        or controller.requires_visual_controller
+        or decision.get("requires_followup", True)
+    )
+    return {
+        "success": completed,
+        "launched": True,
+        "host_action": "browser_gui_resume",
+        "application": "Google Chrome",
+        "query": query,
+        "guidance": guidance,
+        "url": action_result.get("target") or after.get("url") or input_data.get("url") or "current browser page",
+        "rounds": 1,
+        "observations": observations,
+        "actions": actions,
+        "requires_visual_controller": requires_visual,
+        "controller": controller.summary(),
+        "platform": platform.system().lower(),
+        "message": "Resumed the browser workflow from the current page using user guidance; no entry URL was reopened.",
+        "_state_changes": {
+            "last_host_action": "browser_gui_resume",
+            "success": completed,
+            "host_action": "browser_gui_resume",
+            "application": "Google Chrome",
+            "query": query,
+            "url": action_result.get("target") or after.get("url") or input_data.get("url") or "current browser page",
+            "observations": observations,
+            "actions": actions,
+            "requires_visual_controller": requires_visual,
+            "guidance": guidance,
+        },
+    }
+
+
+def resume_desktop_gui_workflow(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Continue a paused desktop GUI task from the current host state."""
+    goal = str(input_data.get("goal") or "")
+    guidance = str(input_data.get("guidance") or "").strip()
+    screenshot = _capture_screen_observation(0)
+    lowered = f"{goal}\n{guidance}".lower()
+    actions: List[Dict[str, Any]] = []
+
+    if "clash" in lowered and ("延迟" in goal or "延迟" in guidance or "latency" in lowered or "delay" in lowered):
+        action = _run_clash_latency_test_from_menu()
+    else:
+        action = {
+            "status": "blocked",
+            "action": "desktop_visual_controller_needed",
+            "reason": "Desktop resume needs a native accessibility/screenshot controller for this application.",
+            "target": guidance or goal,
+        }
+    actions.append(action)
+    success = action.get("status") == "success"
+    requires_visual = not success
+    observations = [{
+        "round": 0,
+        "type": "desktop_gui",
+        "source": "DesktopGuiObservationProvider",
+        "status": "observed",
+        "observation_type": "desktop_resume",
+        "evidence": {
+            "goal": goal,
+            "guidance": guidance,
+            "screenshot": screenshot,
+            "action_result": action,
+            "available_evidence": ["screenshot_file"] if screenshot.get("available") else [],
+            "missing_evidence": [] if success else ["native_accessibility_target"],
+        },
+        "confidence": 0.78 if success else 0.42,
+    }]
+    return {
+        "success": success,
+        "launched": True,
+        "host_action": "desktop_gui_resume",
+        "application": "macOS Desktop",
+        "guidance": guidance,
+        "url": "desktop",
+        "rounds": 1,
+        "observations": observations,
+        "actions": actions,
+        "requires_visual_controller": requires_visual,
+        "platform": platform.system().lower(),
+        "message": (
+            "Resumed the desktop GUI task from the current host state."
+            if success
+            else "Desktop GUI resume could not complete without a native visual/accessibility target."
+        ),
+        "_state_changes": {
+            "last_host_action": "desktop_gui_resume",
+            "success": success,
+            "host_action": "desktop_gui_resume",
+            "application": "macOS Desktop",
+            "url": "desktop",
+            "observations": observations,
+            "actions": actions,
+            "requires_visual_controller": requires_visual,
+            "guidance": guidance,
+        },
+    }
+
+
+def _run_clash_latency_test_from_menu() -> Dict[str, Any]:
+    if platform.system().lower() != "darwin":
+        return {
+            "status": "blocked",
+            "action": "clash_latency_test",
+            "reason": "Clash menu-bar automation is currently implemented for macOS only.",
+        }
+    if not shutil.which("osascript"):
+        return {
+            "status": "blocked",
+            "action": "clash_latency_test",
+            "reason": "osascript is unavailable on this host.",
+        }
+    script = r'''
+tell application "System Events"
+    set targetWords to {"延迟测速", "延迟测试", "延迟", "Latency Test", "Latency", "Delay Test", "Delay"}
+    set clickedClash to false
+    set lastError to ""
+    repeat with proc in application processes
+        set procName to name of proc as text
+        if procName contains "Clash" or procName contains "clash" then
+            tell proc
+                repeat with mb in menu bars
+                    repeat with mbi in menu bar items of mb
+                        try
+                            click mbi
+                            set clickedClash to true
+                            delay 0.5
+                            repeat with menuWord in targetWords
+                                try
+                                    click menu item (menuWord as text) of menu 1 of mbi
+                                    set clickedAction to true
+                                    return "SUCCESS: clicked " & procName & " -> " & (menuWord as text)
+                                on error errMsg
+                                    set lastError to errMsg
+                                end try
+                            end repeat
+                        on error errMsg
+                            set lastError to errMsg
+                        end try
+                    end repeat
+                end repeat
+            end tell
+        end if
+    end repeat
+    if clickedClash then
+        return "BLOCKED: Clash menu opened, but latency-test menu item was not found. " & lastError
+    end if
+    return "BLOCKED: no Clash menu bar process/item found. " & lastError
+end tell
+'''
+    try:
+        completed = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=8)
+    except Exception as exc:
+        return {
+            "status": "blocked",
+            "action": "clash_latency_test",
+            "reason": str(exc)[:500],
+        }
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if completed.returncode == 0 and stdout.startswith("SUCCESS:"):
+        return {
+            "status": "success",
+            "action": "clash_latency_test",
+            "target": "Clash menu bar latency test",
+            "reason": stdout,
+        }
+    return {
+        "status": "blocked",
+        "action": "clash_latency_test",
+        "target": "Clash menu bar latency test",
+        "reason": (stdout or stderr or f"osascript exited with {completed.returncode}")[:1000],
+    }
+
+
+def _browser_resume_decision(
+    goal: str,
+    query: str,
+    guidance: str,
+    observation: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    text = guidance.lower()
+    original = guidance.strip()
+    if any(token in text for token in ("done", "success", "finished", "已经完成", "完成了", "成功了")):
+        return {
+            "action": "stop_for_user_confirmed_success",
+            "target": "user-confirmed success",
+            "observation_type": "user_success_confirmation",
+            "status": "planned",
+            "done": True,
+            "goal_satisfied": True,
+            "requires_followup": False,
+            "agent_decision": "User confirmed that the visible state satisfies the task.",
+            "observation_required": ["user confirmation"],
+            "reason": original or "User confirmed success.",
+        }
+    if re.search(r"https?://\\S+", guidance):
+        url = re.search(r"https?://\\S+", guidance).group(0).rstrip("，,。.;")
+        return {
+            "action": "open_guided_url",
+            "target": url,
+            "observation_type": "guided_url_navigation",
+            "status": "planned",
+            "done": False,
+            "requires_followup": True,
+            "agent_decision": "User supplied a concrete URL; navigate there from the current browser state.",
+            "observation_required": ["browser navigation result", "page screenshot"],
+            "reason": original,
+        }
+    if any(token in guidance for token in ("第一条", "第一个", "首条")) or "first result" in text:
+        return {
+            "action": "select_search_result_candidate",
+            "target": query,
+            "observation_type": "guided_search_result_click",
+            "status": "planned",
+            "done": False,
+            "requires_followup": True,
+            "agent_decision": "User instructed the agent to open the first/current search result candidate.",
+            "observation_required": ["click result feedback", "page screenshot after navigation"],
+            "reason": original,
+        }
+    if any(token in guidance for token in ("登录", "登陆", "邮箱", "统一身份认证")) or any(token in text for token in ("login", "sign in", "mail", "email")):
+        return {
+            "action": "look_for_mail_login_control",
+            "target": original or "Login / mail entry",
+            "observation_type": "guided_login_click",
+            "status": "planned",
+            "done": False,
+            "requires_followup": True,
+            "agent_decision": "User guidance points to a login/mail entry on the current page.",
+            "observation_required": ["login click feedback", "authenticated/mail page evidence"],
+            "reason": original,
+        }
+    if "已发送" in guidance or "sent" in text:
+        return {
+            "action": "open_sent_mail_folder",
+            "target": "Sent / 已发送",
+            "observation_type": "guided_sent_folder_click",
+            "status": "planned",
+            "done": False,
+            "requires_followup": True,
+            "agent_decision": "User guidance points to the Sent folder.",
+            "observation_required": ["Sent folder click feedback", "current folder indicator"],
+            "reason": original,
+        }
+    return {
+        "action": "stop_for_visual_controller",
+        "target": original or "ambiguous user guidance",
+        "observation_type": "resume_guidance_ambiguous",
+        "status": "blocked",
+        "done": True,
+        "requires_followup": True,
+        "agent_decision": "Guidance was recorded, but it did not map to a supported current-page action.",
+        "observation_required": ["more specific target text", "marked screenshot", "visible button/link name"],
+        "reason": original or "Please specify the visible target to click/type.",
     }
 
 

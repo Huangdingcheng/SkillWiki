@@ -40,6 +40,8 @@ async def merge_skills(
         raise HTTPException(status_code=404, detail=f"Skill {req.skill_a_id} 不存在")
     if not skill_b:
         raise HTTPException(status_code=404, detail=f"Skill {req.skill_b_id} 不存在")
+    if getattr(skill_a, "is_locked", False) or getattr(skill_b, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skills cannot be merged or modified")
 
     result = await app.merger.merge(skill_a, skill_b)
     if not result.success or not result.merged_skill:
@@ -81,6 +83,8 @@ async def split_skill(
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+    if getattr(skill, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skill cannot be split")
 
     result = await app.merger.split(skill)
     if not result.success:
@@ -580,6 +584,8 @@ async def merge_update_skill(
     target = await app.wiki.get(skill_id)
     if not target:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+    if getattr(target, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skill cannot be merge-updated")
     source_ids = [source_id for source_id in req.source_skill_ids if source_id != skill_id]
     if not source_ids:
         raise HTTPException(status_code=400, detail="At least one source Skill is required for merge update")
@@ -588,6 +594,8 @@ async def merge_update_skill(
     if len(sources) != len(source_ids):
         missing = [source_id for source_id in source_ids if not source_map.get(source_id)]
         raise HTTPException(status_code=404, detail=f"Source Skills do not exist: {missing}")
+    if any(getattr(source, "is_locked", False) for source in sources):
+        raise HTTPException(status_code=409, detail="Final immutable Skills cannot be merge-updated")
 
     overrides = _merge_skill_content(target, sources, req)
     try:
@@ -669,6 +677,8 @@ async def create_new_version(
     old_skill = await app.wiki.get(skill_id)
     if not old_skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+    if getattr(old_skill, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skill cannot create a new version")
 
     overrides: Dict[str, Any] = {}
 
@@ -733,7 +743,7 @@ async def review_skill(
     updated_skill = None
     lifecycle_action = "none"
     score_ratio = _score_ratio(float(result.overall_score))
-    if auto_apply and not result.is_approved:
+    if auto_apply and not result.is_approved and not getattr(skill, "is_locked", False):
         from ...models.skill_model import SkillState
 
         degrade_target = None

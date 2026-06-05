@@ -15,6 +15,7 @@ import type {
   SkillType,
   SkillVisibility,
   SystemHealth,
+  ResumeExecutionPayload,
 } from './types'
 
 const http = axios.create({ baseURL: '/api/v1' })
@@ -29,7 +30,7 @@ function compactParams<T extends Record<string, unknown>>(params?: T): Partial<T
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 export const skillsApi = {
-  list: (params?: { state?: SkillState; skill_type?: SkillType; visibility?: SkillVisibility | 'all'; limit?: number; offset?: number }) =>
+  list: (params?: { state?: SkillState; skill_type?: SkillType; visibility?: SkillVisibility | 'all'; query?: string; limit?: number; offset?: number }) =>
     http.get<SkillSummary[]>('/skills', { params: compactParams(params) }).then(r => r.data),
 
   get: (id: string) =>
@@ -121,6 +122,9 @@ export const executionApi = {
 
   executePlan: (goal: string, context: Record<string, unknown> = {}) =>
     http.post<ExecutionResult>('/execution/plan', { goal, context }).then(r => r.data),
+
+  resume: (payload: ResumeExecutionPayload) =>
+    http.post<ExecutionResult>('/execution/resume', payload).then(r => r.data),
 
   getState: () =>
     http.get<Record<string, unknown>>('/execution/state').then(r => r.data),

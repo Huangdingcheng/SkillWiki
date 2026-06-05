@@ -53,6 +53,9 @@ def _to_summary(skill: Skill) -> SkillSummary:
         skill_id=skill.skill_id,
         name=skill.name,
         description=skill.description,
+        source_format=getattr(skill, "source_format", "skillos"),
+        is_final=getattr(skill, "is_final", False),
+        immutable=getattr(skill, "immutable", False),
         skill_type=skill.skill_type,
         state=skill.state,
         tags=skill.tags,
@@ -83,6 +86,7 @@ async def list_skills(
     state: Optional[str] = Query(None),
     skill_type: Optional[str] = Query(None),
     tags: Optional[str] = Query(None, description="Comma-separated tags"),
+    query: Optional[str] = Query(None, description="Text query across name, description, tags, and source metadata"),
     visibility: str = Query("user", description="user | kernel | all"),
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -96,11 +100,28 @@ async def list_skills(
         state=normalized_state,
         skill_type=normalized_type,
         tags=tag_list,
-        limit=10000 if normalized_visibility != "all" else limit,
+        limit=10000 if normalized_visibility != "all" or query else limit,
         offset=offset,
     )
     if normalized_visibility != "all":
         skills = [skill for skill in skills if skill.visibility.value == normalized_visibility]
+    if query:
+        q = query.strip().lower()
+        if q:
+            def matches(skill: Skill) -> bool:
+                creation_context = skill.provenance.creation_context if skill.provenance else {}
+                haystack = " ".join([
+                    skill.name,
+                    skill.display_name or "",
+                    skill.description,
+                    getattr(skill, "source_format", "skillos"),
+                    str(creation_context.get("original_name") or ""),
+                    "final immutable" if getattr(skill, "is_final", False) or getattr(skill, "immutable", False) else "",
+                    *skill.tags,
+                ]).lower()
+                return q in haystack
+            skills = [skill for skill in skills if matches(skill)]
+    if normalized_visibility != "all" or query:
         skills = skills[:limit]
     return [_to_summary(skill) for skill in skills]
 
@@ -201,6 +222,8 @@ async def update_skill(
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
+    if getattr(skill, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skill cannot be updated")
 
     updates: dict = {}
     if req.description is not None:
@@ -231,6 +254,8 @@ async def delete_skill(
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
+    if getattr(skill, "is_locked", False):
+        raise HTTPException(status_code=409, detail="Final immutable Skill cannot be deleted")
     deleted = await app.wiki.delete(skill_id)
     if deleted:
         graph = getattr(app, "graph", None)

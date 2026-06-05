@@ -109,6 +109,7 @@ export default function SkillManage() {
 
   const visibleVersions = versions.length > 0 ? versions : selected ? [selected] : []
   const availableTransitions = selected ? TRANSITIONS[selected.state] || [] : []
+  const selectedLocked = Boolean(selected?.is_final || selected?.immutable)
 
   const loadSkills = async (preferredId?: string) => {
     const all = await skillsApi.list({ limit: 500, visibility })
@@ -326,7 +327,7 @@ export default function SkillManage() {
             onChange={setSelectedId}
             filterOption={(input, option) => String(option?.label || '').toLowerCase().includes(input.toLowerCase())}
             options={skills.map(skill => ({
-              label: `${skill.name} · ${skill.visibility} · ${skill.skill_type} · v${skill.version} · ${STATE_LABEL[skill.state] || skill.state}`,
+              label: `${skill.name} · ${skill.visibility} · ${skill.skill_type} · v${skill.version} · ${STATE_LABEL[skill.state] || skill.state}${skill.is_final || skill.immutable ? ' · final' : ''}`,
               value: skill.skill_id,
             }))}
           />
@@ -363,10 +364,17 @@ export default function SkillManage() {
                 <Descriptions.Item label="Description">
                   <Paragraph style={{ margin: 0 }}>{selected.description}</Paragraph>
                 </Descriptions.Item>
+                <Descriptions.Item label="Protection">
+                  {selectedLocked
+                    ? <Tag color="gold">Final Immutable Baseline</Tag>
+                    : <Tag>Editable</Tag>}
+                </Descriptions.Item>
               </Descriptions>
 
               <Space wrap>
-                {availableTransitions.length === 0 ? (
+                {selectedLocked ? (
+                  <Text type="secondary">Final immutable Skills cannot change lifecycle state.</Text>
+                ) : availableTransitions.length === 0 ? (
                   <Text type="secondary">No available lifecycle transition.</Text>
                 ) : availableTransitions.map(target => (
                   target === 'S6' ? (
@@ -394,15 +402,16 @@ export default function SkillManage() {
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
             >
               <Alert
-                type="info"
+                type={selectedLocked ? 'warning' : 'info'}
                 showIcon
-                message="Updates create a new version instead of overwriting the current Skill."
+                message={selectedLocked ? 'This final Anthropic-compatible Skill can be searched and used, but cannot be edited, merged, downgraded, or versioned.' : 'Updates create a new version instead of overwriting the current Skill.'}
                 style={{ marginBottom: 16 }}
               />
               <Text strong>Description</Text>
               <TextArea
                 value={descriptionDraft}
                 onChange={event => setDescriptionDraft(event.target.value)}
+                disabled={selectedLocked}
                 autoSize={{ minRows: 4, maxRows: 8 }}
                 style={{ marginTop: 8, marginBottom: 12 }}
               />
@@ -410,6 +419,7 @@ export default function SkillManage() {
               <Input
                 value={tagsDraft}
                 onChange={event => setTagsDraft(event.target.value)}
+                disabled={selectedLocked}
                 placeholder="comma,separated,tags"
                 style={{ marginTop: 8, marginBottom: 12 }}
               />
@@ -426,6 +436,7 @@ export default function SkillManage() {
                         <TextArea
                           value={inputSchemaDraft}
                           onChange={event => setInputSchemaDraft(event.target.value)}
+                          disabled={selectedLocked}
                           autoSize={{ minRows: 5, maxRows: 12 }}
                           style={{ fontFamily: 'monospace', fontSize: 12 }}
                         />
@@ -433,15 +444,16 @@ export default function SkillManage() {
                         <TextArea
                           value={outputSchemaDraft}
                           onChange={event => setOutputSchemaDraft(event.target.value)}
+                          disabled={selectedLocked}
                           autoSize={{ minRows: 5, maxRows: 12 }}
                           style={{ fontFamily: 'monospace', fontSize: 12 }}
                         />
                         <Text strong>Preconditions</Text>
-                        <TextArea value={preconditionsDraft} onChange={event => setPreconditionsDraft(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} />
+                        <TextArea value={preconditionsDraft} onChange={event => setPreconditionsDraft(event.target.value)} disabled={selectedLocked} autoSize={{ minRows: 2, maxRows: 5 }} />
                         <Text strong>Postconditions</Text>
-                        <TextArea value={postconditionsDraft} onChange={event => setPostconditionsDraft(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} />
+                        <TextArea value={postconditionsDraft} onChange={event => setPostconditionsDraft(event.target.value)} disabled={selectedLocked} autoSize={{ minRows: 2, maxRows: 5 }} />
                         <Text strong>Side Effects</Text>
-                        <TextArea value={sideEffectsDraft} onChange={event => setSideEffectsDraft(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} />
+                        <TextArea value={sideEffectsDraft} onChange={event => setSideEffectsDraft(event.target.value)} disabled={selectedLocked} autoSize={{ minRows: 2, maxRows: 5 }} />
                       </Space>
                     ),
                   },
@@ -451,20 +463,21 @@ export default function SkillManage() {
                     children: (
                       <Space direction="vertical" style={{ width: '100%' }}>
                         <Text strong>Language</Text>
-                        <Input value={implementationLanguage} onChange={event => setImplementationLanguage(event.target.value)} placeholder="python / natural_language" />
+                        <Input value={implementationLanguage} onChange={event => setImplementationLanguage(event.target.value)} disabled={selectedLocked} placeholder="python / natural_language" />
                         <Text strong>Prompt Template</Text>
-                        <TextArea value={promptDraft} onChange={event => setPromptDraft(event.target.value)} autoSize={{ minRows: 4, maxRows: 10 }} />
+                        <TextArea value={promptDraft} onChange={event => setPromptDraft(event.target.value)} disabled={selectedLocked} autoSize={{ minRows: 4, maxRows: 10 }} />
                         <Text strong>Code</Text>
                         <TextArea
                           value={codeDraft}
                           onChange={event => setCodeDraft(event.target.value)}
+                          disabled={selectedLocked}
                           autoSize={{ minRows: 4, maxRows: 14 }}
                           style={{ fontFamily: 'monospace', fontSize: 12 }}
                         />
                         <Text strong>Tool Calls</Text>
-                        <TextArea value={toolCallsDraft} onChange={event => setToolCallsDraft(event.target.value)} placeholder="host.open_url_in_chrome" autoSize={{ minRows: 2, maxRows: 5 }} />
+                        <TextArea value={toolCallsDraft} onChange={event => setToolCallsDraft(event.target.value)} disabled={selectedLocked} placeholder="host.open_url_in_chrome" autoSize={{ minRows: 2, maxRows: 5 }} />
                         <Text strong>Sub Skill IDs</Text>
-                        <TextArea value={subSkillIdsDraft} onChange={event => setSubSkillIdsDraft(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} />
+                        <TextArea value={subSkillIdsDraft} onChange={event => setSubSkillIdsDraft(event.target.value)} disabled={selectedLocked} autoSize={{ minRows: 2, maxRows: 5 }} />
                       </Space>
                     ),
                   },
@@ -475,6 +488,7 @@ export default function SkillManage() {
                       <TextArea
                         value={testCasesDraft}
                         onChange={event => setTestCasesDraft(event.target.value)}
+                        disabled={selectedLocked}
                         autoSize={{ minRows: 6, maxRows: 16 }}
                         style={{ fontFamily: 'monospace', fontSize: 12 }}
                       />
@@ -484,7 +498,7 @@ export default function SkillManage() {
               />
               <Space wrap>
                 {(['patch', 'minor', 'major'] as const).map(bump => (
-                  <Button key={bump} icon={<PlusOutlined />} loading={loading} onClick={() => createVersion(bump)}>
+                  <Button key={bump} icon={<PlusOutlined />} disabled={selectedLocked} loading={loading} onClick={() => createVersion(bump)}>
                     Save {bump} version
                   </Button>
                 ))}
@@ -501,6 +515,7 @@ export default function SkillManage() {
               <Select
                 value={mergeStrategy}
                 onChange={setMergeStrategy}
+                disabled={selectedLocked}
                 style={{ width: '100%', marginBottom: 8 }}
                 options={[
                   { value: 'agent_generalize', label: 'Agent-generalize common workflow' },
@@ -515,12 +530,13 @@ export default function SkillManage() {
                 options={mergeOptions}
                 value={mergeSourceIds}
                 onChange={setMergeSourceIds}
+                disabled={selectedLocked}
                 maxTagCount="responsive"
               />
               <Button
                 type="primary"
                 icon={<MergeCellsOutlined />}
-                disabled={mergeSourceIds.length === 0}
+                disabled={selectedLocked || mergeSourceIds.length === 0}
                 loading={loading}
                 onClick={mergeUpdate}
               >
@@ -540,7 +556,7 @@ export default function SkillManage() {
                   Review only
                 </Button>
                 <Popconfirm title="Review and downgrade this Skill if it is unqualified?" onConfirm={() => runReview(true)}>
-                  <Button danger icon={<StopOutlined />} loading={loading}>
+                  <Button danger icon={<StopOutlined />} disabled={selectedLocked} loading={loading}>
                     Review + downgrade
                   </Button>
                 </Popconfirm>

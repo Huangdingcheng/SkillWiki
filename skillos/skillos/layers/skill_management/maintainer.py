@@ -35,7 +35,13 @@ class MaintenanceResult:
 
 
 _REPAIR_PROMPT = """
-你是 SkillOS 的 Skill Maintainer Agent，负责修复有问题的 Skill。
+你是 SkillOS 的 Skill Maintainer Agent，负责做 SkillOpt-style bounded repair。
+
+修复原则：
+- 只做最小必要 diff，不要重写整个 Skill。
+- 优先泛化硬编码参数，例如 URL/path/application/query/selector。
+- 不要修改 final/immutable 或 Anthropic baseline skill，只能建议创建派生 user Skill。
+- 修复必须包含 validation gate，只有验证通过才能写入 SkillWiki。
 
 ## 问题 Skill
 名称: {name}
@@ -56,6 +62,14 @@ _REPAIR_PROMPT = """
   "repaired_prompt_template": "修复后的 prompt 模板（如适用）",
   "repaired_code": null,
   "repair_notes": "修复说明",
+  "bounded_diff": {{
+    "interface_changes": [],
+    "prompt_changes": [],
+    "implementation_changes": []
+  }},
+  "generalized_inputs": ["target_url", "target_path"],
+  "validation_gate": ["必须通过的验证"],
+  "create_derivative_instead": false,
   "confidence": 0.8
 }}
 
@@ -63,7 +77,14 @@ _REPAIR_PROMPT = """
 """
 
 _SPLIT_PROMPT = """
-你是 SkillOS 的 Skill Maintainer Agent，负责将过大的 Skill 拆分为多个子 Skill。
+你是 SkillOS 的 Skill Maintainer Agent，负责将过大的 Skill 拆分为 SkillX-style 三层子 Skill。
+
+拆分原则：
+- strategic/high 保留完整任务目标。
+- functional 子 Skill 表示可复用 workflow block。
+- atomic 子 Skill 表示最小可观察动作。
+- 每个子 Skill 都要有参数槽和可观察完成条件。
+- 不要把一次 demo 的 URL/path/query/app 硬编码成唯一目标。
 
 ## 待拆分 Skill
 名称: {name}
@@ -76,19 +97,29 @@ _SPLIT_PROMPT = """
 ## 输出格式（严格 JSON）
 {{
   "sub_skills": [
-    {{
-      "name": "sub_skill_1",
-      "description": "子 Skill 1 描述",
-      "prompt_template": "子 Skill 1 的 prompt"
-    }},
+	    {{
+	      "name": "sub_skill_1",
+	      "description": "子 Skill 1 描述",
+	      "skill_type": "atomic|functional|strategic",
+	      "layer": "atomic|functional|strategic",
+	      "parameters": ["target_url"],
+	      "observation_required": ["screen|stdout|filesystem|browser_dom|api_response"],
+	      "prompt_template": "子 Skill 1 的 prompt"
+	    }},
     {{
       "name": "sub_skill_2",
-      "description": "子 Skill 2 描述",
-      "prompt_template": "子 Skill 2 的 prompt"
-    }}
-  ],
-  "split_notes": "拆分说明"
-}}
+	      "description": "子 Skill 2 描述",
+	      "skill_type": "atomic|functional|strategic",
+	      "layer": "atomic|functional|strategic",
+	      "parameters": [],
+	      "observation_required": [],
+	      "prompt_template": "子 Skill 2 的 prompt"
+	    }}
+	  ],
+	  "split_notes": "拆分说明",
+	  "composition_order": ["sub_skill_1", "sub_skill_2"],
+	  "validation_gate": ["拆分后组合流程必须满足的验证"]
+	}}
 
 只输出 JSON。
 """

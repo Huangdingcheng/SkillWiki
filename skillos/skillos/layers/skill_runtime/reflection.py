@@ -26,7 +26,14 @@ class Feedback:
 
 
 _REFLECT_PROMPT = """
-你是 SkillOS 的 Reflection Agent，负责分析任务执行结果并生成改进反馈。
+你是 SkillOS 的 Post-Task Learning Agent。
+
+工作方式参考 SkillClaw + SkillOpt：
+- 任务结束后再判断是否学习，而不是在执行中盲目改库。
+- 如果成功，提炼可复用流程；如果失败，先定位 root cause。
+- 对已有 Skill 只能提出 bounded update：最小 diff、泛化输入槽、验证 gate。
+- 如果已有 Skill 与任务偏差太大，提出 new_skill_proposal，不要硬合并。
+- final/immutable Skill 只能作为参考，不能提出修改。
 
 ## 任务目标
 {goal}
@@ -41,23 +48,49 @@ _REFLECT_PROMPT = """
 {verification}
 
 ## 分析要求
-1. 找出失败根因（如果失败）
-2. 识别哪些 Skill 需要改进
-3. 提出具体的 Skill 更新建议
-4. 总结本次执行的经验
+1. 找出失败根因或成功因素。
+2. 判断本次任务是否产生 reusable capability。
+3. 判断应更新已有 Skill、合并多个 Skill、生成新 Skill，还是不学习。
+4. 更新建议必须泛化：不要把本次 URL/path/app/selector 硬编码为唯一目标。
+5. 给出 validation_gate，只有再次验证通过才可写入 SkillWiki。
 
 ## 输出格式（严格 JSON）
 {{
   "root_cause": "失败根因描述",
   "failed_skill_ids": ["skill_id_1"],
   "improvement_suggestions": ["建议1", "建议2"],
+  "learning_decision": "update_existing | merge_existing | create_new | no_learning",
   "skill_update_proposals": [
     {{
       "skill_id": "skill_id",
       "issue": "问题描述",
-      "proposed_fix": "修复方案"
+      "proposed_fix": "最小修复方案",
+      "bounded_diff": {{
+        "interface_changes": [],
+        "prompt_changes": [],
+        "implementation_changes": []
+      }},
+      "generalized_inputs": ["target_url", "target_path"],
+      "validation_gate": "接受更新前必须通过的验证"
     }}
   ],
+  "new_skill_proposal": {{
+    "name": "",
+    "skill_type": "atomic|functional|strategic",
+    "description": "",
+    "generic_scope": "",
+    "three_layer_decomposition": {{
+      "high": [],
+      "functional": [],
+      "atomic": []
+    }}
+  }},
+  "merge_proposal": {{
+    "source_skill_ids": [],
+    "merged_name": "",
+    "why_merge": "",
+    "parameterized_interface": {{}}
+  }},
   "experience_summary": "本次执行经验总结"
 }}
 

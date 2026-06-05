@@ -159,6 +159,15 @@ class GitSkillStore:
             skill_file = self._skill_file(skill.name, skill.version)
             if skill_file.exists() and not overwrite:
                 raise ValueError(f"Skill already exists: {skill.name} v{skill.version}")
+            if skill_file.exists() and overwrite:
+                existing = self.get_skill(skill.name, skill.version, include_deleted=True)
+                if (
+                    existing
+                    and _is_locked_skill(existing)
+                    and event_action != "record_execution"
+                    and _business_payload(existing) != _business_payload(skill)
+                ):
+                    raise ValueError(f"Final immutable Skill cannot be modified: {skill.name} v{skill.version}")
 
             skill.updated_at = datetime.utcnow()
             self._write_json(skill_file, self._skill_to_dict(skill))
@@ -198,6 +207,14 @@ class GitSkillStore:
         event_action: str = "update",
         event_extra: Optional[Dict[str, Any]] = None,
     ) -> Skill:
+        existing = self.get_skill(skill.name, skill.version, include_deleted=True)
+        if (
+            existing
+            and _is_locked_skill(existing)
+            and event_action != "record_execution"
+            and _business_payload(existing) != _business_payload(skill)
+        ):
+            raise ValueError(f"Final immutable Skill cannot be modified: {skill.name} v{skill.version}")
         return self.add_skill(
             skill,
             author=author,
@@ -345,6 +362,9 @@ class GitSkillStore:
             for target in target_versions:
                 if not target:
                     continue
+                existing = self.get_skill(skill_name, target, include_deleted=True)
+                if existing and _is_locked_skill(existing):
+                    raise ValueError(f"Final immutable Skill cannot be deleted: {skill_name} v{target}")
                 file_path = self._skill_file(skill_name, target)
                 if hard:
                     if file_path.exists():
@@ -395,6 +415,8 @@ class GitSkillStore:
         source = self.get_skill(skill_name, source_version)
         if not source:
             raise ValueError(f"Source Skill does not exist: {skill_name} {source_version or '<latest>'}")
+        if _is_locked_skill(source):
+            raise ValueError(f"Final immutable Skill cannot create a new version: {source.name} v{source.version}")
 
         new_skill = source.model_copy(deep=True)
         new_skill.skill_id = str(uuid.uuid4())
@@ -437,6 +459,8 @@ class GitSkillStore:
         skill = self.get_skill(skill_name, version)
         if not skill:
             raise ValueError(f"Skill does not exist: {skill_name} v{version}")
+        if _is_locked_skill(skill) and new_state != skill.state:
+            raise ValueError(f"Final immutable Skill cannot change lifecycle state: {skill.name} v{skill.version}")
         old_state = skill.state
         skill.transition_to(new_state)
         if new_state == SkillState.DEPRECATED and reason:
@@ -506,6 +530,8 @@ class GitSkillStore:
         other = self.get_skill(skill_name, other_version)
         if not base or not other:
             raise ValueError(f"Cannot merge missing Skill versions: {skill_name} {base_version}, {other_version}")
+        if _is_locked_skill(base) or _is_locked_skill(other):
+            raise ValueError(f"Final immutable Skill cannot be merged: {skill_name}")
 
         merged_data = self._skill_to_dict(base)
         other_data = self._skill_to_dict(other)
@@ -644,6 +670,9 @@ class GitSkillStore:
                 "domain": data.get("domain"),
                 "display_name": data.get("display_name"),
                 "description": data.get("description"),
+                "source_format": data.get("source_format", old_meta.get("source_format", "skillos")),
+                "is_final": data.get("is_final", old_meta.get("is_final", False)),
+                "immutable": data.get("immutable", old_meta.get("immutable", False)),
                 "tags": data.get("tags", []),
                 "file": file_path.name,
                 "deleted": old_meta.get("deleted", False),
@@ -680,6 +709,9 @@ class GitSkillStore:
             "domain": latest_meta.get("domain"),
             "display_name": latest_meta.get("display_name"),
             "description": latest_meta.get("description"),
+            "source_format": latest_meta.get("source_format", "skillos"),
+            "is_final": latest_meta.get("is_final", False),
+            "immutable": latest_meta.get("immutable", False),
             "tags": latest_meta.get("tags", []),
             "version_count": len([v for v in versions.values() if not v.get("deleted", False)]),
             "versions": versions,
@@ -704,6 +736,9 @@ class GitSkillStore:
             "domain": skill.domain,
             "display_name": skill.display_name,
             "description": skill.description,
+            "source_format": getattr(skill, "source_format", "skillos"),
+            "is_final": getattr(skill, "is_final", False),
+            "immutable": getattr(skill, "immutable", False),
             "tags": skill.tags,
             "file": f"{skill.version}.json",
             "deleted": False,
@@ -826,6 +861,24 @@ class GitSkillStore:
 
     def _utc_now(self) -> str:
         return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def _is_locked_skill(skill: Skill) -> bool:
+    return bool(getattr(skill, "is_locked", False) or getattr(skill, "is_final", False) or getattr(skill, "immutable", False))
+
+
+def _business_payload(skill: Skill) -> Dict[str, Any]:
+    """Compare business content while ignoring runtime/system metadata."""
+    data = skill.model_dump(mode="json")
+    for key in {
+        "updated_at",
+        "created_at",
+        "released_at",
+        "deprecated_at",
+        "metrics",
+    }:
+        data.pop(key, None)
+    return data
 
 
 def init_repo(**kwargs: Any) -> None:

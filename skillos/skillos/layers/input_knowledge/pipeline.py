@@ -46,7 +46,12 @@ class PipelineResult:
 # ── Extractor Agent ───────────────────────────────────────────────────────────
 
 _EXTRACT_PROMPT = """
-你是 SkillOS 的 Extractor Agent，从原始输入中提取操作动作序列。
+你是 SkillOS 的 SkillX-style Extractor Agent，从原始输入中提取可复用能力。
+
+请同时抽取：
+- 通用能力：可参数化迁移到其他 URL/path/app/query/selector 的流程骨架。
+- 特殊能力：只在特定应用、网站、API、文件格式或业务场景下成立的知识。
+- 三层结构：strategic/high-level task、functional workflow、atomic action。
 
 ## 输入类型
 {source_type}
@@ -55,11 +60,26 @@ _EXTRACT_PROMPT = """
 {raw_content}
 
 ## 要求
-识别所有可复用的操作动作，每个动作用一句话描述。
+识别所有可复用的操作动作，每个动作说明粒度、参数槽和可观察证据。
 
 ## 输出格式（严格 JSON）
 {{
   "actions": ["动作1", "动作2", "动作3"],
+  "capabilities": [
+    {{
+      "name": "open_target_url",
+      "layer": "atomic|functional|strategic",
+      "scope": "generic|specialized",
+      "description": "能力描述",
+      "parameter_slots": ["target_url"],
+      "observations": ["browser_dom"]
+    }}
+  ],
+  "three_layer_decomposition": {{
+    "high": [],
+    "functional": [],
+    "atomic": []
+  }},
   "proposed_skill_name": "snake_case_name",
   "confidence": 0.8
 }}
@@ -95,18 +115,29 @@ class ExtractorAgent:
 # ── Normalizer Agent ──────────────────────────────────────────────────────────
 
 _NORMALIZE_PROMPT = """
-你是 SkillOS 的 Normalizer Agent，将提取的动作规范化为标准格式。
+你是 SkillOS 的 Normalizer Agent，将动作规范化为可执行知识节点。
 
 ## 原始动作列表
 {actions}
 
 ## 要求
-将每个动作规范化为包含 verb（动词）、object（对象）、condition（条件）的结构。
+将每个动作规范化为包含 verb、object、condition、layer、scope、parameters、observation 的结构。
+如果动作包含具体 URL、文件名、应用名、查询词，请判断它是示例值还是必须固定的特殊知识。
 
 ## 输出格式（严格 JSON）
 {{
   "normalized": [
-    {{"verb": "click", "object": "button", "condition": "page loaded", "description": "点击按钮"}}
+    {{
+      "verb": "click",
+      "object": "button",
+      "condition": "page loaded",
+      "description": "点击按钮",
+      "layer": "atomic",
+      "scope": "generic",
+      "parameters": [{{"name": "selector_hint", "example": "Login"}}],
+      "observation": "screen|stdout|filesystem|browser_dom|api_response",
+      "hardcoded_values_to_parameterize": []
+    }}
   ]
 }}
 
@@ -140,19 +171,25 @@ class NormalizerAgent:
 # ── Summarizer Agent ──────────────────────────────────────────────────────────
 
 _SUMMARIZE_PROMPT = """
-你是 SkillOS 的 Summarizer Agent，将规范化的动作序列总结为 Skill 描述。
+你是 SkillOS 的 Summarizer Agent，将规范化动作总结为可检索、可合并、可执行的 Skill 描述。
 
 ## 规范化动作
 {normalized_actions}
 
 ## 要求
-生成简洁的 Skill 描述（一句话），以及建议的 Skill 类型（atomic/functional/strategic）。
+生成简洁描述、建议 Skill 类型，并明确通用参数槽、specialized 约束和检索 embedding hint。
+不要把示例 URL/path/query/app 当成唯一目标，除非它确实是特殊能力的一部分。
 
 ## 输出格式（严格 JSON）
 {{
   "description": "Skill 功能描述",
   "skill_type": "atomic",
   "tags": ["tag1", "tag2"],
+  "generic_capabilities": ["可泛化能力"],
+  "specialized_capabilities": ["特殊场景能力"],
+  "parameter_slots": ["target_url"],
+  "embedding_hint": "用于语义检索的自然语言描述",
+  "merge_candidates": ["可能与哪些能力合并"],
   "confidence": 0.85
 }}
 
@@ -328,9 +365,20 @@ class ExperiencePipeline:
             workflow_text = raw_content
 
         prompt = f"""
-你是 SkillOS 的 Natural Workflow Import Agent。用户会用自然语言详细描述一个可复用流程。
+你是 SkillOS 的 Natural Workflow Import Agent。
 
-请把流程抽象为“固定执行骨架 + 可由 agent 决定的参数”，不要把示例目标硬编码成唯一目标。
+请把用户自然语言流程抽象为 SkillX-style 三层 Skill：
+- Strategic/high：用户最终要达成的任务。
+- Functional：可复用 workflow block。
+- Atomic：最小可观察动作。
+
+同时按照 SkillOpt 思路输出可维护信息：
+- 哪些具体值应该参数化。
+- 哪些步骤是固定执行骨架。
+- 哪些信息是 specialized knowledge。
+- 是否应该与已有类似 Skill 合并/更新。
+
+不要把示例目标硬编码成唯一目标。例如“打开 GPT”和“打开哈工大威海官网”应泛化为 open_target_url 或 search_target_result，而不是混成两个固定网址。
 
 ## 标题
 {title}
@@ -343,24 +391,40 @@ class ExperiencePipeline:
 
 ## 输出 JSON
 {{
-  "name": "snake_case_skill_name",
-  "description": "一句话描述这个可复用 Skill",
-  "skill_type": "atomic|functional|strategic",
-  "tags": ["tag"],
-  "parameters": [
-    {{"name": "url", "type": "string", "description": "由 agent 根据任务生成的目标 URL", "required": false}}
-  ],
+	  "name": "snake_case_skill_name",
+	  "description": "一句话描述这个可复用 Skill",
+	  "skill_type": "atomic|functional|strategic",
+	  "tags": ["tag"],
+	  "three_layer_decomposition": {{
+	    "high": ["strategic user outcome"],
+	    "functional": ["workflow block"],
+	    "atomic": ["observable smallest action"]
+	  }},
+	  "generic_capabilities": ["可泛化能力"],
+	  "specialized_capabilities": ["特殊场景能力"],
+	  "parameters": [
+	    {{"name": "url", "type": "string", "description": "由 agent 根据任务生成的目标 URL", "required": false}}
+	  ],
   "outputs": [
     {{"name": "success", "type": "boolean", "description": "是否完成"}}
   ],
   "preconditions": ["执行前需要满足的条件"],
   "postconditions": ["执行后应满足的结果"],
   "side_effects": ["会打开浏览器/写文件等副作用"],
-  "workflow_steps": ["规范化步骤1", "规范化步骤2"],
-  "tool_calls": ["host.open_url_in_chrome"],
-  "test_cases": [
-    {{"name": "example", "input_data": {{}}, "expected_output": {{"success": true}}}}
-  ],
+	  "workflow_steps": ["规范化步骤1", "规范化步骤2"],
+	  "tool_calls": ["host.open_url_in_chrome"],
+	  "hardcoded_values_to_parameterize": [
+	    {{"value": "https://example.com", "parameter": "target_url", "reason": "示例 URL 应由 agent 根据任务生成"}}
+	  ],
+	  "merge_or_update_hint": {{
+	    "should_merge": false,
+	    "possible_existing_skill_names": [],
+	    "bounded_change": "如果更新已有 Skill，只允许的最小 diff"
+	  }},
+	  "validation_gate": ["必须通过哪些观察或测试才能接受该 Skill"],
+	  "test_cases": [
+	    {{"name": "example", "input_data": {{}}, "expected_output": {{"success": true}}}}
+	  ],
   "confidence": 0.86
 }}
 

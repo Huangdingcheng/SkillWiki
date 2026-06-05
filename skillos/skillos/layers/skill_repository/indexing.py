@@ -347,13 +347,21 @@ def skill_semantic_text(skill: Skill) -> str:
     preconditions = interface.preconditions if interface else []
     postconditions = interface.postconditions if interface else []
     tool_calls = skill.implementation.tool_calls if skill.implementation else []
+    prompt_excerpt = ""
+    if skill.implementation and skill.implementation.prompt_template:
+        prompt_excerpt = skill.implementation.prompt_template[:1800]
+    provenance_context = skill.provenance.creation_context if skill.provenance else {}
     return "\n".join([
         f"Skill name: {skill.name}",
         f"Display name: {skill.display_name}",
+        f"Source format: {getattr(skill, 'source_format', 'skillos')}",
+        f"Final immutable: {getattr(skill, 'is_final', False) or getattr(skill, 'immutable', False)}",
         f"Type: {skill.skill_type.value}",
         f"Domain: {skill.domain}",
         f"Description: {skill.description}",
         f"Tags: {', '.join(skill.tags)}",
+        f"Original skill metadata: {provenance_context}",
+        f"Instruction excerpt: {prompt_excerpt}",
         f"Inputs: {input_props}",
         f"Outputs: {output_props}",
         f"Tools: {', '.join(tool_calls)}",

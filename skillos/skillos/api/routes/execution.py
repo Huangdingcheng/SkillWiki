@@ -12,11 +12,13 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...layers.skill_runtime import StateTracker
+from ...layers.skill_runtime.executor import resume_browser_gui_workflow, resume_desktop_gui_workflow
 from ..deps import AppState, get_app_state
 from .ws import broadcast
 from ..schemas import (
     ExecutePlanRequest, ExecuteSkillRequest, ExecutionResult,
     ExecutionStepResult, ExecutionHistoryItem, RetrievedSkill,
+    ResumeExecutionRequest,
 )
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -156,12 +158,13 @@ async def execute_plan(
     result = ExecutionResult(
         plan_id=plan.plan_id,
         goal=req.goal,
-        status="completed" if plan.is_complete else "partial",
+        status="waiting_for_user" if run.assistance_request else ("completed" if plan.is_complete else "partial"),
         steps=steps,
         total_latency_ms=total_latency,
         final_state=run.final_state,
         retrieved_skills=retrieved,
         experience_recorded=True,
+        assistance_request=run.assistance_request,
         agent_trace=[
             {
                 "agent": trace.agent,
@@ -172,6 +175,11 @@ async def execute_plan(
             for trace in run.trace
         ],
     )
+    if app.graph and hasattr(app.graph, "record_execution_observations"):
+        try:
+            await app.graph.record_execution_observations(plan.plan_id, req.goal, steps)
+        except Exception:
+            pass
 
     learning = await _learn_from_execution(app, req.goal, result)
     if learning:
@@ -197,6 +205,216 @@ async def execute_plan(
         _execution_history.pop(0)
 
     return result
+
+
+@router.post("/resume", response_model=ExecutionResult)
+async def resume_execution(
+    req: ResumeExecutionRequest,
+    app: AppState = Depends(get_app_state),
+) -> ExecutionResult:
+    """Resume an execution from its paused host/browser state."""
+    t0 = time.monotonic()
+    if not req.guidance.strip():
+        raise HTTPException(status_code=400, detail="guidance is required")
+
+    previous = req.final_state or {}
+    input_data = {
+        **previous,
+        **req.context,
+        "goal": req.goal,
+        "guidance": req.guidance,
+        "query": previous.get("query") or req.context.get("query"),
+        "url": previous.get("url") or req.context.get("url"),
+    }
+    resume_mode = _choose_resume_mode(req)
+    output = (
+        resume_desktop_gui_workflow(input_data)
+        if resume_mode == "desktop_gui"
+        else resume_browser_gui_workflow(input_data)
+    )
+    latency = (time.monotonic() - t0) * 1000
+    final_state = {**previous, **output.get("_state_changes", {}), **output}
+    app.state_tracker = StateTracker(task_id=req.plan_id, initial_state=final_state)
+
+    observation = {
+        "phase": "resume",
+        "step_id": f"resume-{req.plan_id}",
+        "skill_name": f"{resume_mode}_resume",
+        "collected_at": datetime.utcnow().isoformat(),
+        "observations": [
+            {
+                "type": "browser",
+                "source": "DesktopResumeObservationProvider" if resume_mode == "desktop_gui" else "BrowserResumeObservationProvider",
+                "target": output.get("url") or "current browser page",
+                "status": "success" if output.get("launched") else "unknown",
+                "evidence": {
+                    "guidance": req.guidance,
+                    "observations": output.get("observations", []),
+                    "actions": output.get("actions", []),
+                    "requires_visual_controller": output.get("requires_visual_controller"),
+                },
+                "confidence": 0.74 if output.get("launched") else 0.35,
+            }
+        ],
+    }
+    step = ExecutionStepResult(
+        step_id=f"resume-{req.plan_id}",
+        step_index=0,
+        skill_id=f"kernel:{resume_mode}_resume",
+        skill_name=f"{resume_mode}_resume",
+        status="success" if output.get("success") else ("failed" if output.get("requires_visual_controller") else "success"),
+        outputs=output,
+        result=output,
+        observations=[observation],
+        step_judgment={
+            "matches_step_goal": bool(output.get("success")),
+            "confidence": 0.8 if output.get("success") else 0.48,
+            "next_action": "continue" if output.get("success") else "need_guidance",
+            "reason": output.get("message") or "Browser workflow resumed from current page.",
+            "host_action": output.get("host_action"),
+        },
+        latency_ms=latency,
+        error=None if output.get("success") or output.get("launched") else output.get("message"),
+    )
+    needs_more_guidance = bool(output.get("requires_visual_controller")) and not bool(output.get("success"))
+    assistance_request = _resume_assistance_request(req, output) if needs_more_guidance else None
+    trace = [
+        {
+            "agent": "HumanInTheLoopCoordinator",
+            "action": "resume_from_assistance_guidance",
+            "status": "waiting_for_user" if needs_more_guidance else "success",
+            "details": {
+                "plan_id": req.plan_id,
+                "guidance": req.guidance,
+                "continued_from_state": {
+                    "host_action": previous.get("host_action"),
+                    "url": previous.get("url"),
+                    "query": previous.get("query"),
+                },
+                "resume_mode": resume_mode,
+                "output": output,
+                "assistance_request": assistance_request,
+            },
+        },
+        {
+            "agent": "DesktopObservationAgent" if resume_mode == "desktop_gui" else "BrowserObservationAgent",
+            "action": "desktop_resume_observe_decide_act" if resume_mode == "desktop_gui" else "browser_resume_observe_decide_act",
+            "status": "blocked" if needs_more_guidance else "success",
+            "details": {
+                "mode": "resume_observe_decide_act",
+                "resume_mode": resume_mode,
+                "guidance": req.guidance,
+                "observations": output.get("observations", []),
+                "actions": output.get("actions", []),
+                "requires_visual_controller": output.get("requires_visual_controller"),
+            },
+        },
+    ]
+    result = ExecutionResult(
+        plan_id=req.plan_id,
+        goal=req.goal,
+        status="waiting_for_user" if needs_more_guidance else "completed",
+        steps=[step],
+        total_latency_ms=latency,
+        final_state=final_state,
+        retrieved_skills=[],
+        experience_recorded=True,
+        assistance_request=assistance_request,
+        agent_trace=trace,
+    )
+    learning = await _learn_from_execution(app, req.goal, result)
+    if learning:
+        result.suggested_skill = learning.get("suggested_skill")
+        result.agent_trace.append({
+            "agent": "ExecutionLearningAgent",
+            "action": "learn_from_user_guided_resume",
+            "status": learning.get("status", "skipped"),
+            "details": learning,
+        })
+    if app.graph and hasattr(app.graph, "record_execution_observations"):
+        try:
+            await app.graph.record_execution_observations(req.plan_id, req.goal, [step])
+        except Exception:
+            pass
+    return result
+
+
+def _resume_assistance_request(req: ResumeExecutionRequest, output: Dict[str, Any]) -> Dict[str, Any]:
+    screenshots = []
+    for obs in output.get("observations", []) if isinstance(output.get("observations"), list) else []:
+        if not isinstance(obs, dict):
+            continue
+        evidence = obs.get("evidence") if isinstance(obs.get("evidence"), dict) else {}
+        shot = evidence.get("screenshot") if isinstance(evidence.get("screenshot"), dict) else {}
+        if shot.get("path"):
+            screenshots.append({
+                "step_id": f"resume-{req.plan_id}",
+                "skill_name": output.get("host_action") or "gui_resume",
+                "phase": "resume",
+                "status": "success",
+                "path": shot.get("path"),
+                "sha256": shot.get("sha256"),
+                "capture_method": shot.get("capture_method") or "browser_workflow",
+                "bytes": shot.get("bytes"),
+            })
+    return {
+        "status": "waiting_for_user",
+        "goal": req.goal,
+        "summary": "Agent resumed from the current page but still needs perception guidance.",
+        "reason": (
+            "The browser state was preserved, but the next visible target is still ambiguous "
+            "or not controllable with the current DOM/screenshot controller."
+        ),
+        "needed_information": [
+            "Describe the exact visible button/link/input to click or type into next.",
+            "If the task is already complete, say 'success' or '已经完成'.",
+            "If you know the direct URL, paste it so the agent can navigate without restarting the workflow.",
+        ],
+        "accepted_inputs": ["text_instruction", "screenshot", "marked_target", "direct_url", "success_confirmation"],
+        "current_observations": screenshots[-6:],
+        "failed_steps": [],
+        "validation": {
+            "matched": False,
+            "reason": output.get("message") or "Resume action still requires visual guidance.",
+            "actual": {
+                "host_action": output.get("host_action"),
+                "url": output.get("url"),
+                "query": output.get("query"),
+            },
+        },
+        "browser_loop": {
+            "mode": "resume_observe_decide_act",
+            "observations": output.get("observations", []),
+            "actions": output.get("actions", []),
+            "requires_visual_controller": output.get("requires_visual_controller"),
+        },
+        "resume_instruction": "For example: click the first result, click Login, open Sent, paste the direct URL, or say success.",
+    }
+
+
+def _choose_resume_mode(req: ResumeExecutionRequest) -> str:
+    text = f"{req.goal}\n{req.guidance}\n{req.final_state.get('host_action', '')}\n{req.final_state.get('application', '')}".lower()
+    desktop_markers = [
+        "clash",
+        "menu bar",
+        "menubar",
+        "菜单栏",
+        "主界面上方",
+        "状态栏",
+        "系统托盘",
+        "tray",
+        "顶部",
+        "桌面",
+        "finder",
+        "wps",
+        "settings",
+        "系统设置",
+    ]
+    if any(marker in text for marker in desktop_markers):
+        return "desktop_gui"
+    if req.final_state.get("host_action") == "desktop_gui_resume":
+        return "desktop_gui"
+    return "browser_gui"
 
 
 def _visible_retrieved_results(search_results: List[Any], executable_skills: List[Any], *, limit: int) -> List[Any]:
@@ -236,6 +454,11 @@ async def _learn_from_execution(app: AppState, goal: str, result: ExecutionResul
         return {"status": "skipped", "reason": "learning agents are not configured"}
     if result.status != "completed":
         return {"status": "skipped", "reason": "only completed executions are learned"}
+    learned_from = (
+        "user_guided_resume"
+        if any(trace.get("action") == "resume_from_assistance_guidance" for trace in (result.agent_trace or []))
+        else "execution"
+    )
 
     proposal = _propose_skill_from_execution(goal, result)
     if not proposal:
@@ -246,6 +469,12 @@ async def _learn_from_execution(app: AppState, goal: str, result: ExecutionResul
         return {
             "status": "reused",
             "reason": "similar skill already exists",
+            "optimization_decision": {
+                "action": "reuse_existing",
+                "target_skill_id": existing.skill_id,
+                "target_skill_name": existing.name,
+                "rationale": "The user-guided resume matches an existing Skill closely enough; no new Skill version was created.",
+            },
             "suggested_skill": {
                 "skill_id": existing.skill_id,
                 "name": existing.name,
@@ -295,6 +524,17 @@ async def _learn_from_execution(app: AppState, goal: str, result: ExecutionResul
         return {
             "status": "created" if managed.created else "reused",
             "reason": "execution produced a reusable non-overlapping skill",
+            "optimization_decision": {
+                "action": "create_new" if managed.created else "reuse_existing",
+                "target_skill_id": managed.skill.skill_id,
+                "target_skill_name": managed.skill.name,
+                "rationale": (
+                    "User guidance closed a capability gap and produced a successful reusable desktop/browser action."
+                    if managed.created
+                    else "A similar Skill already covered this guided resume pattern."
+                ),
+                "learned_from": learned_from,
+            },
             "suggested_skill": {
                 "skill_id": managed.skill.skill_id,
                 "name": managed.skill.name,
@@ -309,6 +549,55 @@ async def _learn_from_execution(app: AppState, goal: str, result: ExecutionResul
 
 def _propose_skill_from_execution(goal: str, result: ExecutionResult) -> Dict[str, Any] | None:
     final_state = result.final_state or {}
+    host_action = str(final_state.get("host_action") or "")
+    actions = final_state.get("actions") if isinstance(final_state.get("actions"), list) else []
+    guidance = str(final_state.get("guidance") or "")
+    if host_action == "desktop_gui_resume" and _is_clash_latency_goal(goal, guidance, actions):
+        return {
+            "name": "run_clash_latency_test_from_menu_bar",
+            "description": (
+                "Use the macOS menu bar Clash/ClashX item to run the latency test. "
+                "This Skill was learned from a successful user-guided resume demonstration."
+            ),
+            "skill_type": "atomic",
+            "confidence": 0.91,
+            "tags": ["execution", "learned", "desktop", "gui", "macos", "menu-bar", "clash", "latency-test", "user-guided"],
+            "actions": [
+                "observe the current macOS desktop/menu bar",
+                "open the Clash or ClashX menu bar item",
+                "click the latency test menu item",
+            ],
+            "tools": ["Host desktop_gui_resume"],
+            "capability_scope": "specialized",
+            "capability_kind": "desktop_menu_bar_action",
+            "target": "Clash latency test",
+            "interface": _schema(
+                {
+                    "guidance": (
+                        "string",
+                        "Optional visible instruction; defaults to clicking Clash menu bar latency test",
+                        False,
+                        "点击 Clash 菜单栏里的延迟测速",
+                    ),
+                    "application": ("string", "Menu bar app name or family", False, "Clash"),
+                },
+                {
+                    "success": ("boolean", "Whether the latency test menu item was clicked"),
+                    "host_action": ("string", "desktop_gui_resume"),
+                },
+            ),
+            "implementation": {
+                "language": "python",
+                "code": (
+                    'output["success"] = True\n'
+                    'output["host_action"] = "desktop_gui_resume"\n'
+                    'output["application"] = input_data.get("application") or "Clash"\n'
+                    'output["guidance"] = input_data.get("guidance") or "点击 Clash 菜单栏里的延迟测速"'
+                ),
+                "tool_calls": ["host.desktop_gui_resume"],
+            },
+        }
+
     query = str(final_state.get("query") or _extract_first_result_query(goal)).strip()
     if _is_first_result_goal(goal) and query:
         slug = _learned_slug(query)
@@ -446,6 +735,26 @@ def _extract_first_result_query(goal: str) -> str:
 
 def _is_website_navigation_goal(goal: str) -> bool:
     return any(token in goal for token in ("官网", "网站", "网页", "打开", "访问", "进入"))
+
+
+def _is_clash_latency_goal(goal: str, guidance: str, actions: List[Any]) -> bool:
+    text = f"{goal}\n{guidance}".lower()
+    action_text = " ".join(
+        str(item.get("action", "")) + " " + str(item.get("reason", "")) + " " + str(item.get("target", ""))
+        for item in actions
+        if isinstance(item, dict)
+    ).lower()
+    has_clash = "clash" in text or "clash" in action_text or "小猫" in goal or "小猫" in guidance
+    has_latency = (
+        "延迟" in goal
+        or "延迟" in guidance
+        or "latency" in text
+        or "delay" in text
+        or "latency" in action_text
+        or "delay" in action_text
+    )
+    successful_demo = "clash_latency_test" in action_text and "success" in action_text
+    return bool(has_clash and has_latency and (successful_demo or "延迟测速" in action_text))
 
 
 def _extract_open_target(goal: str) -> str:
