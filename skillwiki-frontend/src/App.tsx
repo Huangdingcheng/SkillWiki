@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ConfigProvider, Spin, theme } from 'antd'
 import enUS from 'antd/locale/en_US'
+import zhCN from 'antd/locale/zh_CN'
 import { useAppStore } from '@/store/appStore'
 import AppLayout from '@/components/AppLayout'
 
@@ -27,10 +28,11 @@ function PageFallback() {
 
 export default function App() {
   const darkMode = useAppStore(s => s.darkMode)
+  const lang = useAppStore(s => s.lang)
 
   return (
     <ConfigProvider
-      locale={enUS}
+      locale={lang === 'zh' ? zhCN : enUS}
       theme={{
         algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {

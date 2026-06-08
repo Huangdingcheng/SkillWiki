@@ -1,0 +1,111 @@
+{
+  "skill_id": "update_skill_graph_relation",
+  "name": "update_skill_graph_relation",
+  "version": "1.0.0",
+  "display_name": "Update Skill Graph Relation",
+  "description": "Validate and update a Skill Graph relation.",
+  "tags": [
+    "meta",
+    "graph",
+    "relations",
+    "strategic"
+  ],
+  "skill_type": "strategic",
+  "meta_category": "graph",
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S4",
+  "created_at": "2026-06-05T10:33:32.262043",
+  "updated_at": "2026-06-05T10:33:32.373415",
+  "released_at": "2026-06-05T10:33:32.262043",
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "source_skill": {
+          "type": "string",
+          "description": ""
+        },
+        "target_skill": {
+          "type": "string",
+          "description": ""
+        },
+        "relation_type": {
+          "type": "string",
+          "description": "depends_on/composes/replaces"
+        },
+        "weight": {
+          "type": "number",
+          "description": ""
+        }
+      },
+      "required": [
+        "source_skill",
+        "target_skill",
+        "relation_type"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "edge_added": {
+          "type": "boolean",
+          "description": ""
+        },
+        "graph_updated": {
+          "type": "boolean",
+          "description": ""
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": null,
+    "prompt_template": "Analyze whether relation '{relation_type}' between '{source_skill}' and '{target_skill}' is valid.\n\nReturn JSON: {\"valid\": true, \"reasoning\": \"...\"}.",
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [],
+    "test_case_refs": [],
+    "benchmark_task_ids": [],
+    "validation_summary": null,
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 22,
+    "success_count": 20,
+    "failure_count": 2,
+    "avg_latency_ms": 154.54545454545453,
+    "p95_latency_ms": 0.0,
+    "last_used_at": "2026-06-05T10:33:32.262043",
+    "last_success_at": "2026-06-05T10:33:32.262043",
+    "last_failure_at": "2026-06-05T10:33:32.262043",
+    "success_rate": 0.9090909090909091,
+    "total_executions": 22,
+    "successful_executions": 20,
+    "failed_executions": 2
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {}
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

@@ -1,6 +1,11 @@
 # SkillWiki
 
-SkillWiki is a skill-centric knowledge wiki for self-evolving agents. It imports experience from multiple source types, converts that material into governed Skill candidates, manages Skill graph relations and versions, and runs local verification/evaluation workflows — all accessible via a web UI or the `skillwiki` CLI.
+**SkillWiki: A Living Knowledge Infrastructure for Agent Skills**
+
+SkillWiki is a living knowledge infrastructure for agent skills. It imports experience from multiple source types, converts that material into governed Skill candidates, manages Skill graph relations and versions, and runs local verification/evaluation workflows — all accessible via a web UI or the `skillwiki` CLI.
+
+**Frontend (default English):** [http://localhost:5173](http://localhost:5173) — switch to 中文 via the language button in the header  
+**中文前端（同一地址）：** [http://localhost:5173](http://localhost:5173) — 点击右上角语言按钮切换为中文
 
 ## Quick Start On Windows
 

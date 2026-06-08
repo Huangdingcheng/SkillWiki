@@ -1,0 +1,28 @@
+{
+  "name": "locate_element",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "locate_element",
+      "state": "S4",
+      "skill_type": "atomic",
+      "domain": "general",
+      "display_name": "Locate Element",
+      "description": "Locate an element on a page and return a CSS selector.",
+      "tags": [
+        "web",
+        "ui",
+        "query"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:26Z",
+      "updated_at": "2026-06-05T10:33:26Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:26Z",
+  "updated_at": "2026-06-05T10:33:26Z"
+}

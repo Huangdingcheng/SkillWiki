@@ -18,7 +18,7 @@ from .workspace import HarnessWorkspace
 class LocalSkillWikiHarness:
     """Execute a Skill with the existing in-process SkillExecutor."""
 
-    kind = HarnessKind.LOCAL_SKILLOS
+    kind = HarnessKind.LOCAL_SKILLWIKI
 
     def __init__(self, executor: SkillExecutor | None = None, registry: Any = None) -> None:
         self._executor = executor or SkillExecutor(skill_registry=registry)

@@ -1,0 +1,925 @@
+{
+  "click_element": {
+    "name": "click_element",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "click_element",
+    "state": "S4",
+    "skill_type": "atomic",
+    "domain": "general",
+    "display_name": "Click Element",
+    "description": "Click a target element on a web page.",
+    "tags": [
+      "web",
+      "ui",
+      "interaction"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "click_element",
+        "state": "S4",
+        "skill_type": "atomic",
+        "domain": "general",
+        "display_name": "Click Element",
+        "description": "Click a target element on a web page.",
+        "tags": [
+          "web",
+          "ui",
+          "interaction"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:24Z",
+        "updated_at": "2026-06-05T10:33:24Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:24Z"
+  },
+  "type_text": {
+    "name": "type_text",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "type_text",
+    "state": "S4",
+    "skill_type": "atomic",
+    "domain": "general",
+    "display_name": "Type Text",
+    "description": "Type text into an input field.",
+    "tags": [
+      "web",
+      "ui",
+      "input"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "type_text",
+        "state": "S4",
+        "skill_type": "atomic",
+        "domain": "general",
+        "display_name": "Type Text",
+        "description": "Type text into an input field.",
+        "tags": [
+          "web",
+          "ui",
+          "input"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:25Z",
+        "updated_at": "2026-06-05T10:33:25Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:25Z"
+  },
+  "fill_form": {
+    "name": "fill_form",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "fill_form",
+    "state": "S4",
+    "skill_type": "functional",
+    "domain": "general",
+    "display_name": "Fill Form",
+    "description": "Fill and submit a form by composing click and type skills.",
+    "tags": [
+      "web",
+      "form",
+      "functional"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "fill_form",
+        "state": "S4",
+        "skill_type": "functional",
+        "domain": "general",
+        "display_name": "Fill Form",
+        "description": "Fill and submit a form by composing click and type skills.",
+        "tags": [
+          "web",
+          "form",
+          "functional"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:26Z",
+        "updated_at": "2026-06-05T10:33:26Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:26Z"
+  },
+  "locate_element": {
+    "name": "locate_element",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "locate_element",
+    "state": "S4",
+    "skill_type": "atomic",
+    "domain": "general",
+    "display_name": "Locate Element",
+    "description": "Locate an element on a page and return a CSS selector.",
+    "tags": [
+      "web",
+      "ui",
+      "query"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "locate_element",
+        "state": "S4",
+        "skill_type": "atomic",
+        "domain": "general",
+        "display_name": "Locate Element",
+        "description": "Locate an element on a page and return a CSS selector.",
+        "tags": [
+          "web",
+          "ui",
+          "query"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:26Z",
+        "updated_at": "2026-06-05T10:33:26Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:26Z"
+  },
+  "generate_skill_from_task": {
+    "name": "generate_skill_from_task",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "generate_skill_from_task",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Generate Skill From Task",
+    "description": "Generate a reusable Skill draft from a task description.",
+    "tags": [
+      "meta",
+      "generation",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "generate_skill_from_task",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Generate Skill From Task",
+        "description": "Generate a reusable Skill draft from a task description.",
+        "tags": [
+          "meta",
+          "generation",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:27Z",
+        "updated_at": "2026-06-05T10:33:27Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:27Z"
+  },
+  "generate_skill_from_trajectory": {
+    "name": "generate_skill_from_trajectory",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "generate_skill_from_trajectory",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Generate Skill From Trajectory",
+    "description": "Extract a reusable Skill from an execution trajectory.",
+    "tags": [
+      "meta",
+      "generation",
+      "trajectory",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "generate_skill_from_trajectory",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Generate Skill From Trajectory",
+        "description": "Extract a reusable Skill from an execution trajectory.",
+        "tags": [
+          "meta",
+          "generation",
+          "trajectory",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:27Z",
+        "updated_at": "2026-06-05T10:33:27Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:27Z"
+  },
+  "formalize_skill_schema": {
+    "name": "formalize_skill_schema",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "formalize_skill_schema",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Formalize Skill Schema",
+    "description": "Convert an informal Skill description into JSON schemas.",
+    "tags": [
+      "meta",
+      "schema",
+      "formalization",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "formalize_skill_schema",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Formalize Skill Schema",
+        "description": "Convert an informal Skill description into JSON schemas.",
+        "tags": [
+          "meta",
+          "schema",
+          "formalization",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:28Z",
+        "updated_at": "2026-06-05T10:33:28Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:28Z"
+  },
+  "generate_skill_tests": {
+    "name": "generate_skill_tests",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "generate_skill_tests",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Generate Skill Tests",
+    "description": "Generate test cases for a Skill.",
+    "tags": [
+      "meta",
+      "testing",
+      "quality",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "generate_skill_tests",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Generate Skill Tests",
+        "description": "Generate test cases for a Skill.",
+        "tags": [
+          "meta",
+          "testing",
+          "quality",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:28Z",
+        "updated_at": "2026-06-05T10:33:28Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:28Z"
+  },
+  "audit_skill_safety": {
+    "name": "audit_skill_safety",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "audit_skill_safety",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Audit Skill Safety",
+    "description": "Audit a Skill implementation for safety risks.",
+    "tags": [
+      "meta",
+      "safety",
+      "audit",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "audit_skill_safety",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Audit Skill Safety",
+        "description": "Audit a Skill implementation for safety risks.",
+        "tags": [
+          "meta",
+          "safety",
+          "audit",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:29Z",
+        "updated_at": "2026-06-05T10:33:29Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:29Z"
+  },
+  "verify_skill_postcondition": {
+    "name": "verify_skill_postcondition",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "verify_skill_postcondition",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Verify Skill Postcondition",
+    "description": "Verify whether execution output satisfies postconditions.",
+    "tags": [
+      "meta",
+      "verification",
+      "postcondition",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "verify_skill_postcondition",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Verify Skill Postcondition",
+        "description": "Verify whether execution output satisfies postconditions.",
+        "tags": [
+          "meta",
+          "verification",
+          "postcondition",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:29Z",
+        "updated_at": "2026-06-05T10:33:29Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:29Z"
+  },
+  "repair_failed_skill": {
+    "name": "repair_failed_skill",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "repair_failed_skill",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Repair Failed Skill",
+    "description": "Analyze a failed Skill and propose a repair.",
+    "tags": [
+      "meta",
+      "repair",
+      "maintenance",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "repair_failed_skill",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Repair Failed Skill",
+        "description": "Analyze a failed Skill and propose a repair.",
+        "tags": [
+          "meta",
+          "repair",
+          "maintenance",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:30Z",
+        "updated_at": "2026-06-05T10:33:30Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:30Z"
+  },
+  "split_oversized_skill": {
+    "name": "split_oversized_skill",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "split_oversized_skill",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Split Oversized Skill",
+    "description": "Split an oversized Skill into smaller child Skills.",
+    "tags": [
+      "meta",
+      "split",
+      "decomposition",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "split_oversized_skill",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Split Oversized Skill",
+        "description": "Split an oversized Skill into smaller child Skills.",
+        "tags": [
+          "meta",
+          "split",
+          "decomposition",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:30Z",
+        "updated_at": "2026-06-05T10:33:30Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:30Z"
+  },
+  "merge_redundant_skills": {
+    "name": "merge_redundant_skills",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "merge_redundant_skills",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Merge Redundant Skills",
+    "description": "Merge redundant Skills into one canonical Skill.",
+    "tags": [
+      "meta",
+      "merge",
+      "deduplication",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "merge_redundant_skills",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Merge Redundant Skills",
+        "description": "Merge redundant Skills into one canonical Skill.",
+        "tags": [
+          "meta",
+          "merge",
+          "deduplication",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:31Z",
+        "updated_at": "2026-06-05T10:33:31Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:31Z"
+  },
+  "deprecate_low_utility_skill": {
+    "name": "deprecate_low_utility_skill",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "deprecate_low_utility_skill",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Deprecate Low Utility Skill",
+    "description": "Decide whether a low-utility Skill should be deprecated.",
+    "tags": [
+      "meta",
+      "deprecation",
+      "maintenance",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "deprecate_low_utility_skill",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Deprecate Low Utility Skill",
+        "description": "Decide whether a low-utility Skill should be deprecated.",
+        "tags": [
+          "meta",
+          "deprecation",
+          "maintenance",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:31Z",
+        "updated_at": "2026-06-05T10:33:31Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:31Z"
+  },
+  "update_skill_wiki_page": {
+    "name": "update_skill_wiki_page",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "update_skill_wiki_page",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Update Skill Wiki Page",
+    "description": "Generate updated Wiki documentation for a Skill.",
+    "tags": [
+      "meta",
+      "wiki",
+      "documentation",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "update_skill_wiki_page",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Update Skill Wiki Page",
+        "description": "Generate updated Wiki documentation for a Skill.",
+        "tags": [
+          "meta",
+          "wiki",
+          "documentation",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:31Z",
+        "updated_at": "2026-06-05T10:33:31Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:31Z"
+  },
+  "update_skill_graph_relation": {
+    "name": "update_skill_graph_relation",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "update_skill_graph_relation",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Update Skill Graph Relation",
+    "description": "Validate and update a Skill Graph relation.",
+    "tags": [
+      "meta",
+      "graph",
+      "relations",
+      "strategic"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "update_skill_graph_relation",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Update Skill Graph Relation",
+        "description": "Validate and update a Skill Graph relation.",
+        "tags": [
+          "meta",
+          "graph",
+          "relations",
+          "strategic"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:32Z",
+        "updated_at": "2026-06-05T10:33:32Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:32Z"
+  },
+  "test_graph_collect_requirements": {
+    "name": "test_graph_collect_requirements",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "test_graph_collect_requirements",
+    "state": "S4",
+    "skill_type": "atomic",
+    "domain": "general",
+    "display_name": "Test Graph Collect Requirements",
+    "description": "Test graph node: collect task requirements before planning.",
+    "tags": [
+      "test",
+      "graph",
+      "requirements"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "test_graph_collect_requirements",
+        "state": "S4",
+        "skill_type": "atomic",
+        "domain": "general",
+        "display_name": "Test Graph Collect Requirements",
+        "description": "Test graph node: collect task requirements before planning.",
+        "tags": [
+          "test",
+          "graph",
+          "requirements"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:32Z",
+        "updated_at": "2026-06-05T10:33:32Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:32Z"
+  },
+  "test_graph_parse_requirements": {
+    "name": "test_graph_parse_requirements",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "test_graph_parse_requirements",
+    "state": "S4",
+    "skill_type": "functional",
+    "domain": "general",
+    "display_name": "Test Graph Parse Requirements",
+    "description": "Test graph node: normalize requirements into actionable tasks.",
+    "tags": [
+      "test",
+      "graph",
+      "analysis"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "test_graph_parse_requirements",
+        "state": "S4",
+        "skill_type": "functional",
+        "domain": "general",
+        "display_name": "Test Graph Parse Requirements",
+        "description": "Test graph node: normalize requirements into actionable tasks.",
+        "tags": [
+          "test",
+          "graph",
+          "analysis"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:33Z",
+        "updated_at": "2026-06-05T10:33:33Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:33Z"
+  },
+  "test_graph_design_plan": {
+    "name": "test_graph_design_plan",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "test_graph_design_plan",
+    "state": "S4",
+    "skill_type": "strategic",
+    "domain": "general",
+    "display_name": "Test Graph Design Plan",
+    "description": "Test graph node: create an implementation plan from parsed tasks.",
+    "tags": [
+      "test",
+      "graph",
+      "planning"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "test_graph_design_plan",
+        "state": "S4",
+        "skill_type": "strategic",
+        "domain": "general",
+        "display_name": "Test Graph Design Plan",
+        "description": "Test graph node: create an implementation plan from parsed tasks.",
+        "tags": [
+          "test",
+          "graph",
+          "planning"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:33Z",
+        "updated_at": "2026-06-05T10:33:33Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:33Z"
+  },
+  "test_graph_build_demo": {
+    "name": "test_graph_build_demo",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "test_graph_build_demo",
+    "state": "S4",
+    "skill_type": "functional",
+    "domain": "general",
+    "display_name": "Test Graph Build Demo",
+    "description": "Test graph node: build a runnable demo from the plan.",
+    "tags": [
+      "test",
+      "graph",
+      "demo"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "test_graph_build_demo",
+        "state": "S4",
+        "skill_type": "functional",
+        "domain": "general",
+        "display_name": "Test Graph Build Demo",
+        "description": "Test graph node: build a runnable demo from the plan.",
+        "tags": [
+          "test",
+          "graph",
+          "demo"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:34Z",
+        "updated_at": "2026-06-05T10:33:34Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:34Z"
+  },
+  "test_graph_review_output": {
+    "name": "test_graph_review_output",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "test_graph_review_output",
+    "state": "S4",
+    "skill_type": "functional",
+    "domain": "general",
+    "display_name": "Test Graph Review Output",
+    "description": "Test graph node: review demo output and record feedback.",
+    "tags": [
+      "test",
+      "graph",
+      "review"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "test_graph_review_output",
+        "state": "S4",
+        "skill_type": "functional",
+        "domain": "general",
+        "display_name": "Test Graph Review Output",
+        "description": "Test graph node: review demo output and record feedback.",
+        "tags": [
+          "test",
+          "graph",
+          "review"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:34Z",
+        "updated_at": "2026-06-05T10:33:34Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:34Z"
+  },
+  "demo_degraded_submit_form": {
+    "name": "demo_degraded_submit_form",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "demo_degraded_submit_form",
+    "state": "S5",
+    "skill_type": "functional",
+    "domain": "general",
+    "display_name": "Demo Degraded Submit Form",
+    "description": "Demo degraded Skill that simulates a form submission postcondition failure so D self-management can generate a maintenance proposal.",
+    "tags": [
+      "demo",
+      "degraded",
+      "maintenance",
+      "verifier"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "demo_degraded_submit_form",
+        "state": "S5",
+        "skill_type": "functional",
+        "domain": "general",
+        "display_name": "Demo Degraded Submit Form",
+        "description": "Demo degraded Skill that simulates a form submission postcondition failure so D self-management can generate a maintenance proposal.",
+        "tags": [
+          "demo",
+          "degraded",
+          "maintenance",
+          "verifier"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:35Z",
+        "updated_at": "2026-06-05T10:33:35Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:35Z"
+  },
+  "demo_draft_extract_email": {
+    "name": "demo_draft_extract_email",
+    "latest_version": "1.0.0",
+    "deleted": false,
+    "skill_id": "demo_draft_extract_email",
+    "state": "S2",
+    "skill_type": "atomic",
+    "domain": "general",
+    "display_name": "Demo Draft Extract Email",
+    "description": "Extract an email address from text; intentionally starts broken so the harness loop can repair and verify it.",
+    "tags": [
+      "demo",
+      "harness",
+      "verification",
+      "repair"
+    ],
+    "version_count": 1,
+    "versions": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "skill_id": "demo_draft_extract_email",
+        "state": "S2",
+        "skill_type": "atomic",
+        "domain": "general",
+        "display_name": "Demo Draft Extract Email",
+        "description": "Extract an email address from text; intentionally starts broken so the harness loop can repair and verify it.",
+        "tags": [
+          "demo",
+          "harness",
+          "verification",
+          "repair"
+        ],
+        "file": "1.0.0.json",
+        "deleted": false,
+        "created_at": "2026-06-05T10:33:35Z",
+        "updated_at": "2026-06-05T10:33:35Z",
+        "source": "create"
+      }
+    },
+    "updated_at": "2026-06-05T10:33:35Z"
+  }
+}

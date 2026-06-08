@@ -1,0 +1,28 @@
+{
+  "name": "fill_form",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "fill_form",
+      "state": "S4",
+      "skill_type": "functional",
+      "domain": "general",
+      "display_name": "Fill Form",
+      "description": "Fill and submit a form by composing click and type skills.",
+      "tags": [
+        "web",
+        "form",
+        "functional"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:26Z",
+      "updated_at": "2026-06-05T10:33:26Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:26Z",
+  "updated_at": "2026-06-05T10:33:26Z"
+}

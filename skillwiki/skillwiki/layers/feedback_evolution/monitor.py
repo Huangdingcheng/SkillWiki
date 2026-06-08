@@ -86,33 +86,31 @@ class SkillMonitor:
         if total < self.MIN_EXECUTIONS_FOR_EVAL:
             status = HealthStatus.UNKNOWN
             if total == 0:
-                issues.append("从未被执行")
-                recommendations.append("考虑添加测试用例验证功能")
+                issues.append("Never executed")
+                recommendations.append("Consider adding test cases to validate functionality")
         else:
             sr = metrics.success_rate
             if sr >= 0.9:
                 status = HealthStatus.HEALTHY
             elif sr >= self.DEGRADED_SUCCESS_RATE:
                 status = HealthStatus.DEGRADED
-                issues.append(f"成功率偏低: {sr:.1%}")
-                recommendations.append("检查失败原因，考虑修复或更新实现")
+                issues.append(f"Low success rate: {sr:.1%}")
+                recommendations.append("Inspect failure causes; consider fixing or updating the implementation")
             else:
                 status = HealthStatus.CRITICAL
-                issues.append(f"成功率严重偏低: {sr:.1%}")
-                recommendations.append("立即修复或废弃该 Skill")
+                issues.append(f"Critically low success rate: {sr:.1%}")
+                recommendations.append("Fix or deprecate this Skill immediately")
 
-        # 检查是否长期未使用
         if metrics.last_used_at:
             days_since_use = (datetime.utcnow() - metrics.last_used_at).days
             if days_since_use > self.STALE_DAYS and status == HealthStatus.HEALTHY:
                 status = HealthStatus.STALE
-                issues.append(f"{days_since_use} 天未使用")
-                recommendations.append("考虑废弃或归档该 Skill")
+                issues.append(f"Unused for {days_since_use} days")
+                recommendations.append("Consider deprecating or archiving this Skill")
 
-        # 延迟检查
         if metrics.avg_latency_ms > 5000:
-            issues.append(f"平均延迟过高: {metrics.avg_latency_ms:.0f}ms")
-            recommendations.append("优化实现或增加超时处理")
+            issues.append(f"High average latency: {metrics.avg_latency_ms:.0f}ms")
+            recommendations.append("Optimise the implementation or add a timeout")
 
         return SkillHealthReport(
             skill_id=skill.skill_id,
@@ -141,9 +139,9 @@ class SkillMonitor:
                 report.stale_count += 1
 
         logger.info(
-            f"系统健康报告: 总计={report.total_skills}, "
-            f"健康={report.healthy_count}, 退化={report.degraded_count}, "
-            f"危急={report.critical_count}, 过期={report.stale_count}"
+            f"System health report: total={report.total_skills}, "
+            f"healthy={report.healthy_count}, degraded={report.degraded_count}, "
+            f"critical={report.critical_count}, stale={report.stale_count}"
         )
         return report
 

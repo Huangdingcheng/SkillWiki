@@ -1,0 +1,107 @@
+{
+  "skill_id": "verify_skill_postcondition",
+  "name": "verify_skill_postcondition",
+  "version": "1.0.0",
+  "display_name": "Verify Skill Postcondition",
+  "description": "Verify whether execution output satisfies postconditions.",
+  "tags": [
+    "meta",
+    "verification",
+    "postcondition",
+    "strategic"
+  ],
+  "skill_type": "strategic",
+  "meta_category": "quality_assurance",
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S4",
+  "created_at": "2026-06-05T10:33:29.493016",
+  "updated_at": "2026-06-05T10:33:29.610473",
+  "released_at": "2026-06-05T10:33:29.493016",
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "skill_name": {
+          "type": "string",
+          "description": ""
+        },
+        "postconditions": {
+          "type": "array",
+          "description": ""
+        },
+        "execution_output": {
+          "type": "object",
+          "description": ""
+        }
+      },
+      "required": [
+        "skill_name",
+        "postconditions",
+        "execution_output"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "satisfied": {
+          "type": "boolean",
+          "description": ""
+        },
+        "violations": {
+          "type": "array",
+          "description": ""
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": null,
+    "prompt_template": "Verify whether Skill '{skill_name}' satisfies these postconditions.\n\nPostconditions: {postconditions}\nExecution output: {execution_output}\n\nReturn JSON: {\"satisfied\": true, \"violations\": []}.",
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [],
+    "test_case_refs": [],
+    "benchmark_task_ids": [],
+    "validation_summary": null,
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 22,
+    "success_count": 20,
+    "failure_count": 2,
+    "avg_latency_ms": 154.54545454545453,
+    "p95_latency_ms": 0.0,
+    "last_used_at": "2026-06-05T10:33:29.493016",
+    "last_success_at": "2026-06-05T10:33:29.493016",
+    "last_failure_at": "2026-06-05T10:33:29.493016",
+    "success_rate": 0.9090909090909091,
+    "total_executions": 22,
+    "successful_executions": 20,
+    "failed_executions": 2
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {}
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

@@ -1,0 +1,28 @@
+{
+  "name": "test_graph_parse_requirements",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "test_graph_parse_requirements",
+      "state": "S4",
+      "skill_type": "functional",
+      "domain": "general",
+      "display_name": "Test Graph Parse Requirements",
+      "description": "Test graph node: normalize requirements into actionable tasks.",
+      "tags": [
+        "test",
+        "graph",
+        "analysis"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:33Z",
+      "updated_at": "2026-06-05T10:33:33Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:33Z",
+  "updated_at": "2026-06-05T10:33:33Z"
+}

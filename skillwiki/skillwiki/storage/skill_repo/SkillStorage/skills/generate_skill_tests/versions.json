@@ -1,0 +1,29 @@
+{
+  "name": "generate_skill_tests",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "generate_skill_tests",
+      "state": "S4",
+      "skill_type": "strategic",
+      "domain": "general",
+      "display_name": "Generate Skill Tests",
+      "description": "Generate test cases for a Skill.",
+      "tags": [
+        "meta",
+        "testing",
+        "quality",
+        "strategic"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:28Z",
+      "updated_at": "2026-06-05T10:33:28Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:28Z",
+  "updated_at": "2026-06-05T10:33:28Z"
+}

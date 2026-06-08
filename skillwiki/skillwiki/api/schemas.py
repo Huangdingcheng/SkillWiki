@@ -419,7 +419,7 @@ class ExecutionHistoryItem(BaseModel):
 
 
 class HarnessVerifyLoopRequest(BaseModel):
-    harness: HarnessKind = HarnessKind.LOCAL_SKILLOS
+    harness: HarnessKind = HarnessKind.LOCAL_SKILLWIKI
     max_attempts: int = Field(default=3, ge=1, le=5)
     promote_on_pass: bool = True
     test_cases: List[HarnessTestCase] = Field(default_factory=list)

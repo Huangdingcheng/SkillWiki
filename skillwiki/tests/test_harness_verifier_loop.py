@@ -62,7 +62,7 @@ async def test_verification_loop_repairs_retries_and_promotes_to_s3(tmp_path):
         evidence_root=tmp_path,
     ).run(
         skill.skill_id,
-        harness_kind=HarnessKind.LOCAL_SKILLOS,
+        harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=3,
     )
 
@@ -97,12 +97,12 @@ async def test_verification_loop_can_repeat_repair_without_version_collision(tmp
     loop = VerificationLoop(wiki=wiki, evidence_root=tmp_path)
     first = await loop.run(
         skill.skill_id,
-        harness_kind=HarnessKind.LOCAL_SKILLOS,
+        harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=3,
     )
     second = await loop.run(
         skill.skill_id,
-        harness_kind=HarnessKind.LOCAL_SKILLOS,
+        harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=3,
     )
 
@@ -138,7 +138,7 @@ async def test_verification_loop_repairs_nested_json_contracts(tmp_path):
 
     result = await VerificationLoop(wiki=wiki, evidence_root=tmp_path).run(
         skill.skill_id,
-        harness_kind=HarnessKind.LOCAL_SKILLOS,
+        harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=3,
     )
 
@@ -160,7 +160,7 @@ async def test_verification_loop_does_not_promote_failed_skill_when_repair_disab
 
     result = await VerificationLoop(wiki=wiki, evidence_root=tmp_path).run(
         skill.skill_id,
-        harness_kind=HarnessKind.LOCAL_SKILLOS,
+        harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=1,
         allow_repair=False,
     )

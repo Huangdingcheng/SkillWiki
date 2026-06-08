@@ -1,0 +1,29 @@
+{
+  "name": "demo_degraded_submit_form",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "demo_degraded_submit_form",
+      "state": "S5",
+      "skill_type": "functional",
+      "domain": "general",
+      "display_name": "Demo Degraded Submit Form",
+      "description": "Demo degraded Skill that simulates a form submission postcondition failure so D self-management can generate a maintenance proposal.",
+      "tags": [
+        "demo",
+        "degraded",
+        "maintenance",
+        "verifier"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:35Z",
+      "updated_at": "2026-06-05T10:33:35Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:35Z",
+  "updated_at": "2026-06-05T10:33:35Z"
+}

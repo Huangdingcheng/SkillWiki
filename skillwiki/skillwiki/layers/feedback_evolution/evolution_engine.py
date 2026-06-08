@@ -84,7 +84,7 @@ class EvolutionEngine:
         """运行一次完整的演化周期。"""
         import uuid
         report = EvolutionReport(cycle_id=str(uuid.uuid4()))
-        logger.info(f"演化周期开始: {report.cycle_id}")
+        logger.info(f"Evolution cycle started: {report.cycle_id}")
 
         # 1. 获取所有 Released/Degraded Skill
         skills = await self._wiki.list(
@@ -102,7 +102,7 @@ class EvolutionEngine:
         # 3. 生成演化任务
         tasks = self._generate_tasks(active_skills, system_report)
         report.tasks_total = len(tasks)
-        logger.info(f"生成演化任务: {len(tasks)} 个")
+        logger.info(f"Evolution tasks generated: {len(tasks)}")
 
         # 4. 执行演化任务（按优先级）
         tasks.sort(key=lambda t: t.priority, reverse=True)
@@ -112,15 +112,15 @@ class EvolutionEngine:
                 report.tasks_completed += 1
             except Exception as e:
                 report.tasks_failed += 1
-                report.errors.append(f"任务 {task.task_id} 失败: {e}")
-                logger.error(f"演化任务失败: {task.action.value} - {e}")
+                logger.error(f"Evolution task failed: {task.action.value} - {e}")
+                report.errors.append(f"Task {task.task_id} failed: {e}")
 
         report.completed_at = datetime.utcnow()
         logger.info(
-            f"演化周期完成: 修复={len(report.repaired)}, "
-            f"废弃={len(report.deprecated)}, "
-            f"合并={len(report.merged)}, "
-            f"拆分={len(report.split)}"
+            f"Evolution cycle complete: repaired={len(report.repaired)}, "
+            f"deprecated={len(report.deprecated)}, "
+            f"merged={len(report.merged)}, "
+            f"split={len(report.split)}"
         )
         return report
 
@@ -140,40 +140,36 @@ class EvolutionEngine:
                 continue
 
             if hr.status == HealthStatus.CRITICAL:
-                # 危急 → 修复（高优先级）
                 tasks.append(EvolutionTask(
                     task_id=str(uuid.uuid4()),
                     action=EvolutionAction.REPAIR,
                     skill_ids=[skill.skill_id],
-                    reason=f"成功率危急: {hr.success_rate:.1%}",
+                    reason=f"Critically low success rate: {hr.success_rate:.1%}",
                     priority=10,
                 ))
             elif hr.status == HealthStatus.DEGRADED:
-                # 退化 → 修复（中优先级）
                 tasks.append(EvolutionTask(
                     task_id=str(uuid.uuid4()),
                     action=EvolutionAction.REPAIR,
                     skill_ids=[skill.skill_id],
-                    reason=f"成功率退化: {hr.success_rate:.1%}",
+                    reason=f"Degraded success rate: {hr.success_rate:.1%}",
                     priority=5,
                 ))
             elif hr.status == HealthStatus.STALE:
-                # 过期 → 废弃（低优先级）
                 tasks.append(EvolutionTask(
                     task_id=str(uuid.uuid4()),
                     action=EvolutionAction.DEPRECATE,
                     skill_ids=[skill.skill_id],
-                    reason="长期未使用",
+                    reason="Unused for extended period",
                     priority=1,
                 ))
 
-            # 粒度过粗 → 拆分
             if skill.granularity_level >= self._split_threshold and skill.metrics.usage_count > 20:
                 tasks.append(EvolutionTask(
                     task_id=str(uuid.uuid4()),
                     action=EvolutionAction.SPLIT,
                     skill_ids=[skill.skill_id],
-                    reason=f"粒度过粗 (level={skill.granularity_level})",
+                    reason=f"Granularity too coarse (level={skill.granularity_level})",
                     priority=3,
                 ))
 

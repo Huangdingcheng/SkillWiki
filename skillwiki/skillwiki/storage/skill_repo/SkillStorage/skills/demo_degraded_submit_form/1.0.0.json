@@ -1,0 +1,111 @@
+{
+  "skill_id": "demo_degraded_submit_form",
+  "name": "demo_degraded_submit_form",
+  "version": "1.0.0",
+  "display_name": "Demo Degraded Submit Form",
+  "description": "Demo degraded Skill that simulates a form submission postcondition failure so D self-management can generate a maintenance proposal.",
+  "tags": [
+    "demo",
+    "degraded",
+    "maintenance",
+    "verifier"
+  ],
+  "skill_type": "functional",
+  "meta_category": null,
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S5",
+  "created_at": "2026-06-05T10:33:35.252559",
+  "updated_at": "2026-06-05T10:33:35.368101",
+  "released_at": "2026-06-05T10:33:35.252559",
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "form_data": {
+          "type": "object",
+          "description": ""
+        }
+      },
+      "required": [
+        "form_data"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "submitted": {
+          "type": "boolean",
+          "description": ""
+        },
+        "error": {
+          "type": "string",
+          "description": ""
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [
+      "submitted must be true"
+    ],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": "output[\"submitted\"] = False\noutput[\"error\"] = \"demo degraded postcondition failure\"",
+    "prompt_template": null,
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [
+      {
+        "type": "boolean_success",
+        "path": "output.submitted"
+      }
+    ],
+    "test_case_refs": [
+      "demo_degraded_submit_form_case"
+    ],
+    "benchmark_task_ids": [
+      "demo_degraded_submit_form"
+    ],
+    "validation_summary": "Seeded as a deterministic degraded case for D-P0-2.",
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 10,
+    "success_count": 2,
+    "failure_count": 8,
+    "avg_latency_ms": 550.0,
+    "p95_latency_ms": 0.0,
+    "last_used_at": "2026-06-05T10:33:35.252559",
+    "last_success_at": "2026-06-05T10:33:35.252559",
+    "last_failure_at": "2026-06-05T10:33:35.252559",
+    "success_rate": 0.2,
+    "total_executions": 10,
+    "successful_executions": 2,
+    "failed_executions": 8
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {
+      "paper_backlog_task": "D-P0-2",
+      "demo_degraded_case": true
+    }
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

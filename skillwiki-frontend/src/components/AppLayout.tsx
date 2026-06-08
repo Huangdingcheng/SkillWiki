@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Layout, Menu, Switch, Badge, Tooltip, Avatar, Tag, Grid } from 'antd'
+import { Layout, Menu, Switch, Badge, Tooltip, Avatar, Tag, Grid, Button } from 'antd'
 import {
   DashboardOutlined,
   BookOutlined,
@@ -15,67 +15,70 @@ import {
   RocketOutlined,
   BarChartOutlined,
   SafetyCertificateOutlined,
+  TranslationOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAppStore } from '@/store/appStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useT } from '@/i18n'
 
 const { Header, Sider, Content } = Layout
 const { useBreakpoint } = Grid
-
-const menuItems = [
-  {
-    type: 'group' as const,
-    label: 'Overview',
-    children: [
-      { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-      { key: '/evaluation', icon: <BarChartOutlined />, label: 'Evaluation' },
-    ],
-  },
-  {
-    type: 'group' as const,
-    label: 'Skill Management',
-    children: [
-      { key: '/wiki', icon: <BookOutlined />, label: 'Skill Wiki' },
-      { key: '/graph', icon: <ApartmentOutlined />, label: 'Knowledge Graph' },
-      { key: '/versions', icon: <BranchesOutlined />, label: 'Version Control' },
-      { key: '/lifecycle', icon: <ExperimentOutlined />, label: 'Lifecycle' },
-    ],
-  },
-  {
-    type: 'group' as const,
-    label: 'Agent & Evolution',
-    children: [
-      {
-        key: '/demo',
-        icon: <RocketOutlined />,
-        label: (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            Self-Evolution Demo
-            <Tag color="red" style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px', marginLeft: 2 }}>DEMO</Tag>
-          </span>
-        ),
-      },
-      { key: '/execution', icon: <PlayCircleOutlined />, label: 'Agent Execution' },
-      { key: '/harness', icon: <SafetyCertificateOutlined />, label: 'Harness Verification' },
-      { key: '/evolution', icon: <SyncOutlined />, label: 'Evolution' },
-      { key: '/ingest', icon: <CloudUploadOutlined />, label: 'Knowledge Import' },
-    ],
-  },
-]
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
   const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
-  const { darkMode, toggleDark, wsEvents } = useAppStore()
+  const { darkMode, toggleDark, wsEvents, lang, setLang } = useAppStore()
+  const t = useT(lang)
   useWebSocket()
 
   const isNarrow = screens.xs && !screens.md
   const siderCollapsed = isNarrow ? true : collapsed
   const unreadEvents = wsEvents.filter(e => e.type !== 'pong' && e.type !== 'connected').length
+
+  const menuItems = [
+    {
+      type: 'group' as const,
+      label: t.groupOverview,
+      children: [
+        { key: '/', icon: <DashboardOutlined />, label: t.menuDashboard },
+        { key: '/evaluation', icon: <BarChartOutlined />, label: t.menuEvaluation },
+      ],
+    },
+    {
+      type: 'group' as const,
+      label: t.groupSkillMgmt,
+      children: [
+        { key: '/ingest', icon: <CloudUploadOutlined />, label: t.menuIngest },
+        { key: '/wiki', icon: <BookOutlined />, label: t.menuWiki },
+        { key: '/graph', icon: <ApartmentOutlined />, label: t.menuGraph },
+        { key: '/lifecycle', icon: <ExperimentOutlined />, label: t.menuLifecycle },
+        { key: '/versions', icon: <BranchesOutlined />, label: t.menuVersions },
+      ],
+    },
+    {
+      type: 'group' as const,
+      label: t.groupAgentEvolution,
+      children: [
+        { key: '/harness', icon: <SafetyCertificateOutlined />, label: t.menuHarness },
+        { key: '/execution', icon: <PlayCircleOutlined />, label: t.menuExecution },
+        { key: '/evolution', icon: <SyncOutlined />, label: t.menuEvolution },
+        {
+          key: '/demo',
+          icon: <RocketOutlined />,
+          label: (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {t.menuDemo}
+              <Tag color="red" style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px', marginLeft: 2 }}>DEMO</Tag>
+            </span>
+          ),
+        },
+      ],
+    },
+  ]
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -154,21 +157,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               whiteSpace: 'nowrap',
             }}
           >
-            {isNarrow ? 'SkillWiki' : 'Skill-Centric Operating System for Self-Evolving Agents'}
+            {isNarrow ? t.appTitleShort : t.appTitle}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Tooltip title={`${unreadEvents} live events`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Tooltip title={`${unreadEvents} ${t.liveEvents}`}>
               <Badge count={Math.min(unreadEvents, 99)} size="small">
                 <WifiOutlined style={{ fontSize: 18, color: '#52c41a', cursor: 'pointer' }} />
               </Badge>
             </Tooltip>
-            <Tooltip title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <Tooltip title={darkMode ? t.switchLight : t.switchDark}>
               <Switch
                 checked={darkMode}
                 onChange={toggleDark}
                 checkedChildren={<BulbFilled />}
                 unCheckedChildren={<BulbOutlined />}
               />
+            </Tooltip>
+            <Tooltip title={t.langToggle}>
+              <Button
+                size="small"
+                icon={<TranslationOutlined />}
+                onClick={() => setLang(lang === 'en' ? 'zh' : 'en')}
+                style={{ fontWeight: 600, minWidth: 56 }}
+              >
+                {t.langToggle}
+              </Button>
             </Tooltip>
           </div>
         </Header>

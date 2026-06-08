@@ -1,0 +1,111 @@
+{
+  "skill_id": "deprecate_low_utility_skill",
+  "name": "deprecate_low_utility_skill",
+  "version": "1.0.0",
+  "display_name": "Deprecate Low Utility Skill",
+  "description": "Decide whether a low-utility Skill should be deprecated.",
+  "tags": [
+    "meta",
+    "deprecation",
+    "maintenance",
+    "strategic"
+  ],
+  "skill_type": "strategic",
+  "meta_category": "lifecycle",
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S4",
+  "created_at": "2026-06-05T10:33:31.365278",
+  "updated_at": "2026-06-05T10:33:31.478030",
+  "released_at": "2026-06-05T10:33:31.366285",
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "skill_name": {
+          "type": "string",
+          "description": ""
+        },
+        "usage_count": {
+          "type": "integer",
+          "description": ""
+        },
+        "success_rate": {
+          "type": "number",
+          "description": ""
+        },
+        "last_used_days_ago": {
+          "type": "integer",
+          "description": ""
+        }
+      },
+      "required": [
+        "skill_name",
+        "usage_count",
+        "success_rate"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "should_deprecate": {
+          "type": "boolean",
+          "description": ""
+        },
+        "reason": {
+          "type": "string",
+          "description": ""
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": null,
+    "prompt_template": "Evaluate whether Skill '{skill_name}' should be deprecated.\n\nUsage count: {usage_count}\nSuccess rate: {success_rate}\nLast used days ago: {last_used_days_ago}\n\nReturn JSON: {\"should_deprecate\": false, \"reason\": \"...\"}.",
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [],
+    "test_case_refs": [],
+    "benchmark_task_ids": [],
+    "validation_summary": null,
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 22,
+    "success_count": 20,
+    "failure_count": 2,
+    "avg_latency_ms": 154.54545454545453,
+    "p95_latency_ms": 0.0,
+    "last_used_at": "2026-06-05T10:33:31.366285",
+    "last_success_at": "2026-06-05T10:33:31.366285",
+    "last_failure_at": "2026-06-05T10:33:31.366285",
+    "success_rate": 0.9090909090909091,
+    "total_executions": 22,
+    "successful_executions": 20,
+    "failed_executions": 2
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {}
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

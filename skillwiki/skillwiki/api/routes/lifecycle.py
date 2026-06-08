@@ -44,7 +44,7 @@ from ...models.skill_model import Skill, SkillState
 from ...models.skill_model import EdgeType
 
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
-_AUDITED_TARGET_STATES = {SkillState.VERIFIED, SkillState.RELEASED, SkillState.DEGRADED}
+_AUDITED_TARGET_STATES = {SkillState.VERIFIED, SkillState.RELEASED}
 
 
 def _to_summary(skill):
@@ -123,7 +123,7 @@ async def release_skill(
     try:
         skill = await app.wiki.get(skill_id)
         if not skill:
-            raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+            raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
         _audit_skill_for_target_state(app, skill, SkillState.RELEASED)
         if skill.state == SkillState.DRAFT:
             await app.wiki.transition_state(skill_id, SkillState.VERIFIED)
@@ -181,7 +181,7 @@ async def review_skill(
 ) -> dict:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
     result = await app.reviewer.review(skill)
     return {
         "review_id": result.review_id,
@@ -203,7 +203,7 @@ async def review_and_release(
 ) -> SkillSummary:
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
     try:
         released = await app.reviewer.review_and_release(skill, app.wiki)
     except Exception as e:
@@ -219,7 +219,7 @@ async def record_execution(
     app: AppState = Depends(get_app_state),
 ) -> OKResponse:
     await app.wiki.record_execution(skill_id, success, latency_ms)
-    return OKResponse(message="执行记录已更新")
+    return OKResponse(message="Execution record updated")
 
 
 @router.get("/{skill_id}/diff", response_model=Dict[str, Any])
@@ -234,14 +234,14 @@ async def get_skill_diff(
     """
     skill = await app.wiki.get(skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
 
     history = app.version_ctrl.get_history(skill_id) if app.version_ctrl else []
 
     if compare_to:
         other = await app.wiki.get(compare_to)
         if not other:
-            raise HTTPException(status_code=404, detail=f"对比 Skill {compare_to} 不存在")
+            raise HTTPException(status_code=404, detail=f"Comparison skill {compare_to} not found")
         if other.name == skill.name and hasattr(app.wiki, "diff_versions"):
             try:
                 raw_diff = await app.wiki.diff_versions(skill.name, other.version, skill.version)

@@ -1,0 +1,123 @@
+{
+  "skill_id": "demo_draft_extract_email",
+  "name": "demo_draft_extract_email",
+  "version": "1.0.0",
+  "display_name": "Demo Draft Extract Email",
+  "description": "Extract an email address from text; intentionally starts broken so the harness loop can repair and verify it.",
+  "tags": [
+    "demo",
+    "harness",
+    "verification",
+    "repair"
+  ],
+  "skill_type": "atomic",
+  "meta_category": null,
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S2",
+  "created_at": "2026-06-05T10:33:35.836198",
+  "updated_at": "2026-06-05T10:33:35.964982",
+  "released_at": null,
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": ""
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": ""
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [
+      "output.email must exist"
+    ],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": "output[\"summary\"] = input_data.get(\"text\", \"\")",
+    "prompt_template": null,
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [
+    {
+      "test_id": "demo_extract_email_case",
+      "name": "extract_email_from_contact_text",
+      "description": "Extracts a required email field from contact text.",
+      "input_data": {
+        "text": "Contact Ada at ada@example.com",
+        "email": "ada@example.com"
+      },
+      "expected_output": {
+        "email": "ada@example.com"
+      },
+      "expected_state_changes": {},
+      "tags": [],
+      "is_regression": false
+    }
+  ],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [
+      {
+        "type": "json_exists",
+        "path": "output.email"
+      }
+    ],
+    "test_case_refs": [
+      "demo_extract_email_case"
+    ],
+    "benchmark_task_ids": [
+      "demo_harness_extract_email"
+    ],
+    "validation_summary": "Draft intentionally fails until harness repair adds output.email.",
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 0,
+    "success_count": 0,
+    "failure_count": 0,
+    "avg_latency_ms": 0.0,
+    "p95_latency_ms": 0.0,
+    "last_used_at": null,
+    "last_success_at": null,
+    "last_failure_at": null,
+    "success_rate": 0.0,
+    "total_executions": 0,
+    "successful_executions": 0,
+    "failed_executions": 0
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {
+      "paper_method": "CoEvoSkills/Voyager-style execution-feedback repair loop",
+      "demo_harness_case": true
+    }
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

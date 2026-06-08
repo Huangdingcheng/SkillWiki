@@ -1,0 +1,28 @@
+{
+  "name": "test_graph_review_output",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "test_graph_review_output",
+      "state": "S4",
+      "skill_type": "functional",
+      "domain": "general",
+      "display_name": "Test Graph Review Output",
+      "description": "Test graph node: review demo output and record feedback.",
+      "tags": [
+        "test",
+        "graph",
+        "review"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:34Z",
+      "updated_at": "2026-06-05T10:33:34Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:34Z",
+  "updated_at": "2026-06-05T10:33:34Z"
+}

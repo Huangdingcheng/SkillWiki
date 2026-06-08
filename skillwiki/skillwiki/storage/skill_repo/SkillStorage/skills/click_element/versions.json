@@ -1,0 +1,28 @@
+{
+  "name": "click_element",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "click_element",
+      "state": "S4",
+      "skill_type": "atomic",
+      "domain": "general",
+      "display_name": "Click Element",
+      "description": "Click a target element on a web page.",
+      "tags": [
+        "web",
+        "ui",
+        "interaction"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:24Z",
+      "updated_at": "2026-06-05T10:33:24Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:24Z",
+  "updated_at": "2026-06-05T10:33:24Z"
+}

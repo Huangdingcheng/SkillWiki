@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { SkillSummary, SystemHealth } from '@/api/types'
 
+export type AppLang = 'en' | 'zh'
+
 export interface WsEvent {
   type: string
   payload: unknown
@@ -11,6 +13,10 @@ interface AppStore {
   // Theme
   darkMode: boolean
   toggleDark: () => void
+
+  // Language
+  lang: AppLang
+  setLang: (lang: AppLang) => void
 
   // Skill list cache
   skills: SkillSummary[]
@@ -33,6 +39,9 @@ interface AppStore {
 export const useAppStore = create<AppStore>((set) => ({
   darkMode: false,
   toggleDark: () => set(s => ({ darkMode: !s.darkMode })),
+
+  lang: 'en',
+  setLang: (lang) => set({ lang }),
 
   skills: [],
   setSkills: (skills) => set({ skills }),

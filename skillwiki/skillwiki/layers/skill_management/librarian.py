@@ -59,7 +59,7 @@ class SkillLibrarianAgent:
                 result.wiki_updated = True
                 logger.info(f"Librarian: Wiki 已更新 {skill.name}")
             except Exception as exc:
-                result.errors.append(f"Wiki 更新失败: {exc}")
+                result.errors.append(f"Wiki update failed: {exc}")
 
         # 更新 Graph（确保节点存在）
         if self._graph:
@@ -75,7 +75,7 @@ class SkillLibrarianAgent:
                 result.graph_updated = True
                 logger.info(f"Librarian: Graph 节点已更新 {skill.name}")
             except Exception as exc:
-                result.errors.append(f"Graph 更新失败: {exc}")
+                result.errors.append(f"Graph update failed: {exc}")
 
         # 记录版本变更
         if self._version_ctrl and change_summary:

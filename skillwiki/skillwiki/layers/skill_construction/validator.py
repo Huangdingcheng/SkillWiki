@@ -89,9 +89,9 @@ class ValidationResult:
 
     def summary(self) -> str:
         lines = [
-            f"验证结果: {'通过' if self.is_valid else '失败'}",
-            f"综合评分: {self.overall_score:.2f}",
-            f"错误: {len(self.errors)}, 警告: {len(self.warnings)}",
+            f"Validation result: {'passed' if self.is_valid else 'failed'}",
+            f"Overall score: {self.overall_score:.2f}",
+            f"Errors: {len(self.errors)}, warnings: {len(self.warnings)}",
         ]
         for issue in self.issues:
             prefix = "❌" if issue["severity"] == "error" else "⚠️"
@@ -189,14 +189,12 @@ class SkillValidator:
         # 名称检查
         checks["name_valid"] = bool(skill.name and len(skill.name) >= 3)
         if not checks["name_valid"]:
-            issues.append({"severity": "error", "field": "name", "message": "名称过短或为空"})
+            issues.append({"severity": "error", "field": "name", "message": "Name is too short or empty"})
 
-        # 描述检查
         checks["description_present"] = len(skill.description) >= 10
         if not checks["description_present"]:
-            issues.append({"severity": "warning", "field": "description", "message": "描述过短"})
+            issues.append({"severity": "warning", "field": "description", "message": "Description is too short"})
 
-        # 接口检查
         input_ok, input_errors = validate_skill_schema(skill.interface.input_schema)
         checks["input_schema_valid"] = input_ok
         for err in input_errors:
@@ -207,15 +205,13 @@ class SkillValidator:
         for err in output_errors:
             issues.append({"severity": "warning", "field": "interface.output_schema", "message": err})
 
-        # 前置/后置条件
         checks["has_preconditions"] = len(skill.interface.preconditions) > 0
         if not checks["has_preconditions"]:
-            issues.append({"severity": "info", "field": "interface.preconditions", "message": "建议添加前置条件"})
+            issues.append({"severity": "info", "field": "interface.preconditions", "message": "Consider adding preconditions"})
 
-        # 实现检查
         checks["has_implementation"] = skill.implementation is not None
         if not checks["has_implementation"]:
-            issues.append({"severity": "error", "field": "implementation", "message": "缺少实现"})
+            issues.append({"severity": "error", "field": "implementation", "message": "Missing implementation"})
         elif skill.implementation:
             impl = skill.implementation
             if impl.code:
@@ -225,25 +221,23 @@ class SkillValidator:
                     issues.append({
                         "severity": "error",
                         "field": "implementation.code",
-                        "message": f"代码语法错误: {syntax_err}",
+                        "message": f"Syntax error: {syntax_err}",
                     })
-            # Functional Skill 必须有 sub_skill_ids
             if skill.skill_type == SkillType.FUNCTIONAL:
                 checks["functional_has_subs"] = len(impl.sub_skill_ids) > 0
                 if not checks["functional_has_subs"]:
                     issues.append({
                         "severity": "warning",
                         "field": "implementation.sub_skill_ids",
-                        "message": "Composite Skill 建议指定子 Skill ID",
+                        "message": "Composite Skill should specify sub-skill IDs",
                     })
 
-        # 测试用例检查
         checks["has_test_cases"] = len(skill.test_cases) >= self._min_test_cases
         if self._require_test_cases and not checks["has_test_cases"]:
             issues.append({
                 "severity": "warning",
                 "field": "test_cases",
-                "message": f"建议至少提供 {self._min_test_cases} 个测试用例",
+                "message": f"Recommend at least {self._min_test_cases} test case(s)",
             })
 
         return issues, checks

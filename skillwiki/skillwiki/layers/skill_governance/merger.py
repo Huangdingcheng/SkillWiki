@@ -177,7 +177,7 @@ class SkillMerger:
 
         data = self._extract_json(response.content)
         if not data:
-            result.error = "LLM 返回无效响应"
+            result.error = "Invalid LLM response"
             return result
 
         try:
@@ -205,7 +205,7 @@ class SkillMerger:
                     target_id=source_id,
                     edge_type=EdgeType.REPLACES,
                     weight=1.0,
-                    description=f"合并替代: {result.rationale[:100]}",
+                    description=f"merge replaces: {result.rationale[:100]}",
                 ))
 
             similarity = _bounded_weight(data.get("similarity", data.get("confidence")), default=0.8)
@@ -257,7 +257,7 @@ class SkillMerger:
 
         data = self._extract_json(response.content)
         if not data or "sub_skills" not in data:
-            result.error = "LLM 返回无效响应"
+            result.error = "Invalid LLM response"
             return result
 
         try:
@@ -284,7 +284,7 @@ class SkillMerger:
                     target_id=skill.skill_id,
                     edge_type=EdgeType.EVOLVED_FROM,
                     weight=1.0,
-                    description=f"拆分自: {skill.name}",
+                    description=f"split from: {skill.name}",
                 ))
                 result.edges_to_create.append(SkillEdge(
                     edge_id=f"maintenance:split:composes_with:{skill.skill_id}:{sub.skill_id}",
@@ -337,7 +337,7 @@ class SkillMerger:
                 )
             except Exception:
                 implementation = SkillImplementation(
-                    prompt_template=data.get("description", "执行操作")
+                    prompt_template=data.get("description", "execute task")
                 )
 
         name_key = f"merged_name" if source == "merged" else "name"
@@ -366,15 +366,15 @@ class SkillMerger:
 
     def _impl_summary(self, skill: Skill) -> str:
         if not skill.implementation:
-            return "无实现"
+            return "no implementation"
         impl = skill.implementation
         if impl.code:
-            return f"代码: {impl.code[:200]}"
+            return f"code: {impl.code[:200]}"
         if impl.prompt_template:
             return f"Prompt: {impl.prompt_template[:200]}"
         if impl.sub_skill_ids:
-            return f"组合子 Skill: {impl.sub_skill_ids}"
-        return "无实现"
+            return f"composite sub-skills: {impl.sub_skill_ids}"
+        return "no implementation"
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
         text = text.strip()

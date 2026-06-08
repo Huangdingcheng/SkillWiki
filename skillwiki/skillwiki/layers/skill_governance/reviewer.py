@@ -186,7 +186,7 @@ class SkillReviewer:
         data = self._extract_json(response.content)
         if not data:
             result.status = ReviewStatus.NEEDS_REVISION
-            result.summary = "审核服务暂时不可用，请稍后重试"
+            result.summary = "Review service temporarily unavailable, please try again later"
             return result
 
         result.overall_score = data.get("overall_score", 5.0)

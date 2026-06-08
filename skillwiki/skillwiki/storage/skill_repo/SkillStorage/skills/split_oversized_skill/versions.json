@@ -1,0 +1,29 @@
+{
+  "name": "split_oversized_skill",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "split_oversized_skill",
+      "state": "S4",
+      "skill_type": "strategic",
+      "domain": "general",
+      "display_name": "Split Oversized Skill",
+      "description": "Split an oversized Skill into smaller child Skills.",
+      "tags": [
+        "meta",
+        "split",
+        "decomposition",
+        "strategic"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:30Z",
+      "updated_at": "2026-06-05T10:33:30Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:30Z",
+  "updated_at": "2026-06-05T10:33:30Z"
+}

@@ -31,7 +31,7 @@ async def execute_skill(
 ) -> ExecutionResult:
     skill = await app.wiki.get(req.skill_id)
     if not skill:
-        raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} not found")
 
     app.state_tracker.update(req.context)
     t0 = time.monotonic()
@@ -93,7 +93,7 @@ async def execute_skill(
     )
     return ExecutionResult(
         plan_id=execution_id,
-        goal=f"执行 {skill.name}",
+        goal=f"Execute {skill.name}",
         status=status,
         steps=[step],
         total_latency_ms=latency,
@@ -307,7 +307,7 @@ async def reset_state(
 ) -> dict:
     from ...layers.skill_runtime.state_tracker import StateTracker
     app.state_tracker = StateTracker(task_id="session")
-    return {"ok": True, "message": "状态已重置"}
+    return {"ok": True, "message": "State reset"}
 
 
 def _format_match_reason(search_result: Any) -> str:

@@ -1,0 +1,29 @@
+{
+  "name": "demo_draft_extract_email",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "demo_draft_extract_email",
+      "state": "S2",
+      "skill_type": "atomic",
+      "domain": "general",
+      "display_name": "Demo Draft Extract Email",
+      "description": "Extract an email address from text; intentionally starts broken so the harness loop can repair and verify it.",
+      "tags": [
+        "demo",
+        "harness",
+        "verification",
+        "repair"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:35Z",
+      "updated_at": "2026-06-05T10:33:35Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:35Z",
+  "updated_at": "2026-06-05T10:33:35Z"
+}

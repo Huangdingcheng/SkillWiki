@@ -1,0 +1,97 @@
+{
+  "skill_id": "type_text",
+  "name": "type_text",
+  "version": "1.0.0",
+  "display_name": "Type Text",
+  "description": "Type text into an input field.",
+  "tags": [
+    "web",
+    "ui",
+    "input"
+  ],
+  "skill_type": "atomic",
+  "meta_category": null,
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S4",
+  "created_at": "2026-06-05T10:33:25.866936",
+  "updated_at": "2026-06-05T10:33:25.981149",
+  "released_at": "2026-06-05T10:33:25.868440",
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text to type"
+        }
+      },
+      "required": [
+        "selector",
+        "text"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Whether the text was entered"
+        }
+      }
+    },
+    "preconditions": [],
+    "postconditions": [],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "python",
+    "code": "output[\"success\"] = True  # Simulated typing",
+    "prompt_template": null,
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [],
+    "test_case_refs": [],
+    "benchmark_task_ids": [],
+    "validation_summary": null,
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 22,
+    "success_count": 20,
+    "failure_count": 2,
+    "avg_latency_ms": 154.54545454545453,
+    "p95_latency_ms": 0.0,
+    "last_used_at": "2026-06-05T10:33:25.868440",
+    "last_success_at": "2026-06-05T10:33:25.868440",
+    "last_failure_at": "2026-06-05T10:33:25.868440",
+    "success_rate": 0.9090909090909091,
+    "total_executions": 22,
+    "successful_executions": 20,
+    "failed_executions": 2
+  },
+  "provenance": {
+    "source_type": "demo",
+    "source_ids": [],
+    "parent_skill_ids": [],
+    "created_by_agent": "system",
+    "creation_context": {}
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

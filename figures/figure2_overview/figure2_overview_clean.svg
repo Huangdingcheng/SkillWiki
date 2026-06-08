@@ -1,0 +1,205 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="896" viewBox="0 0 2048 896">
+  <rect x="0" y="0" width="2048" height="896" fill="rgb(255,255,255)"/>
+  <defs>
+    <style>
+      text { font-family: "Comic Sans MS", "Trebuchet MS", "Verdana", sans-serif; fill: #111111; }
+      .title { font-size: 28px; font-weight: 700; }
+      .label { font-size: 21px; font-weight: 700; }
+      .small { font-size: 17px; font-weight: 600; }
+      .tiny { font-size: 14px; font-weight: 600; }
+      .blue { stroke: #1f5fd1; }
+      .teal { stroke: #0f8f83; }
+      .green { stroke: #169447; }
+      .purple { stroke: #7b4cc2; }
+      .amber { stroke: #d98a00; }
+      .coral { stroke: #df4d3f; }
+      .box { fill: #ffffff; stroke-width: 4; }
+      .card { fill: #ffffff; stroke-width: 3; }
+      .line { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+      .dash { fill: none; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 12 10; }
+    </style>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f5fd1"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f8f83"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#169447"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7b4cc2"/>
+    </marker>
+  </defs>
+
+  <!-- Knowledge layer -->
+  <rect class="box teal" x="40" y="180" width="255" height="536" rx="18"/>
+  <text class="title" x="72" y="222">Knowledge Layer</text>
+  <g class="small">
+    <rect class="card teal" x="66" y="250" width="205" height="54" rx="12"/>
+    <text x="118" y="284">trajectories</text>
+    <circle cx="92" cy="277" r="13" fill="#ffffff" stroke="#0f8f83" stroke-width="3"/>
+    <rect class="card teal" x="66" y="318" width="205" height="54" rx="12"/>
+    <text x="118" y="352">documents</text>
+    <path d="M84 335 h22 v28 h-22 z M106 335 l10 8 v20 h-10 z" fill="#ffffff" stroke="#0f8f83" stroke-width="3"/>
+    <rect class="card teal" x="66" y="386" width="205" height="54" rx="12"/>
+    <text x="118" y="420">API specs</text>
+    <text x="84" y="423" font-size="30" fill="#0f8f83">{}</text>
+    <rect class="card teal" x="66" y="454" width="205" height="54" rx="12"/>
+    <text x="118" y="488">scripts</text>
+    <text x="84" y="491" font-size="29" fill="#0f8f83">&lt;/&gt;</text>
+    <rect class="card teal" x="66" y="522" width="205" height="54" rx="12"/>
+    <text x="118" y="556">past skills</text>
+    <path d="M84 536 q14 -8 28 0 v32 q-14 -8 -28 0 z M112 536 q14 -8 28 0 v32 q-14 -8 -28 0 z" fill="#ffffff" stroke="#0f8f83" stroke-width="3"/>
+    <rect class="card teal" x="66" y="590" width="205" height="54" rx="12"/>
+    <text x="118" y="624">agent executions</text>
+    <circle cx="94" cy="616" r="15" fill="#ffffff" stroke="#0f8f83" stroke-width="3"/>
+    <circle cx="89" cy="614" r="2" fill="#0f8f83"/>
+    <circle cx="99" cy="614" r="2" fill="#0f8f83"/>
+  </g>
+
+  <!-- Construction -->
+  <rect class="box purple" x="330" y="132" width="365" height="360" rx="20"/>
+  <text class="title" x="366" y="172">Knowledge-Grounded</text>
+  <text class="title" x="402" y="205">Skill Construction</text>
+  <g>
+    <rect class="card purple" x="382" y="235" width="245" height="50" rx="12"/>
+    <text class="small" x="470" y="267">extract</text>
+    <circle cx="426" cy="260" r="16" fill="#ffffff" stroke="#7b4cc2" stroke-width="3"/>
+    <rect class="card purple" x="382" y="308" width="245" height="50" rx="12"/>
+    <text class="small" x="458" y="340">normalize</text>
+    <path d="M416 323 h38 M416 340 h38 M430 316 v16 M444 333 v16" stroke="#7b4cc2" stroke-width="3" fill="none"/>
+    <rect class="card purple" x="382" y="381" width="245" height="50" rx="12"/>
+    <text class="small" x="460" y="413">construct</text>
+    <path d="M432 395 l20 10 v22 l-20 10 l-20 -10 v-22 z" fill="#ffffff" stroke="#7b4cc2" stroke-width="3"/>
+    <rect class="card purple" x="382" y="454" width="245" height="50" rx="12"/>
+    <text class="small" x="482" y="486">audit</text>
+    <path d="M426 466 l18 8 v20 q-8 16 -18 18 q-10 -2 -18 -18 v-20 z" fill="#ffffff" stroke="#7b4cc2" stroke-width="3"/>
+    <path class="line purple" d="M505 286 v20" marker-end="url(#arrowPurple)"/>
+    <path class="line purple" d="M505 359 v20" marker-end="url(#arrowPurple)"/>
+    <path class="line purple" d="M505 432 v20" marker-end="url(#arrowPurple)"/>
+  </g>
+
+  <!-- SkillWiki core -->
+  <rect class="box blue" x="745" y="206" width="635" height="430" rx="22"/>
+  <text class="title" x="970" y="244" fill="#1f5fd1">SkillWiki Core</text>
+
+  <rect class="card blue" x="780" y="270" width="585" height="105" rx="16"/>
+  <text class="label" x="950" y="300" fill="#1f5fd1">Skill Assets</text>
+  <rect class="card blue" x="812" y="318" width="120" height="42" rx="9"/>
+  <text class="tiny" x="834" y="345">interface</text>
+  <rect class="card blue" x="956" y="318" width="150" height="42" rx="9"/>
+  <text class="tiny" x="972" y="345">implementation</text>
+  <rect class="card blue" x="1130" y="318" width="130" height="42" rx="9"/>
+  <text class="tiny" x="1150" y="345">evaluation</text>
+  <rect class="card blue" x="1280" y="318" width="120" height="42" rx="9"/>
+  <text class="tiny" x="1298" y="345">provenance</text>
+
+  <rect class="card blue" x="780" y="398" width="585" height="108" rx="16"/>
+  <text class="label" x="945" y="429" fill="#1f5fd1">Provenance Graph</text>
+  <circle cx="875" cy="463" r="18" fill="#ffffff" stroke="#0f8f83" stroke-width="4"/>
+  <circle cx="1010" cy="463" r="22" fill="#ffffff" stroke="#1f5fd1" stroke-width="4"/>
+  <circle cx="1160" cy="463" r="20" fill="#ffffff" stroke="#169447" stroke-width="4"/>
+  <circle cx="1300" cy="463" r="18" fill="#ffffff" stroke="#d98a00" stroke-width="4"/>
+  <path class="line teal" d="M893 463 h82" marker-end="url(#arrowTeal)"/>
+  <path class="line blue" d="M1032 463 h120" marker-end="url(#arrowBlue)"/>
+  <path class="line green" d="M1180 463 h112" marker-end="url(#arrowGreen)"/>
+  <text class="tiny" x="854" y="494">source</text>
+  <text class="tiny" x="995" y="494">skill</text>
+  <text class="tiny" x="1135" y="494">validation</text>
+  <text class="tiny" x="1280" y="494">version</text>
+
+  <rect class="card blue" x="780" y="528" width="585" height="78" rx="16"/>
+  <text class="label" x="936" y="558" fill="#1f5fd1">Lifecycle states</text>
+  <g class="tiny">
+    <rect class="card amber" x="812" y="570" width="94" height="35" rx="8"/>
+    <text x="826" y="593">S1 Candidate</text>
+    <rect class="card purple" x="928" y="570" width="80" height="35" rx="8"/>
+    <text x="946" y="593">S2 Draft</text>
+    <rect class="card green" x="1030" y="570" width="95" height="35" rx="8"/>
+    <text x="1042" y="593">S3 Verified</text>
+    <rect class="card blue" x="1148" y="570" width="95" height="35" rx="8"/>
+    <text x="1159" y="593">S4 Released</text>
+    <rect class="card coral" x="1265" y="570" width="95" height="35" rx="8"/>
+    <text x="1275" y="593">S5 Degraded</text>
+  </g>
+
+  <!-- Task agents -->
+  <rect class="box blue" x="735" y="34" width="990" height="135" rx="18"/>
+  <text class="title" x="1088" y="70" fill="#1f5fd1">Task Execution Agents</text>
+  <g class="small">
+    <rect class="card blue" x="775" y="92" width="145" height="48" rx="11"/><text x="805" y="123">Retriever</text>
+    <rect class="card blue" x="960" y="92" width="135" height="48" rx="11"/><text x="990" y="123">Planner</text>
+    <rect class="card blue" x="1135" y="92" width="140" height="48" rx="11"/><text x="1162" y="123">Executor</text>
+    <rect class="card blue" x="1315" y="92" width="130" height="48" rx="11"/><text x="1344" y="123">Verifier</text>
+    <rect class="card blue" x="1485" y="92" width="135" height="48" rx="11"/><text x="1502" y="123">Reflection</text>
+  </g>
+  <path class="line blue" d="M920 116 h38" marker-end="url(#arrowBlue)"/>
+  <path class="line blue" d="M1095 116 h38" marker-end="url(#arrowBlue)"/>
+  <path class="line blue" d="M1275 116 h38" marker-end="url(#arrowBlue)"/>
+  <path class="line blue" d="M1445 116 h38" marker-end="url(#arrowBlue)"/>
+
+  <!-- Self-management agents -->
+  <rect class="box green" x="735" y="690" width="990" height="135" rx="18"/>
+  <text class="title" x="1070" y="728" fill="#169447">Self-Management Agents</text>
+  <g class="small">
+    <rect class="card green" x="775" y="750" width="125" height="48" rx="11"/><text x="812" y="781">Builder</text>
+    <rect class="card green" x="940" y="750" width="125" height="48" rx="11"/><text x="975" y="781">Auditor</text>
+    <rect class="card green" x="1105" y="750" width="125" height="48" rx="11"/><text x="1137" y="781">Monitor</text>
+    <rect class="card green" x="1270" y="750" width="135" height="48" rx="11"/><text x="1300" y="781">Maintainer</text>
+    <rect class="card green" x="1445" y="750" width="125" height="48" rx="11"/><text x="1480" y="781">Librarian</text>
+  </g>
+  <path class="line green" d="M900 774 h38" marker-end="url(#arrowGreen)"/>
+  <path class="line green" d="M1065 774 h38" marker-end="url(#arrowGreen)"/>
+  <path class="line green" d="M1230 774 h38" marker-end="url(#arrowGreen)"/>
+  <path class="line green" d="M1405 774 h38" marker-end="url(#arrowGreen)"/>
+
+  <!-- Governance and ecosystem -->
+  <rect class="box purple" x="1435" y="245" width="190" height="350" rx="18"/>
+  <text class="label" x="1460" y="285" fill="#7b4cc2">Git-style</text>
+  <text class="label" x="1460" y="313" fill="#7b4cc2">governance</text>
+  <rect class="card purple" x="1462" y="345" width="135" height="42" rx="10"/><text class="tiny" x="1490" y="372">Snapshot</text>
+  <rect class="card purple" x="1462" y="405" width="135" height="42" rx="10"/><text class="tiny" x="1510" y="432">Diff</text>
+  <rect class="card purple" x="1462" y="465" width="135" height="42" rx="10"/><text class="tiny" x="1499" y="492">Release</text>
+  <rect class="card purple" x="1462" y="525" width="135" height="42" rx="10"/><text class="tiny" x="1495" y="552">Rollback</text>
+
+  <rect class="box green" x="1680" y="210" width="315" height="455" rx="20"/>
+  <text class="label" x="1720" y="250" fill="#169447">Governed Skill</text>
+  <text class="label" x="1745" y="278" fill="#169447">Ecosystem</text>
+  <g class="tiny">
+    <rect class="card green" x="1710" y="305" width="110" height="44" rx="9"/><text x="1732" y="333">Skill A</text>
+    <rect class="card green" x="1840" y="305" width="120" height="44" rx="9"/><text x="1856" y="333">S1 Candidate</text>
+    <rect class="card green" x="1710" y="370" width="110" height="44" rx="9"/><text x="1732" y="398">Skill B</text>
+    <rect class="card green" x="1840" y="370" width="95" height="44" rx="9"/><text x="1859" y="398">S2 Draft</text>
+    <rect class="card green" x="1710" y="435" width="110" height="44" rx="9"/><text x="1732" y="463">Skill C</text>
+    <rect class="card green" x="1840" y="435" width="110" height="44" rx="9"/><text x="1852" y="463">S3 Verified</text>
+    <rect class="card blue" x="1710" y="500" width="110" height="44" rx="9"/><text x="1732" y="528">Skill D</text>
+    <rect class="card blue" x="1840" y="500" width="112" height="44" rx="9"/><text x="1850" y="528">S4 Released</text>
+    <rect class="card coral" x="1710" y="565" width="110" height="44" rx="9"/><text x="1732" y="593">Skill E</text>
+    <rect class="card coral" x="1840" y="565" width="118" height="44" rx="9"/><text x="1848" y="593">S6 Deprecated</text>
+  </g>
+
+  <!-- Arrows main flow -->
+  <path class="line teal" d="M295 448 h120" marker-end="url(#arrowTeal)"/>
+  <path class="line purple" d="M695 382 h48" marker-end="url(#arrowPurple)"/>
+  <path class="line purple" d="M1380 410 h50" marker-end="url(#arrowPurple)"/>
+  <path class="line purple" d="M1625 410 h55" marker-end="url(#arrowPurple)"/>
+  <path class="line blue" d="M420 448 h0"/>
+
+  <!-- Released skills to task agents -->
+  <text class="small" x="520" y="90" fill="#1f5fd1">S4 Released skills</text>
+  <path class="line blue" d="M710 90 h25" marker-end="url(#arrowBlue)"/>
+  <path class="line blue" d="M1228 170 v34" marker-end="url(#arrowBlue)"/>
+  <path class="line green" d="M1228 636 v52" marker-end="url(#arrowGreen)"/>
+
+  <!-- Feedback loop -->
+  <path class="line blue" d="M1620 116 h145 v135" marker-end="url(#arrowBlue)"/>
+  <text class="small" x="1778" y="146" fill="#1f5fd1">Execution</text>
+  <text class="small" x="1778" y="172" fill="#1f5fd1">feedback</text>
+  <path class="line blue" d="M1995 445 h35 v350 h-305" marker-end="url(#arrowBlue)"/>
+  <rect class="card amber" x="1750" y="748" width="190" height="50" rx="12"/>
+  <text class="small" x="1765" y="779">Maintenance proposal</text>
+  <rect class="card green" x="1750" y="810" width="190" height="50" rx="12"/>
+  <text class="small" x="1760" y="841">Repaired skill version</text>
+  <path class="line green" d="M1735 812 h-110 v-218" marker-end="url(#arrowGreen)"/>
+</svg>

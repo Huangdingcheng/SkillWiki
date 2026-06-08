@@ -35,7 +35,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     try:
         await websocket.send_text(json.dumps({
             "event": "connected",
-            "data": {"message": "SkillWiki WebSocket 已连接", "connections": len(_connections)},
+            "data": {"message": "SkillWiki WebSocket connected", "connections": len(_connections)},
         }))
         while True:
             # 保持连接，接收 ping/命令

@@ -1,0 +1,29 @@
+{
+  "name": "generate_skill_from_trajectory",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "generate_skill_from_trajectory",
+      "state": "S4",
+      "skill_type": "strategic",
+      "domain": "general",
+      "display_name": "Generate Skill From Trajectory",
+      "description": "Extract a reusable Skill from an execution trajectory.",
+      "tags": [
+        "meta",
+        "generation",
+        "trajectory",
+        "strategic"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:27Z",
+      "updated_at": "2026-06-05T10:33:27Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:27Z",
+  "updated_at": "2026-06-05T10:33:27Z"
+}

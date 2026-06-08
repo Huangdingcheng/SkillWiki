@@ -1,6 +1,6 @@
 {
   "schema_version": "skillos.maintenance_store.v1",
-  "updated_at": "2026-06-02T23:44:55.053953+00:00",
+  "updated_at": "2026-06-04T15:15:41.659031+00:00",
   "items": [
     {
       "proposal_id": "098e97ca-b8de-4005-8bca-eeb5c153982f",
@@ -8,15 +8,15 @@
       "trigger": "low_success_rate",
       "recommended_action": "repair",
       "evidence": [
-        "成功率严重偏低: 20.0%"
+        "Critically low success rate: 20.0%"
       ],
-      "root_cause": "成功率严重偏低: 20.0%",
-      "patch_hint": "立即修复或废弃该 Skill",
+      "root_cause": "Critically low success rate: 20.0%",
+      "patch_hint": "Fix or deprecate this Skill immediately",
       "feedback_sources": [
         "health_monitor"
       ],
       "targets_to_fix": [
-        "成功率严重偏低: 20.0%"
+        "Critically low success rate: 20.0%"
       ],
       "invariants_to_preserve": [
         "Preserve public Skill inputs, outputs, and successful recent behavior."
@@ -39,6 +39,255 @@
       },
       "created_at": "2026-06-02T23:44:55.053953Z",
       "updated_at": "2026-06-02T23:44:55.053953Z"
+    },
+    {
+      "proposal_id": "dd4ea7d8-c296-49c4-ae44-3d6f9175db37",
+      "skill_id": "repair_failed_skill",
+      "trigger": "low_success_rate",
+      "recommended_action": "repair",
+      "evidence": [
+        "Low success rate: 84.0%"
+      ],
+      "root_cause": "Low success rate: 84.0%",
+      "patch_hint": "Inspect failure causes; consider fixing or updating the implementation",
+      "feedback_sources": [
+        "health_monitor"
+      ],
+      "targets_to_fix": [
+        "Low success rate: 84.0%"
+      ],
+      "invariants_to_preserve": [
+        "Preserve public Skill inputs, outputs, and successful recent behavior."
+      ],
+      "validation_plan": [
+        "Review recent execution history for repeated failure patterns.",
+        "Rerun the affected benchmark or verifier after the proposed change."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.4,
+      "requires_human_review": true,
+      "status": "accepted",
+      "source": "skill_monitor",
+      "metadata": {
+        "health_status": "degraded",
+        "success_rate": 0.84
+      },
+      "created_at": "2026-06-04T13:59:03.210988Z",
+      "updated_at": "2026-06-04T13:59:18.588512Z"
+    },
+    {
+      "proposal_id": "0e7fd3a0-dd6f-441e-8835-a2f1660a8860",
+      "skill_id": "repair_failed_skill",
+      "trigger": "low_success_rate",
+      "recommended_action": "repair",
+      "evidence": [
+        "Low success rate: 84.0%"
+      ],
+      "root_cause": "Low success rate: 84.0%",
+      "patch_hint": "Inspect failure causes; consider fixing or updating the implementation",
+      "feedback_sources": [
+        "health_monitor"
+      ],
+      "targets_to_fix": [
+        "Low success rate: 84.0%"
+      ],
+      "invariants_to_preserve": [
+        "Preserve public Skill inputs, outputs, and successful recent behavior."
+      ],
+      "validation_plan": [
+        "Review recent execution history for repeated failure patterns.",
+        "Rerun the affected benchmark or verifier after the proposed change."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.4,
+      "requires_human_review": true,
+      "status": "accepted",
+      "source": "skill_monitor",
+      "metadata": {
+        "health_status": "degraded",
+        "success_rate": 0.84
+      },
+      "created_at": "2026-06-04T14:23:24.645745Z",
+      "updated_at": "2026-06-04T14:23:41.699609Z"
+    },
+    {
+      "proposal_id": "e7b5290d-d969-4641-97e1-4f24ef5d4a74",
+      "skill_id": "repair_failed_skill",
+      "trigger": "low_success_rate",
+      "recommended_action": "repair",
+      "evidence": [
+        "Low success rate: 84.0%"
+      ],
+      "root_cause": "Low success rate: 84.0%",
+      "patch_hint": "Inspect failure causes; consider fixing or updating the implementation",
+      "feedback_sources": [
+        "health_monitor"
+      ],
+      "targets_to_fix": [
+        "Low success rate: 84.0%"
+      ],
+      "invariants_to_preserve": [
+        "Preserve public Skill inputs, outputs, and successful recent behavior."
+      ],
+      "validation_plan": [
+        "Review recent execution history for repeated failure patterns.",
+        "Rerun the affected benchmark or verifier after the proposed change."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.4,
+      "requires_human_review": true,
+      "status": "pending",
+      "source": "skill_monitor",
+      "metadata": {
+        "health_status": "degraded",
+        "success_rate": 0.84
+      },
+      "created_at": "2026-06-04T14:34:42.322545Z",
+      "updated_at": "2026-06-04T14:34:42.322545Z"
+    },
+    {
+      "proposal_id": "bb0859bd-0634-42bd-a235-461d03c996c3",
+      "skill_id": "repair_failed_skill",
+      "trigger": "runtime_failure",
+      "recommended_action": "repair",
+      "evidence": [
+        "tool_timeout"
+      ],
+      "root_cause": "tool_timeout",
+      "patch_hint": "Review repeated reflection memories for this failure signature and propose a targeted Skill repair through B governance.",
+      "feedback_sources": [
+        "runtime_reflection_memory"
+      ],
+      "targets_to_fix": [
+        "tool_timeout"
+      ],
+      "invariants_to_preserve": [
+        "Preserve successful trajectories and the public Skill interface."
+      ],
+      "validation_plan": [
+        "Replay at least one stored failed trajectory after the candidate repair.",
+        "Confirm the same failure signature no longer appears."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.8999999999999999,
+      "requires_human_review": true,
+      "status": "pending",
+      "source": "runtime_reflection_memory",
+      "metadata": {
+        "paper_method": "SkillClaw recurring failure pattern over Reflexion/ExpeL memory",
+        "failure_signature": "tool_timeout",
+        "reflection_memory_ids": [
+          "a8c50843-daef-4f1c-ba80-09bc9ca41406",
+          "fb40a9b8-6a63-422f-a751-c041ca99b65b",
+          "69080684-5d46-4e59-b2a3-f74807b334f1"
+        ],
+        "occurrence_count": 3,
+        "threshold": 3
+      },
+      "created_at": "2026-06-04T14:34:42.354201Z",
+      "updated_at": "2026-06-04T14:34:42.354201Z"
+    },
+    {
+      "proposal_id": "ea251adf-41f9-4cc2-afce-b8b48d96aeb3",
+      "skill_id": "repair_failed_skill",
+      "trigger": "runtime_failure",
+      "recommended_action": "repair",
+      "evidence": [
+        "api_schema_mismatch"
+      ],
+      "root_cause": "api_schema_mismatch",
+      "patch_hint": "Review repeated reflection memories for this failure signature and propose a targeted Skill repair through B governance.",
+      "feedback_sources": [
+        "runtime_reflection_memory"
+      ],
+      "targets_to_fix": [
+        "api_schema_mismatch"
+      ],
+      "invariants_to_preserve": [
+        "Preserve successful trajectories and the public Skill interface."
+      ],
+      "validation_plan": [
+        "Replay at least one stored failed trajectory after the candidate repair.",
+        "Confirm the same failure signature no longer appears."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.8999999999999999,
+      "requires_human_review": true,
+      "status": "accepted",
+      "source": "runtime_reflection_memory",
+      "metadata": {
+        "paper_method": "SkillClaw recurring failure pattern over Reflexion/ExpeL memory",
+        "failure_signature": "api_schema_mismatch",
+        "reflection_memory_ids": [
+          "07ae3e6f-15f0-4bc3-85ed-2d92a1348509",
+          "c94f9720-0d5a-47a8-9e27-f2cc92e84a98",
+          "c8b2fae5-a17f-44f1-84cd-3261d045427b"
+        ],
+        "occurrence_count": 3,
+        "threshold": 3
+      },
+      "created_at": "2026-06-04T14:34:42.890002Z",
+      "updated_at": "2026-06-04T14:34:43.491211Z"
+    },
+    {
+      "proposal_id": "5abc52a6-4379-426b-9743-d5e39d9f72af",
+      "skill_id": "repair_failed_skill",
+      "trigger": "runtime_failure",
+      "recommended_action": "repair",
+      "evidence": [
+        "api_schema_mismatch"
+      ],
+      "root_cause": "api_schema_mismatch",
+      "patch_hint": "Review repeated reflection memories for this failure signature and propose a targeted Skill repair through B governance.",
+      "feedback_sources": [
+        "runtime_reflection_memory"
+      ],
+      "targets_to_fix": [
+        "api_schema_mismatch"
+      ],
+      "invariants_to_preserve": [
+        "Preserve successful trajectories and the public Skill interface."
+      ],
+      "validation_plan": [
+        "Replay at least one stored failed trajectory after the candidate repair.",
+        "Confirm the same failure signature no longer appears."
+      ],
+      "validation_status": "untested",
+      "attempt_count": 0,
+      "max_attempts": 3,
+      "reviewer_notes": "",
+      "confidence": 0.8999999999999999,
+      "requires_human_review": true,
+      "status": "accepted",
+      "source": "runtime_reflection_memory",
+      "metadata": {
+        "paper_method": "SkillClaw recurring failure pattern over Reflexion/ExpeL memory",
+        "failure_signature": "api_schema_mismatch",
+        "reflection_memory_ids": [
+          "dd332693-7828-47e7-ad40-81e1a9badbfb",
+          "443bdded-592c-4057-8cc3-1c703a94de25",
+          "469f6c8e-8bb5-4ec7-ba5c-a6ea64e221a4"
+        ],
+        "occurrence_count": 3,
+        "threshold": 3
+      },
+      "created_at": "2026-06-04T15:15:41.088771Z",
+      "updated_at": "2026-06-04T15:15:41.659031Z"
     }
   ]
 }

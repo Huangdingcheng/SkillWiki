@@ -1,0 +1,29 @@
+{
+  "name": "update_skill_graph_relation",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "update_skill_graph_relation",
+      "state": "S4",
+      "skill_type": "strategic",
+      "domain": "general",
+      "display_name": "Update Skill Graph Relation",
+      "description": "Validate and update a Skill Graph relation.",
+      "tags": [
+        "meta",
+        "graph",
+        "relations",
+        "strategic"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:32Z",
+      "updated_at": "2026-06-05T10:33:32Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:32Z",
+  "updated_at": "2026-06-05T10:33:32Z"
+}

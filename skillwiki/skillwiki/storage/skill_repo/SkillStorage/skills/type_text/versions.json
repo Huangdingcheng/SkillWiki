@@ -1,0 +1,28 @@
+{
+  "name": "type_text",
+  "latest_version": "1.0.0",
+  "versions": {
+    "1.0.0": {
+      "version": "1.0.0",
+      "skill_id": "type_text",
+      "state": "S4",
+      "skill_type": "atomic",
+      "domain": "general",
+      "display_name": "Type Text",
+      "description": "Type text into an input field.",
+      "tags": [
+        "web",
+        "ui",
+        "input"
+      ],
+      "file": "1.0.0.json",
+      "deleted": false,
+      "created_at": "2026-06-05T10:33:25Z",
+      "updated_at": "2026-06-05T10:33:25Z",
+      "source": "create"
+    }
+  },
+  "deleted": false,
+  "created_at": "2026-06-05T10:33:25Z",
+  "updated_at": "2026-06-05T10:33:25Z"
+}
