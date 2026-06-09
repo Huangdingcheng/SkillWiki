@@ -1,246 +1,229 @@
-# SkillOS - A Skill-Centric Operating System for Self-Evolving Agents
+# SkillWiki — A Living Knowledge Infrastructure for Agent Skills
 
-## 概述
+SkillWiki is a research system that models Skills as versioned, auditable, graph-connected knowledge objects. It supports the full lifecycle from raw knowledge ingestion to governed evolution: S0 (raw) → S1 (candidate) → S2 (draft) → S3 (verified) → S4 (released) → S5 (degraded) → S6 (deprecated) → S7 (archived).
 
-SkillOS 是一个以 Skill 为中心的智能体系统，将 Skill 建模为具备版本、审计、图结构关系和自演化能力的知识对象。
+## Quick Start
 
-### 核心特性
-
-- **可生成**：从任务、轨迹、文档自动生成 Skill
-- **可验证**：通过测试、审计、执行验证 Skill 质量
-- **可组合**：支持 Skill 的横向选择和纵向展开
-- **可版本化**：Git 风格的版本控制和治理
-- **可演化**：自动修复、合并、拆分、淘汰
-
-## 快速开始
-
-### 前置要求
+### Requirements
 
 - Python 3.10+
-- pip 或 conda
+- Node.js 18+ (frontend only)
 
-### 安装
-
-#### Linux/Mac
+### Install
 
 ```bash
-# 克隆仓库
-git clone <repo_url>
-cd skillos
+git clone https://github.com/Huangdingcheng/SkillWiki.git
+cd SkillWiki/skillwiki
 
-# 运行快速启动脚本
-chmod +x quickstart.sh
-./quickstart.sh
-```
-
-#### Windows
-
-```bash
-# 克隆仓库
-git clone <repo_url>
-cd skillos
-
-# 运行快速启动脚本
-quickstart.bat
-```
-
-### 手动安装
-
-```bash
-# 创建虚拟环境
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
+source venv/bin/activate        # Linux/Mac
+venv\Scripts\activate           # Windows
 
-# 安装依赖
 pip install -r requirements.txt
-
-# 初始化配置（需要提供 API key）
-python -m skillos.cli init --api-key "your_api_key_here"
-
-# 测试配置
-python -m skillos.cli test-config --api-key "your_api_key_here"
+pip install -e .
 ```
 
-## 配置
-
-### 命令行参数
-
-所有命令都支持以下参数：
+### Start the backend
 
 ```bash
---api-key TEXT          # LLM API key（必须）
---api-url TEXT          # LLM API URL（默认：https://yunwu.ai）
---model TEXT            # LLM 模型名称（默认：gpt-5.4-nano）
---config TEXT           # 配置文件路径（默认：config.yaml）
+skillwiki serve --port 8001 --api-key YOUR_LLM_API_KEY
+# or
+python -m skillwiki.api.main --port 8001 --api-key YOUR_LLM_API_KEY
 ```
 
-### 配置文件
-
-编辑 `config.yaml` 来配置：
-
-- LLM 参数（温度、max_tokens 等）
-- 数据库连接
-- 日志设置
-- Agent 级别的配置
-
-### 环境变量
-
-支持以下环境变量：
+### Start the frontend (optional)
 
 ```bash
-LLM_API_URL             # LLM API URL
-LLM_MODEL               # LLM 模型名称
-LLM_TEMPERATURE         # 温度参数
-LLM_MAX_TOKENS          # 最大 token 数
-DB_POSTGRES_HOST        # PostgreSQL 主机
-DB_POSTGRES_PASSWORD    # PostgreSQL 密码
+cd ../skillwiki-frontend
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-## 使用
+---
 
-### CLI 命令
+## CLI Reference
 
-#### 初始化
+All commands share a global `--api-url` option (default `http://127.0.0.1:8001`).
+
+### Server
 
 ```bash
-python -m skillos.cli init --api-key "your_key"
+skillwiki serve [--host HOST] [--port PORT] [--backend memory|sqlite|postgres]
 ```
 
-#### 测试配置
+### Knowledge Ingestion
 
 ```bash
-python -m skillos.cli test-config --api-key "your_key"
+# Parse raw content and extract skill candidates
+skillwiki ingest run <source_type> <input>
+    source_type: trajectory | document | api_doc | script | past_skills
+
+# Examples
+skillwiki ingest run api_doc ./openai_spec.md
+skillwiki ingest run trajectory "open browser -> search -> copy link"
+skillwiki ingest run past_skills ./skills.json --create
+
+# Show candidate state
+skillwiki ingest status <candidate_id>
 ```
 
-#### 获取 Agent 配置
+### Lifecycle
 
 ```bash
-python -m skillos.cli get-agent-config \
-  --api-key "your_key" \
-  --agent-type "trajectory_parser"
+# Show skill state
+skillwiki skill status <skill_id>
+
+# List skills (with optional filters)
+skillwiki skill list [--state S3] [--tag nlp] [--limit 20]
+
+# Get skill details
+skillwiki skill get <skill_id> [--full]
+
+# Execute a skill
+skillwiki skill exec <skill_id> --input '{"key": "value"}'
+
+# Static audit (schema, safety, postconditions)
+skillwiki audit <skill_id>
+
+# Execute-verify loop with optional auto-promote
+skillwiki verify <skill_id> [--harness mock|claude_code|codex] [--max-retries 3] [--watch]
+
+# Manually promote to a target state
+skillwiki promote <skill_id> <target_state>
+    target_state: S1 | S2 | S3 | released | ...
 ```
 
-### Python API
-
-```python
-from skillos.config import ConfigManager
-
-# 创建配置管理器
-cli_args = {"api_key": "your_api_key_here"}
-config_manager = ConfigManager("config.yaml", cli_args)
-
-# 获取全局 LLM 配置
-llm_config = config_manager.get_global_llm_config()
-
-# 获取 Agent 特定配置
-agent_config = config_manager.get_agent_llm_config("trajectory_parser")
-
-# 获取数据库配置
-db_config = config_manager.get_database_config()
-```
-
-## 项目结构
-
-```
-skillos/
-├── skillos/
-│   ├── __init__.py
-│   ├── cli.py                     # CLI 工具
-│   ├── config/                    # 配置模块
-│   │   ├── __init__.py
-│   │   ├── llm_config.py          # LLM 配置定义
-│   │   └── config_manager.py      # 配置管理器
-│   ├── utils/                     # 工具模块
-│   │   ├── __init__.py
-│   │   ├── logger.py              # 日志工具
-│   │   └── validators.py          # 验证工具
-│   ├── models/                    # 数据模型（待实现）
-│   ├── storage/                   # 存储层（待实现）
-│   ├── layers/                    # 五层架构（待实现）
-│   └── api/                       # API 层（待实现）
-├── tests/                         # 测试
-├── config.yaml                    # 配置文件
-├── .env.example                   # 环境变量示例
-├── requirements.txt               # 依赖
-├── quickstart.sh                  # Linux/Mac 快速启动脚本
-├── quickstart.bat                 # Windows 快速启动脚本
-├── USAGE_GUIDE.md                 # 使用指南
-└── README.md                      # 本文件
-```
-
-## 文档
-
-- [USAGE_GUIDE.md](USAGE_GUIDE.md) - 详细使用指南
-- [DESIGN.md](../DESIGN.md) - 系统设计文档
-- [DEVELOPMENT.md](../DEVELOPMENT.md) - 开发文档
-- [IMPLEMENTATION_ROADMAP.md](../IMPLEMENTATION_ROADMAP.md) - 实现路线图
-
-## 开发
-
-### 运行测试
+### Health & Evolution
 
 ```bash
-# 运行所有测试
-pytest
+# System-wide health overview
+skillwiki health
 
-# 运行特定测试
-pytest tests/test_config.py
+# Per-skill health (success rate, issues, recommendations, open proposals)
+skillwiki health <skill_id>
 
-# 显示覆盖率
-pytest --cov=skillos tests/
+# Generate a maintenance candidate for a degraded skill
+skillwiki repair <skill_id>
+
+# Run one full evolution cycle (detect degraded/stale skills, queue proposals)
+skillwiki evolve [--json]
 ```
 
-### 代码风格
+### Maintenance Proposals
 
 ```bash
-# 格式化代码
-black skillos/
+# List proposals
+skillwiki proposal list [--status pending|accepted|rejected] [--json]
 
-# 检查代码风格
-pylint skillos/
+# Accept a proposal (moves to governed version review)
+skillwiki proposal accept <proposal_id>
 
-# 类型检查
-mypy skillos/
+# Reject a proposal
+skillwiki proposal reject <proposal_id>
 ```
 
-## 配置优先级
-
-配置值的优先级（从高到低）：
-
-1. **命令行参数** - 最高优先级
-2. **环境变量** - 中等优先级
-3. **配置文件** - 低优先级
-4. **默认值** - 最低优先级
-
-## 常见问题
-
-### Q: 为什么 API key 必须通过命令行参数提供？
-
-A: 为了安全性。API key 是敏感信息，不应该存储在版本控制系统中。
-
-### Q: 如何在 CI/CD 中使用？
-
-A: 通过环境变量或 secrets 管理 API key：
+### Knowledge Graph
 
 ```bash
-python -m skillos.cli init --api-key "${{ secrets.LLM_API_KEY }}"
+# Show direct neighbors of a skill
+skillwiki graph neighbors <skill_id> [--depth 1]
+
+# Show provenance / version-impact subgraph
+skillwiki graph show <skill_id> [--view skill_only|provenance|version_impact] [--depth 2]
+
+# Show dependency chain
+skillwiki graph deps <skill_id>
+
+# Export subgraph as JSON
+skillwiki graph export <skill_id> [-o output.json] [--view provenance] [--depth 2]
 ```
 
-### Q: 如何为不同的 Agent 使用不同的模型？
+### Natural Language Task Execution
 
-A: 在 `config.yaml` 中为 Agent 配置不同的模型。
+```bash
+skillwiki run "summarize the attached PDF and extract action items" [--verbose]
+```
 
-## 许可证
+### Utilities
+
+```bash
+skillwiki init --api-key KEY [--api-url URL] [--model MODEL]
+skillwiki ping --api-key KEY
+```
+
+---
+
+## Lifecycle States
+
+| State | Code | Meaning |
+|-------|------|---------|
+| Raw knowledge | S0 | Ingested document / trajectory |
+| Candidate | S1 | Extracted skill candidate |
+| Draft | S2 | Formalized schema, pending review |
+| Verified | S3 | Passed automated verification |
+| Released | S4 | Approved for agent use |
+| Degraded | S5 | Success rate below threshold |
+| Deprecated | S6 | Replaced or retired |
+| Archived | S7 | Read-only historical record |
+
+---
+
+## Evolution Flow
+
+```
+Execution feedback
+      |
+      v
+Reflection memory   (recurring failures trigger a cluster)
+      |
+      v
+Maintenance Proposal  (repair | review | deprecate)
+      |
+      v
+Human governance      (skillwiki proposal accept/reject)
+      |
+      v
+Version update        (new versioned skill, graph edges updated)
+```
+
+---
+
+## Project Structure
+
+```
+skillwiki/
+├── skillwiki/
+│   ├── api/              # FastAPI backend
+│   │   └── routes/       # evolution, graph, lifecycle, execution, ...
+│   ├── cli.py            # Click CLI
+│   ├── config/           # LLM + app configuration
+│   ├── layers/
+│   │   ├── input_knowledge/     # S0 ingestion & parsing
+│   │   ├── skill_construction/  # S1-S2 candidate mining & formalization
+│   │   ├── skill_governance/    # S3-S4 review, merger, versioning
+│   │   ├── skill_management/    # librarian, graph sync
+│   │   ├── skill_runtime/       # executor, verifier, harness
+│   │   └── feedback_evolution/  # monitor, repair, evolution engine
+│   ├── models/           # Pydantic data models
+│   └── storage/          # Skill repository (memory / git-backed)
+├── tests/
+├── config.yaml
+└── requirements.txt
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_API_KEY` | — | LLM API key (required) |
+| `LLM_API_URL` | `https://yunwu.ai` | LLM base URL |
+| `LLM_MODEL` | `claude-sonnet-4-6` | Model name |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
+
+---
+
+## License
 
 MIT
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 联系方式
-
-- 项目主页：[GitHub](https://github.com/skillos/skillos)
-- 文档：[Wiki](https://github.com/skillos/skillos/wiki)
