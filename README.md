@@ -176,8 +176,72 @@ skillwiki skill list --tag pdf
 skillwiki skill get <skill_id>
 skillwiki skill get <skill_id> --full
 
+# Check current state, version, and success rate
+skillwiki skill status <skill_id>
+
 # Execute a skill directly
 skillwiki skill exec <skill_id> --input '{"url": "https://example.com"}'
+```
+
+### Health monitoring
+
+```bash
+# System-wide health overview
+skillwiki health
+
+# Per-skill health: success rate, issues, recommendations, open proposals
+skillwiki health <skill_id>
+
+# JSON output
+skillwiki health --json
+skillwiki health <skill_id> --json
+```
+
+### Maintenance proposals
+
+```bash
+skillwiki proposal list
+skillwiki proposal list --status pending
+skillwiki proposal list --json
+
+skillwiki proposal accept <proposal_id>
+skillwiki proposal reject <proposal_id>
+```
+
+### Repair a degraded skill
+
+Generates a maintenance candidate for a skill in S5 (degraded) state:
+
+```bash
+skillwiki repair <skill_id>
+```
+
+### Evolution cycle
+
+Detects degraded/stale skills and generates maintenance proposals:
+
+```bash
+skillwiki evolve
+skillwiki evolve --json
+```
+
+### Knowledge graph
+
+```bash
+# Show direct neighbors
+skillwiki graph neighbors <skill_id>
+skillwiki graph neighbors <skill_id> --depth 2
+
+# Show a subgraph view
+skillwiki graph show <skill_id>
+skillwiki graph show <skill_id> --view provenance
+skillwiki graph show <skill_id> --view version_impact --depth 3
+
+# Show dependency chain
+skillwiki graph deps <skill_id>
+
+# Export subgraph as JSON
+skillwiki graph export <skill_id> -o output.json --view provenance --depth 2
 ```
 
 ### Run a natural language task
@@ -196,8 +260,10 @@ skillwiki run "create an Excel report from this data" --verbose
 skillwiki --api-url http://192.168.1.10:8001 skill list
 
 # All commands support --help
-skillwiki verify --help
-skillwiki ingest run --help
+skillwiki health --help
+skillwiki proposal --help
+skillwiki graph --help
+skillwiki evolve --help
 ```
 
 ## Useful Pages
