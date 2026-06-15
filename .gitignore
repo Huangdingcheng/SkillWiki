@@ -87,6 +87,9 @@ docs/
 experiment_1/
 experiment_2/
 
+# Benchmark results (runtime output, not source)
+skillwiki/benchmarks/results/
+
 # Runtime skill storage data
 skills/
 
