@@ -6,7 +6,11 @@ SkillWiki turns raw experience — trajectories, documents, API specs, scripts, 
 
 > **Demo video:** [YouTube — coming soon](https://www.youtube.com/watch?v=TODO)
 
-![SkillWiki system overview](figures/figure2_overview/skillwiki_fig_2.png)
+<p align="center">
+  <img src="figures/figure2_overview/skillwiki_fig_2.png" width="900" alt="SkillWiki system overview"/>
+  <br/>
+  <sub><b>Figure 1.</b> SkillWiki system overview — from raw experience ingestion to governed skill evolution.</sub>
+</p>
 
 ---
 
