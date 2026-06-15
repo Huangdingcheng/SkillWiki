@@ -1,91 +1,95 @@
 # SkillWiki
 
-**SkillWiki: A Living Knowledge Infrastructure for Agent Skills**
+**A Living Knowledge Infrastructure for Agent Skills**
 
-SkillWiki is a living knowledge infrastructure for agent skills. It imports experience from multiple source types, converts that material into governed Skill candidates, manages Skill graph relations and versions, and runs local verification/evaluation workflows — all accessible via a web UI or the `skillwiki` CLI.
+SkillWiki turns raw experience — trajectories, documents, API specs, scripts, and existing skill libraries — into versioned, auditable, graph-connected Skill objects that agents can discover, execute, and evolve. The full lifecycle is governed: **S0** (raw) → **S1** (candidate) → **S2** (draft) → **S3** (verified) → **S4** (released) → **S5** (degraded) → **S6** (deprecated) → **S7** (archived).
 
-**Frontend (default English):** [http://localhost:5173](http://localhost:5173) — switch to 中文 via the language button in the header  
-**中文前端（同一地址）：** [http://localhost:5173](http://localhost:5173) — 点击右上角语言按钮切换为中文
+> **Demo video:** [YouTube — coming soon](https://www.youtube.com/watch?v=TODO)
 
-## Quick Start On Windows
+![SkillWiki system overview](figures/figure2_overview/skillwiki_fig_2.png)
 
-### 1. Install Dependencies
+---
 
-Backend:
+## Key Features
+
+- **Multi-source ingestion** — trajectories, Markdown documents, API specs, shell scripts, and existing skill JSON/JSONL files.
+- **Governed lifecycle** — eight-stage state machine with automated verification, human-in-the-loop proposal review, and audit trails.
+- **Knowledge graph** — skills are connected by typed edges (depends\_on, composes\_with, evolved\_from, replaces, …) with provenance and version-impact views.
+- **Health & evolution engine** — continuous monitoring detects degraded or stale skills and queues maintenance proposals automatically.
+- **Bilingual UI** — the web frontend ships in English (default) and Chinese; switch with the language button in the header.
+- **CLI-first** — every operation is available as a `skillwiki` command for scripting and agent integration.
+
+---
+
+## Quick Start (Windows)
+
+### 1. Install dependencies
 
 ```powershell
+# Backend
 cd <repo-root>\skillwiki
 python -m pip install -r requirements.txt
-```
 
-Frontend:
-
-```powershell
+# Frontend
 cd <repo-root>\skillwiki-frontend
 npm install
 ```
 
 ### 2. Start SkillWiki
 
-Open the repository root and double-click:
+Double-click `START_SKILLWIKI_DEMO.bat` in the repository root.
 
-```text
-START_SKILLWIKI_DEMO.bat
+On the first run you will be prompted for:
+
+| Prompt | Default |
+|--------|---------|
+| LLM API URL | `https://api.deepseek.com` |
+| Model name | `deepseek-v4-flash` |
+| API key | _(paste your key; input is hidden)_ |
+
+Configuration is saved to `skillwiki-launcher\config.local.ps1` (Git-ignored; never commit this file).
+
+Once started:
+
 ```
-
-On the first run, the terminal asks for:
-
-```text
-DeepSeek API URL
-DeepSeek model
-DeepSeek API key
-```
-
-Press Enter to accept the default URL/model if they are correct:
-
-```text
-https://api.deepseek.com
-deepseek-v4-flash
-```
-
-Paste your own API key when prompted. The key input is hidden. The launcher writes the values only to:
-
-```text
-skillwiki-launcher\config.local.ps1
-```
-
-That file is ignored by Git and must not be committed.
-
-After configuration, the launcher starts:
-
-```text
 Backend:  http://127.0.0.1:8001
 Frontend: http://127.0.0.1:5174/wiki
 ```
 
-If those ports are busy, the launcher chooses nearby free ports and prints the actual URL.
+If either port is busy, the launcher picks a nearby free port and prints the actual URL.
 
-### 3. Restore Demo Data
+### 3. Restore demo data
 
-The default demo uses the memory backend, so data is cleared after restart. To restore the small public demo fixtures, double-click:
+The default backend is in-memory, so data resets on restart. To reload the public demo fixtures:
 
-```text
+```
 RESTORE_SKILLWIKI_DEMO_STATE.bat
 ```
 
 ### 4. Stop SkillWiki
 
-Double-click:
-
-```text
+```
 STOP_SKILLWIKI_DEMO.bat
 ```
 
-## CLI Usage
+---
 
-The `skillwiki` command gives agents and scripts direct access to all core operations without a browser.
+## Recommended Demo Walkthrough
 
-### Install the CLI
+| Step | URL | What to show |
+|------|-----|--------------|
+| 1 | `/wiki` | Skill library, lifecycle states, search and filter |
+| 2 | `/ingest` | Paste an API doc or upload a file; watch candidates appear |
+| 3 | `/graph` | Knowledge graph with nebula / readable view presets |
+| 4 | `/harness` | Execute-verify loop; observe auto-repair attempts |
+| 5 | `/evaluation` | SkillsBench P0 analysis |
+| 6 | `/versions` | Business-readable diffs and re-verification after changes |
+
+---
+
+## CLI Reference
+
+Install the CLI once after cloning:
 
 ```powershell
 cd <repo-root>\skillwiki
@@ -93,227 +97,136 @@ venv\Scripts\activate
 pip install -e .
 ```
 
+All commands accept `--api-url <URL>` to point at a non-default backend (default `http://127.0.0.1:8001`).
+
 ### Start the backend
 
 ```bash
 skillwiki serve
-# or with options:
 skillwiki serve --host 127.0.0.1 --port 8001 --backend memory
 ```
 
 ### Ingest experience
 
-Accepts a file path or raw text. The `SOURCE_TYPE` tells the pipeline how to process the input.
-
-| SOURCE_TYPE | Typical formats | Description |
+| SOURCE\_TYPE | Typical formats | Description |
 |---|---|---|
 | `trajectory` | `.txt`, `.md` | Operation sequences / conversation traces |
 | `document` | `.md`, `.txt` | Knowledge docs, tutorials, specifications |
 | `api_doc` | `.md`, `.txt`, `.yaml` | API endpoint documentation |
-| `script` | `.sh`, `.md` | Shell / automation scripts (static analysis, not executed) |
-| `past_skills` | `.json`, `.jsonl` | Existing skill definitions for bulk import |
+| `script` | `.sh`, `.md` | Shell / automation scripts |
+| `past_skills` | `.json`, `.jsonl` | Existing skill definitions |
 
 ```bash
-# From file
-skillwiki ingest run document ./tutorial.md
-skillwiki ingest run script ./installer.sh --create
-skillwiki ingest run past_skills ./skills.json --max-candidates 20
-
-# From raw text
+skillwiki ingest run document ./tutorial.md --create
 skillwiki ingest run trajectory "open browser -> search -> copy link"
-
-# Auto-create S1 candidates after parsing
-skillwiki ingest run document ./guide.md --create
-
-# Check ingestion status
+skillwiki ingest run past_skills ./skills.json --max-candidates 20
 skillwiki ingest status <candidate_id>
 ```
 
-### Verify a skill (execute-verify loop)
-
-Runs the skill, checks postconditions, repairs and retries until pass or max-retries reached.
+### Lifecycle management
 
 ```bash
-# Basic — mock harness, 3 retries, auto-promote to S3 on pass
-skillwiki verify <skill_id>
-
-# Watch each attempt, use Claude Code harness, 5 retries
-skillwiki verify <skill_id> --harness claude_code --max-retries 5 --watch
-
-# Verify without promoting state
-skillwiki verify <skill_id> --no-promote
-```
-
-### Audit a skill (static checks)
-
-Checks schema completeness, safety patterns, and postcondition alignment.
-
-```bash
-skillwiki audit <skill_id>
-```
-
-### Promote lifecycle state
-
-Manually advance a skill through the S0→S4 state machine.
-
-```bash
-# States: S0 (raw) → S1 (candidate) → S2 (draft) → S3 (verified) → S4 (released)
-skillwiki promote <skill_id> S3
-skillwiki promote <skill_id> released
-```
-
-### Browse and execute skills
-
-```bash
-# List all skills
-skillwiki skill list
-
-# Filter by state or tag
-skillwiki skill list --state S3
-skillwiki skill list --tag pdf
-
-# View skill details
-skillwiki skill get <skill_id>
-skillwiki skill get <skill_id> --full
-
-# Check current state, version, and success rate
+# List, inspect, and execute skills
+skillwiki skill list [--state S3] [--tag nlp] [--limit 20]
+skillwiki skill get <skill_id> [--full]
 skillwiki skill status <skill_id>
+skillwiki skill exec <skill_id> --input '{"key": "value"}'
 
-# Execute a skill directly
-skillwiki skill exec <skill_id> --input '{"url": "https://example.com"}'
+# Static audit (schema, safety, postcondition alignment)
+skillwiki audit <skill_id>
+
+# Execute-verify loop with optional auto-promote
+skillwiki verify <skill_id> [--harness mock|claude_code|codex] [--max-retries 3] [--watch]
+
+# Manually advance lifecycle state
+skillwiki promote <skill_id> <target_state>   # e.g. S2, S3, released
 ```
 
 ### Health monitoring
 
 ```bash
-# System-wide health overview
-skillwiki health
-
-# Per-skill health: success rate, issues, recommendations, open proposals
-skillwiki health <skill_id>
-
-# JSON output
-skillwiki health --json
-skillwiki health <skill_id> --json
+skillwiki health                      # system-wide overview
+skillwiki health <skill_id>           # per-skill: success rate, issues, open proposals
+skillwiki health [<skill_id>] --json
 ```
 
 ### Maintenance proposals
 
 ```bash
-skillwiki proposal list
-skillwiki proposal list --status pending
-skillwiki proposal list --json
-
+skillwiki proposal list [--status pending|accepted|rejected] [--json]
 skillwiki proposal accept <proposal_id>
 skillwiki proposal reject <proposal_id>
 ```
 
-### Repair a degraded skill
-
-Generates a maintenance candidate for a skill in S5 (degraded) state:
+### Repair and evolution
 
 ```bash
-skillwiki repair <skill_id>
-```
-
-### Evolution cycle
-
-Detects degraded/stale skills and generates maintenance proposals:
-
-```bash
-skillwiki evolve
-skillwiki evolve --json
+skillwiki repair <skill_id>   # generate a maintenance candidate for a degraded skill
+skillwiki evolve [--json]     # run one full evolution cycle
 ```
 
 ### Knowledge graph
 
 ```bash
-# Show direct neighbors
-skillwiki graph neighbors <skill_id>
-skillwiki graph neighbors <skill_id> --depth 2
-
-# Show a subgraph view
-skillwiki graph show <skill_id>
-skillwiki graph show <skill_id> --view provenance
-skillwiki graph show <skill_id> --view version_impact --depth 3
-
-# Show dependency chain
+skillwiki graph neighbors <skill_id> [--depth 1]
+skillwiki graph show <skill_id> [--view skill_only|provenance|version_impact] [--depth 2]
 skillwiki graph deps <skill_id>
-
-# Export subgraph as JSON
-skillwiki graph export <skill_id> -o output.json --view provenance --depth 2
+skillwiki graph export <skill_id> [-o output.json] [--view provenance] [--depth 2]
 ```
 
-### Run a natural language task
-
-Dispatches through the full Planner → Retrieval → Execution → Verifier pipeline.
+### Natural language task execution
 
 ```bash
-skillwiki run "analyze this PDF and summarize the key points"
-skillwiki run "create an Excel report from this data" --verbose
+skillwiki run "analyze this PDF and extract action items" [--verbose]
 ```
 
-### Global options
+---
 
-```bash
-# Point CLI at a non-default backend
-skillwiki --api-url http://192.168.1.10:8001 skill list
+## Lifecycle States
 
-# All commands support --help
-skillwiki health --help
-skillwiki proposal --help
-skillwiki graph --help
-skillwiki evolve --help
-```
+| Code | Name | Meaning |
+|------|------|---------|
+| S0 | Raw | Ingested source material, not yet extracted |
+| S1 | Candidate | Extracted skill candidate awaiting review |
+| S2 | Draft | Formalized schema, pending verification |
+| S3 | Verified | Passed automated postcondition checks |
+| S4 | Released | Approved for agent use in production |
+| S5 | Degraded | Success rate fell below health threshold |
+| S6 | Deprecated | Replaced or retired |
+| S7 | Archived | Read-only historical record |
 
-## Useful Pages
+---
 
-```text
-http://127.0.0.1:5174/wiki
-http://127.0.0.1:5174/ingest
-http://127.0.0.1:5174/graph
-http://127.0.0.1:5174/harness
-http://127.0.0.1:5174/evaluation
-http://127.0.0.1:5174/versions
-```
+## What This System Demonstrates
 
-Recommended demo order:
+- Multi-source ingestion covering all five input types.
+- Ctx2Skill-lite evidence pipeline for document-to-skill extraction.
+- SkillX-style granularity metadata: `atomic`, `functional`, and `strategic` layers.
+- Knowledge graph visualization with Nebula, Readable, and Debug view presets.
+- Version Lab with business-readable diffs and re-verification after interface or implementation changes.
+- Local harness verification (mock, Claude Code, and Codex executors).
+- SkillsBench P0 sparse-subset analysis: oracle `5/5`, no-skill `2/5`, SkillWiki `3/5` using combined evidence.
 
-1. Skill Wiki
-2. Knowledge Import
-3. Knowledge Graph
-4. Harness Verification
-5. Evaluation
-6. Version Control
+---
 
-## What This Branch Demonstrates
+## Environment Variables
 
-- Five input types: `trajectory`, `document`, `api_doc`, `script`, and `past_skills`.
-- Ctx2Skill-lite evidence for document-to-skill extraction.
-- SkillX-style layer metadata: `atomic`, `functional`, and `strategic`.
-- Skill graph visualization with Nebula/Readable/Debug presets.
-- Version Lab with business-readable diffs and re-verification after implementation/interface changes.
-- Local harness verification for selected Skills.
-- SkillsBench P0 sparse-subset analysis: oracle `5/5`, no-skill `2/5`, SkillWiki generated skills `3/5` using clean combined evidence.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_API_KEY` | — | LLM API key (required) |
+| `LLM_API_URL` | `https://api.deepseek.com` | LLM base URL |
+| `LLM_MODEL` | `deepseek-v4-flash` | Model name |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
 
-## Documentation
+---
 
-Start here:
+## Safety Notes
 
-```text
-DEMO_STARTUP.md
-docs\SKILLOS_PR_UPLOAD_SCOPE_AND_DEMO_HANDOFF_20260529.md
-docs\SKILLOS_PR_UPDATE_SUMMARY_AFTER_SKILLSBENCH_20260529.md
-docs\SKILLOS_SKILLSBENCH_FIVE_TASK_DEEP_ANALYSIS_20260529.md
-```
-
-## PR Safety Notes
-
-Commit code, lightweight fixtures, scripts, and documentation. Do not commit:
+Do not commit:
 
 - `skillwiki-launcher\config.local.ps1`
 - `skillwiki-launcher\runtime\`
-- raw benchmark run directories
-- Docker installers/images/cache
-- `.venv`, `node_modules`, or build caches
+- Raw benchmark run directories
+- Docker images or cache
+- `.venv`, `node_modules`, or build output
 - API keys or local credentials

@@ -175,112 +175,6 @@ const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v2'
 const EDGE_LABEL_ZOOM_THRESHOLD = 0.9
 const NEBULA_ZOOM_THRESHOLD = 0.65
 
-// ---------------------------------------------------------------------------
-// Synthetic graph data — generates a large skill graph for the nebula view.
-// Real API data is layered on top.
-// ---------------------------------------------------------------------------
-const SKILL_TYPES = ['atomic', 'functional', 'strategic'] as const
-const NODE_KINDS = ['skill', 'skill', 'skill', 'tool', 'source', 'execution', 'validation'] as const
-const SKILL_STATES = ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'] as const
-const GRAPH_EDGE_TYPES = [
-  'depends_on', 'composes_with', 'similar_to', 'evolved_from',
-  'replaces', 'specializes', 'derived_from', 'executed_as', 'validated_by', 'versioned_as',
-] as const
-const SKILL_DOMAINS = ['finance', 'data', 'software', 'web', 'office', 'security', 'science', 'api'] as const
-const NAME_PREFIXES = [
-  'extract', 'analyze', 'validate', 'transform', 'query', 'fetch', 'parse',
-  'generate', 'classify', 'summarize', 'detect', 'monitor', 'schedule', 'route',
-  'aggregate', 'filter', 'rank', 'compare', 'merge', 'split', 'chunk', 'embed',
-]
-const NAME_SUFFIXES = [
-  'document', 'record', 'entity', 'signal', 'metric', 'report', 'event',
-  'batch', 'stream', 'context', 'pattern', 'schema', 'index', 'graph',
-  'trajectory', 'snapshot', 'diff', 'audit', 'version', 'workflow',
-]
-
-function mockRng(seed: number) {
-  let s = seed
-  return () => {
-    s = (s * 1664525 + 1013904223) & 0xffffffff
-    return ((s >>> 0) / 4294967296)
-  }
-}
-
-function generateNebulaData(): { nodes: GraphViewNodeData[]; edges: GraphViewEdgeData[] } {
-  const rng = mockRng(0xc0ffee42)
-  const NODE_COUNT = 250
-  const EDGE_COUNT = 580
-  const nodes: GraphViewNodeData[] = []
-  const nodeIds: string[] = []
-
-  for (let i = 0; i < NODE_COUNT; i++) {
-    const prefix = NAME_PREFIXES[Math.floor(rng() * NAME_PREFIXES.length)]
-    const suffix = NAME_SUFFIXES[Math.floor(rng() * NAME_SUFFIXES.length)]
-    const domain = SKILL_DOMAINS[Math.floor(rng() * SKILL_DOMAINS.length)]
-    const kind = NODE_KINDS[Math.floor(rng() * NODE_KINDS.length)]
-    const skill_type = kind === 'skill' ? SKILL_TYPES[Math.floor(rng() * SKILL_TYPES.length)] : undefined
-    const state = kind === 'skill' ? SKILL_STATES[Math.floor(rng() * SKILL_STATES.length)] : undefined
-    const id = `syn_${i}_${prefix}_${suffix}`
-    nodeIds.push(id)
-    nodes.push({
-      id,
-      name: `${prefix}_${suffix}_${domain}`,
-      kind,
-      description: `${skill_type ?? kind} skill for ${domain} domain.`,
-      skill_type,
-      state,
-      tags: [domain, kind],
-      version: `1.${Math.floor(rng() * 4)}.0`,
-      granularity_level: Math.floor(rng() * 3) + 1,
-      success_rate: Math.round(rng() * 100) / 100,
-      usage_count: Math.floor(rng() * 200),
-      metadata: { synthetic: true, domain, depth: Math.round(rng() * 100) / 100 },
-    })
-  }
-
-  const edges: GraphViewEdgeData[] = []
-  const edgeSet = new Set<string>()
-  let attempts = 0
-  while (edges.length < EDGE_COUNT && attempts < EDGE_COUNT * 6) {
-    attempts++
-    const si = Math.floor(rng() * nodeIds.length)
-    const ti = Math.floor(rng() * nodeIds.length)
-    if (si === ti) continue
-    const src = nodeIds[si]
-    const tgt = nodeIds[ti]
-    const key = `${src}→${tgt}`
-    if (edgeSet.has(key)) continue
-    edgeSet.add(key)
-    const edge_type = GRAPH_EDGE_TYPES[Math.floor(rng() * GRAPH_EDGE_TYPES.length)]
-    edges.push({
-      id: `syn_e_${edges.length}`,
-      source: src,
-      target: tgt,
-      edge_type,
-      weight: Math.round(rng() * 100) / 100,
-      confidence: Math.round(rng() * 100) / 100,
-      metadata: { synthetic: true },
-    })
-  }
-
-  return { nodes, edges }
-}
-
-const NEBULA_DATA = generateNebulaData()
-
-function mergeWithNebulaData(real: GraphViewData): GraphViewData {
-  const realIds = new Set(real.nodes.map(n => n.id))
-  const newNodes = NEBULA_DATA.nodes.filter(n => !realIds.has(n.id))
-  const allNodeIds = new Set([...real.nodes.map(n => n.id), ...newNodes.map(n => n.id)])
-  const newEdges = NEBULA_DATA.edges.filter(
-    e => !allNodeIds.size || (allNodeIds.has(e.source) && allNodeIds.has(e.target)),
-  )
-  return {
-    ...real,
-    nodes: [...real.nodes, ...newNodes],
-    edges: [...real.edges, ...newEdges],
-  }
-}
 const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
   repulsion: 260,
   attraction: 0.28,
@@ -700,7 +594,7 @@ export default function SkillGraph() {
     resetSelection()
     try {
       const data = await graphApi.view(nextView, 300)
-      setGraphData(mergeWithNebulaData(data))
+      setGraphData(data)
       setMode('full')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to load graph data'))
@@ -823,12 +717,8 @@ export default function SkillGraph() {
         const selected = node.id === selectedNodeId
         const centered = node.id === centerSkillId
         const position = initialPositions.get(node.id)
-        const isMock = Boolean((node.metadata as Record<string, unknown>)?.synthetic)
-        const depth = isMock ? Number((node.metadata as Record<string, unknown>)?.depth ?? 0.5) : 0
-        const { sizeScale, opacityScale } = nebulaMode ? depthScale(depth) : { sizeScale: 1, opacityScale: 1 }
-        const nebulaSize = (isMock
-          ? 3 + Math.floor(Number(node.usage_count || 0) * 0.008)
-          : 5 + Math.floor(Number(node.usage_count || 0) * 0.025)) * sizeScale
+        const { sizeScale, opacityScale } = nebulaMode ? depthScale(0) : { sizeScale: 1, opacityScale: 1 }
+        const nebulaSize = (5 + Math.floor(Number(node.usage_count || 0) * 0.025)) * sizeScale
         const nebulaFill = nebulaMode ? sphereGradient(color) : color
         // Highlight ring for selected nebula nodes
         const nebulaShadowColor = selected ? color : 'transparent'
@@ -845,7 +735,7 @@ export default function SkillGraph() {
             y: position?.y,
             fill: nebulaFill,
             fillOpacity: nebulaMode
-              ? (isMock ? 0.82 * opacityScale : 0.95)
+              ? (0.95 * opacityScale)
               : (node.kind === 'skill' ? (STATE_OPACITY[String(node.state || '')] || 0.65) : 0.92),
             stroke: nebulaMode
               ? (selected ? color : blendColor(color, 'white', 0.4))
@@ -881,17 +771,8 @@ export default function SkillGraph() {
       const edges = filteredEdges.map(edge => {
         const selected = edge.id === selectedEdgeId
         const color = EDGE_COLOR[edge.edge_type] || '#8c8c8c'
-        const isMockEdge = Boolean((edge.metadata as Record<string, unknown>)?.synthetic)
-        // For depth on edges: average the depth of source and target nodes
-        const srcDepth = isMockEdge
-          ? Number((graphData.nodes.find(n => n.id === edge.source)?.metadata as Record<string, unknown>)?.depth ?? 0.5)
-          : 0
-        const tgtDepth = isMockEdge
-          ? Number((graphData.nodes.find(n => n.id === edge.target)?.metadata as Record<string, unknown>)?.depth ?? 0.5)
-          : 0
-        const edgeDepth = (srcDepth + tgtDepth) / 2
-        const edgeOpacityByDepth = nebulaMode ? (isMockEdge ? (0.22 - edgeDepth * 0.14) : 0.35) : layoutSettings.edgeOpacity
-        const edgeWidthByDepth = nebulaMode ? (isMockEdge ? (0.6 - edgeDepth * 0.3) : 0.9) : undefined
+        const edgeOpacityByDepth = nebulaMode ? 0.35 : layoutSettings.edgeOpacity
+        const edgeWidthByDepth = nebulaMode ? 0.9 : undefined
         return {
           id: edge.id,
           source: edge.source,
