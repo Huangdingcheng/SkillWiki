@@ -65,4 +65,48 @@ artifacts/skillsbench-runs/
 
 # Local one-click demo launcher state and secrets
 skillos-one-click-launcher/config.local.ps1
+skillwiki-launcher/config.local.ps1
+skillwiki-launcher/runtime/
 skillos-one-click-launcher/runtime/
+
+# Design / planning documents (not part of the public repo)
+DEEP_DISCUSSION.md
+DESIGN.md
+DEVELOPMENT.md
+FRONTEND_BACKEND_PLAN.md
+HOMOGENEOUS_GRAPH_DESIGN.md
+IMPLEMENTATION_ROADMAP.md
+SkillWiki.txt
+agent_framework.md
+DEMO_STARTUP.md
+
+# Internal docs directory
+docs/
+
+# Experiments (large / internal)
+experiment_1/
+experiment_2/
+
+# Runtime skill storage data
+skills/
+
+# Figures — all except the single overview image used in README
+figures/figure1_motivation/
+figures/figure2_overview/*.drawio
+figures/figure2_overview/*.pdf
+figures/figure2_overview/*.png
+figures/figure2_overview/*.bkp
+figures/figure2_overview/*.svg
+figures/figure3_system/
+figures/figure4_lifecycle/
+
+# Presentations and office files
+*.pptx
+*.docx
+
+# Codex workspace
+.codex/
+
+# pdf_to_png helper script (build utility)
+skillwiki-frontend/scripts/pdf_to_png.mjs
+skillwiki-frontend/figures/
