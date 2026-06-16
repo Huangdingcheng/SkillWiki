@@ -110,6 +110,8 @@ figures/figure4_lifecycle/
 # Codex workspace
 .codex/
 
-# pdf_to_png helper script (build utility)
+# Debug and utility scripts (not production code)
+skillwiki-frontend/scripts/debug_*.mjs
 skillwiki-frontend/scripts/pdf_to_png.mjs
-skillwiki-frontend/figures/
+skillwiki/quickstart.sh
+skillwiki/quickstart.bat

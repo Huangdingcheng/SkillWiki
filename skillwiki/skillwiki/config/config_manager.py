@@ -130,7 +130,7 @@ class ConfigManager:
         candidates = [
             "config.yaml",
             "config.yml",
-            Path.home() / ".skillos" / "config.yaml",
+            Path.home() / ".skillwiki" / "config.yaml",
         ]
         for c in candidates:
             if Path(c).exists():

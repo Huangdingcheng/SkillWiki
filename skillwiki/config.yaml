@@ -1,4 +1,4 @@
-# SkillOS 配置文件示例
+# SkillWiki 配置文件示例
 # 注意：API key 必须通过命令行参数 --api-key 提供
 
 # ========== 全局 LLM 配置 ==========
@@ -16,7 +16,7 @@ database:
   # PostgreSQL
   postgres_host: "localhost"
   postgres_port: 5432
-  postgres_database: "skillos"
+  postgres_database: "skillwiki"
   postgres_user: "postgres"
   postgres_password: "${DB_POSTGRES_PASSWORD}"
 
@@ -27,7 +27,7 @@ database:
 
   # MongoDB
   mongodb_uri: "mongodb://localhost:27017"
-  mongodb_database: "skillos"
+  mongodb_database: "skillwiki"
 
   # Redis
   redis_host: "localhost"
@@ -39,7 +39,7 @@ database:
 logging:
   level: "INFO"
   format: "json"  # json or text
-  file: "logs/skillos.log"
+  file: "logs/skillwiki.log"
   max_size: "100MB"
   backup_count: 10
 

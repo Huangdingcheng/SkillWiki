@@ -171,7 +171,7 @@ type ForceEdgeDatum = {
   weight?: number
 }
 
-const GRAPH_LAYOUT_STORAGE_KEY = 'skillos.graph.layoutSettings.v2'
+const GRAPH_LAYOUT_STORAGE_KEY = 'skillwiki.graph.layoutSettings.v2'
 const EDGE_LABEL_ZOOM_THRESHOLD = 0.9
 const NEBULA_ZOOM_THRESHOLD = 0.65
 

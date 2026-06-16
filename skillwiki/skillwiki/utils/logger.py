@@ -13,7 +13,7 @@ from typing import Optional
 
 _DEFAULT_LEVEL = "INFO"
 _DEFAULT_FORMAT = "json"
-_DEFAULT_FILE = "logs/skillos.log"
+_DEFAULT_FILE = "logs/skillwiki.log"
 _DEFAULT_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
 _DEFAULT_BACKUP_COUNT = 10
 
