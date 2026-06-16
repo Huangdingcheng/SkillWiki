@@ -110,8 +110,10 @@ figures/figure4_lifecycle/
 # Codex workspace
 .codex/
 
-# Debug and utility scripts (not production code)
-skillwiki-frontend/scripts/debug_*.mjs
+# Internal planning/summary documents inside skillwiki/
+skillwiki/PHASE_0_SUMMARY.md
+skillwiki/QUICK_COMMANDS.md
+skillwiki/USAGE_GUIDE.md
 skillwiki-frontend/scripts/pdf_to_png.mjs
 skillwiki/quickstart.sh
 skillwiki/quickstart.bat
