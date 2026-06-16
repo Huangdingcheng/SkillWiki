@@ -745,6 +745,8 @@ export default function VersionControl() {
               loading={loadingVersions}
               size="small"
               pagination={false}
+              className="skillwiki-table-contained"
+              scroll={{ x: 760 }}
               locale={{ emptyText: selectedId ? 'No version records' : 'Select a Skill first' }}
             />
           </Card>
@@ -916,6 +918,8 @@ export default function VersionControl() {
                   loading={historyLoading}
                   size="small"
                   pagination={{ pageSize: 5 }}
+                  className="skillwiki-table-contained"
+                  scroll={{ x: 980 }}
                   locale={{ emptyText: 'No snapshot commits yet' }}
                 />
 
