@@ -231,4 +231,4 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 
 ## License
 
-[MIT](LICENSE) © 2025 SkillWiki Authors
+[MIT](LICENSE) © 2026 SkillWiki Authors
