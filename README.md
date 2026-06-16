@@ -206,15 +206,15 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 
 ---
 
-## What This System Demonstrates
+## What SkillWiki Provides
 
-- **Five ingestion modalities** — trajectory, document, api_doc, script, past_skills.
-- **Ctx2Skill-lite** evidence pipeline for document-to-skill extraction.
-- **SkillX-style** granularity layers: `atomic`, `functional`, and `strategic`.
-- **Heterogeneous provenance graph** with Nebula, Readable, and Debug view presets.
-- **Version Lab** with business-readable diffs and re-verification after interface or implementation changes.
-- **Local harness verification** via mock, Claude Code, and Codex executors.
-- **SkillsBench P0** results: oracle `5/5` · no-skill baseline `2/5` · SkillWiki `3/5`.
+- Knowledge-to-skill transformation from heterogeneous sources.
+- Evidence-grounded skill assets with explicit provenance.
+- Multi-granularity skill organization and dependency management.
+- Provenance-aware exploration and visualization.
+- Versioned skill governance with interpretable evolution.
+- Execution-driven verification and continuous improvement.
+- End-to-end demonstrations of reusable skill ecosystems.
 
 ---
 
