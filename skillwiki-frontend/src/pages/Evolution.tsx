@@ -221,7 +221,8 @@ export default function Evolution() {
     {
       title: 'Skill',
       dataIndex: 'skill_name',
-      render: (name: string) => <Text strong>{name}</Text>,
+      width: 220,
+      render: (name: string) => <Text strong className="skillwiki-identifier-cell">{name}</Text>,
     },
     {
       title: 'Status',
@@ -309,9 +310,9 @@ export default function Evolution() {
     {
       title: 'Proposal',
       dataIndex: 'proposal_id',
-      width: 180,
+      width: 260,
       render: (id: string, record) => (
-        <Space direction="vertical" size={2}>
+        <Space direction="vertical" size={2} className="skillwiki-proposal-id-cell">
           <Text code copyable style={{ fontSize: 11 }}>{id.slice(0, 8)}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>{record.skill_id}</Text>
         </Space>
@@ -336,6 +337,7 @@ export default function Evolution() {
     {
       title: 'Evidence',
       dataIndex: 'evidence',
+      width: 360,
       render: (_: string[], record) => (
         <Space direction="vertical" size={4}>
           <Text>{record.root_cause || joinPreview(record.evidence)}</Text>
@@ -349,13 +351,13 @@ export default function Evolution() {
     {
       title: 'Governance',
       dataIndex: 'next_action',
-      width: 220,
+      width: 260,
       render: (_, record) => (
         <Space direction="vertical" size={6}>
           {record.status === 'accepted' || record.next_action ? (
             <>
               <Tag color="purple">B review required</Tag>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
                 {record.next_action?.endpoint || `/api/v1/lifecycle/${record.skill_id}/propose-maintenance-change`}
               </Text>
             </>
@@ -367,9 +369,9 @@ export default function Evolution() {
     },
     {
       title: 'Actions',
-      width: 220,
+      width: 180,
       render: (_, record) => (
-        <Space wrap>
+        <Space wrap className="skillwiki-table-actions">
           {record.status === 'pending' ? (
             <>
               <Button
@@ -529,6 +531,8 @@ export default function Evolution() {
                 loading={queueLoading}
                 pagination={{ pageSize: 5 }}
                 columns={proposalColumns}
+                className="skillwiki-table-contained"
+                scroll={{ x: 1210 }}
               />
             ) : (
               <Empty description="No maintenance proposals in the current service lifecycle" />
@@ -547,6 +551,8 @@ export default function Evolution() {
                 size="small"
                 pagination={false}
                 columns={attentionColumns}
+                className="skillwiki-table-contained"
+                scroll={{ x: 1180 }}
               />
             ) : (
               <Empty description="No degraded or critical Skills right now." />
@@ -565,6 +571,8 @@ export default function Evolution() {
                 size="small"
                 pagination={{ pageSize: 10 }}
                 columns={columns}
+                className="skillwiki-table-contained"
+                scroll={{ x: 980 }}
               />
             ) : (
               <Empty description="No health report data yet. Release or execute more Skills to generate health assessments." />
