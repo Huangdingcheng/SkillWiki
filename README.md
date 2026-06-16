@@ -16,7 +16,7 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 <br/>
 
 [📺 **Demo Video**](https://www.youtube.com/watch?v=TODO) &nbsp;·&nbsp;
-[📖 **Paper**](#) 
+[📖 **Paper**](https://arxiv.org/abs/2606.16523) 
 
 </div>
 
