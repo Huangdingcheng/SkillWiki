@@ -1,13 +1,13 @@
-# SkillOS One-Click Demo Launcher
+# SkillWiki One-Click Demo Launcher
 
-This launcher asks for a local DeepSeek/OpenAI-compatible model configuration when needed, starts the SkillOS backend, starts the Vite frontend, verifies both endpoints, and opens the browser.
+This launcher asks for a local DeepSeek/OpenAI-compatible model configuration when needed, starts the SKILLWIKI backend, starts the Vite frontend, verifies both endpoints, and opens the browser.
 
 ## Quick Start
 
 From the repository root, double-click:
 
 ```text
-START_SKILLOS_DEMO.bat
+START_SKILLWIKI_DEMO.bat
 ```
 
 On the first run, the terminal asks for:
@@ -23,13 +23,13 @@ Press Enter to accept the default URL/model if they are correct. Paste your own 
 To stop the demo, double-click:
 
 ```text
-STOP_SKILLOS_DEMO.bat
+STOP_SKILLWIKI_DEMO.bat
 ```
 
 To restore public demo fixtures after a memory-backend restart, double-click:
 
 ```text
-RESTORE_SKILLOS_DEMO_STATE.bat
+RESTORE_SKILLWIKI_DEMO_STATE.bat
 ```
 
 Default local URLs:
@@ -63,7 +63,7 @@ $env:LLM_API_KEY = "your-api-key"
 
 `config.local.ps1` is ignored by Git. Do not commit or share it.
 
-For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SkillOSDemo.ps1` or set `SKILLOS_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
+For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SKILLWIKIDemo.ps1` or set `SKILLWIKI_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
 
 ## Defaults
 
@@ -78,13 +78,13 @@ For non-interactive offline smoke checks only, advanced users may pass `-AllowPl
 Run from PowerShell:
 
 ```powershell
-.\skillwiki-launcher\scripts\Start-SkillOSDemo.ps1 -RepositoryBackend git -OpenPath /evaluation
+.\skillwiki-launcher\scripts\Start-SKILLWIKIDemo.ps1 -RepositoryBackend git -OpenPath /evaluation
 ```
 
 Stop silently:
 
 ```powershell
-.\skillwiki-launcher\scripts\Stop-SkillOSDemo.ps1 -Silent
+.\skillwiki-launcher\scripts\Stop-SKILLWIKIDemo.ps1 -Silent
 ```
 
 Runtime logs and PID state are written under:
