@@ -88,7 +88,10 @@ experiment_1/
 experiment_2/
 
 # Benchmark results (runtime output, not source)
-skillwiki/benchmarks/results/
+# skillwiki/benchmarks/results/  <- tracked on dingcheng-dev branch
+
+# Video files
+video/
 
 # Runtime skill storage data
 skills/
