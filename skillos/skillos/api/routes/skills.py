@@ -40,11 +40,14 @@ def _to_summary(skill: Skill) -> SkillSummary:
 
 
 async def _sync_graph_for_skill(app: AppState, skill: Skill) -> None:
+    graph = getattr(app, "graph", None)
+    if graph is None:
+        return
     try:
-        await app.graph.sync_skill(skill)
-        if hasattr(app.graph, "sync_auto_edges"):
+        await graph.sync_skill(skill)
+        if hasattr(graph, "sync_auto_edges"):
             skills = await app.wiki.list(limit=10000)
-            await app.graph.sync_auto_edges(skill, [item.skill_id for item in skills])
+            await graph.sync_auto_edges(skill, [item.skill_id for item in skills])
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
 
@@ -123,7 +126,7 @@ async def create_skill(
         tags=req.tags,
         interface=req.interface,
         implementation=req.implementation,
-        provenance=SkillProvenance(source_type="api", author=req.author),
+        provenance=SkillProvenance(source_type="api", created_by_agent=req.author),
     )
     try:
         created = await app.wiki.create(skill)
@@ -179,7 +182,8 @@ async def update_skill(
     if not updated:
         raise HTTPException(status_code=500, detail="Skill update failed")
     await _sync_graph_for_skill(app, updated)
-    await app.wiki.invalidate(skill_id)
+    if hasattr(app.wiki, "invalidate"):
+        await app.wiki.invalidate(skill_id)
     return _to_summary(updated)
 
 
@@ -193,11 +197,14 @@ async def delete_skill(
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
     deleted = await app.wiki.delete(skill_id)
     if deleted:
-        try:
-            await app.graph.remove_skill(skill_id)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Graph remove failed: {exc}") from exc
-        await app.wiki.invalidate(skill_id)
+        graph = getattr(app, "graph", None)
+        if graph is not None:
+            try:
+                await graph.remove_skill(skill_id)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Graph remove failed: {exc}") from exc
+        if hasattr(app.wiki, "invalidate"):
+            await app.wiki.invalidate(skill_id)
     return OKResponse(message=f"Skill {skill_id} deleted")
 
 

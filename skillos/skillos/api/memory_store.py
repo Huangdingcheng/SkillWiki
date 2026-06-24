@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ..layers.skill_repository.indexing import SearchQuery, SearchResult, rank_search_results
 from ..models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
-from ..models.skill_model import EdgeType, Skill, SkillState, SkillType
+from ..models.skill_model import EdgeType, Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,6 +96,10 @@ class MemoryWikiManager:
         for key, value in kwargs.items():
             if key in {"skill_id", "created_at"}:
                 continue
+            if key == "interface" and isinstance(value, dict):
+                value = SkillInterface.model_validate(value)
+            elif key == "implementation" and isinstance(value, dict):
+                value = SkillImplementation.model_validate(value)
             object.__setattr__(updated, key, value)
         object.__setattr__(updated, "updated_at", datetime.utcnow())
         self._store[skill_id] = updated

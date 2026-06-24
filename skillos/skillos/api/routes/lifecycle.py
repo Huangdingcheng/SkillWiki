@@ -151,18 +151,66 @@ async def get_skill_diff(
         other = await app.wiki.get(compare_to)
         if not other:
             raise HTTPException(status_code=404, detail=f"对比 Skill {compare_to} 不存在")
+        if other.name == skill.name and hasattr(app.wiki, "diff_versions"):
+            try:
+                raw_diff = await app.wiki.diff_versions(skill.name, other.version, skill.version)
+                return {
+                    "skill_id": skill_id,
+                    "compare_to": compare_to,
+                    "diff": _format_unified_diff(raw_diff),
+                    "raw_diff": raw_diff,
+                    "suggested_bump": "patch",
+                    "source": "git",
+                }
+            except Exception:
+                pass
+
         diff = app.version_ctrl.compute_diff(other, skill) if app.version_ctrl else {}
         return {
             "skill_id": skill_id,
             "compare_to": compare_to,
             "diff": _format_diff(diff),
             "suggested_bump": app.version_ctrl.suggest_version_bump(diff) if app.version_ctrl else "patch",
+            "source": "version_controller",
         }
+
+    if hasattr(app.wiki, "get_version_history"):
+        try:
+            repo_history = await app.wiki.get_version_history(skill.name)
+            return {
+                "skill_id": skill_id,
+                "skill_name": skill.name,
+                "current_version": skill.version,
+                "source": "git",
+                "history": [
+                    {
+                        "record_id": f"{item.name}:{item.version}",
+                        "from_version": None,
+                        "to_version": item.version,
+                        "change_type": "version",
+                        "summary": item.description,
+                        "author": (
+                            item.provenance.created_by_agent
+                            if item.provenance and item.provenance.created_by_agent
+                            else ""
+                        ),
+                        "created_at": item.created_at.isoformat(),
+                        "diff": [],
+                        "is_breaking": False,
+                        "skill_id": item.skill_id,
+                        "state": item.state.value,
+                    }
+                    for item in repo_history
+                ],
+            }
+        except Exception:
+            pass
 
     return {
         "skill_id": skill_id,
         "skill_name": skill.name,
         "current_version": skill.version,
+        "source": "version_controller",
         "history": [
             {
                 "record_id": r.record_id,
@@ -227,3 +275,30 @@ def _format_diff(diff: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "new_lines": str(change).splitlines() or [str(change)],
             })
     return lines
+
+
+def _format_unified_diff(raw_diff: str) -> List[Dict[str, Any]]:
+    """Format a unified diff string for the existing frontend diff viewer."""
+    if not raw_diff:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    current: Dict[str, Any] = {
+        "field": "skill_json",
+        "type": "modified",
+        "old_value": "",
+        "new_value": "",
+        "old_lines": [],
+        "new_lines": [],
+    }
+    for line in raw_diff.splitlines():
+        if line.startswith("---") or line.startswith("+++") or line.startswith("@@"):
+            continue
+        if line.startswith("-"):
+            current["old_lines"].append(line[1:])
+        elif line.startswith("+"):
+            current["new_lines"].append(line[1:])
+    current["old_value"] = "\n".join(current["old_lines"])
+    current["new_value"] = "\n".join(current["new_lines"])
+    rows.append(current)
+    return rows
