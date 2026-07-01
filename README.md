@@ -11,7 +11,7 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![GitHub stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=flat-square&logo=github&color=yellow)](https://github.com/Huangdingcheng/SkillWiki)
+[![Stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=social)](https://github.com/Huangdingcheng/SkillWiki)
 
 
 <br/>
