@@ -20,8 +20,9 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 &nbsp;·&nbsp;
 [📺 **Demo Video (Chinese)**](https://youtu.be/HNcsK-090bU)
 &nbsp;·&nbsp;
-[📖 **Paper**](https://arxiv.org/abs/2606.16523) 
-
+[🚀 **Live System (HF Space)**](https://huggingface.co/spaces/Huangdingcheng/SkillWiki)
+&nbsp;·&nbsp;
+[📖 **Paper**](https://arxiv.org/abs/2606.16523)
 </div>
 
 ---
