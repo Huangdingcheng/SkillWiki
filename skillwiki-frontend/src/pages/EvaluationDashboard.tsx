@@ -137,7 +137,7 @@ function DemoBenchmarkPanel({ artifact }: { artifact: EvaluationDemoBenchmark })
       dataIndex: 'task_id',
       key: 'task_id',
       width: 260,
-      render: value => <Text code>{value}</Text>,
+      render: value => <Text code className="skillwiki-identifier-cell">{value}</Text>,
     },
     {
       title: 'Category',
@@ -220,6 +220,7 @@ function DemoBenchmarkPanel({ artifact }: { artifact: EvaluationDemoBenchmark })
             rowKey="task_id"
             size="small"
             pagination={{ pageSize: 8 }}
+            className="skillwiki-table-contained"
             scroll={{ x: 980 }}
             expandable={{
               expandedRowRender: row => (
@@ -299,6 +300,7 @@ function SearchEvalPanel({ artifact }: { artifact: EvaluationSearchEval }) {
         rowKey={row => row.query_id || row.query || 'query-row'}
         size="small"
         pagination={{ pageSize: 6 }}
+        className="skillwiki-table-contained"
         scroll={{ x: 980 }}
       />
     </Card>
@@ -307,7 +309,7 @@ function SearchEvalPanel({ artifact }: { artifact: EvaluationSearchEval }) {
 
 function LlmPlannerPanel({ artifact }: { artifact: EvaluationDashboardResponse['artifacts']['llm_planner'] }) {
   const columns: ColumnsType<EvaluationLlmRow> = [
-    { title: 'Task', dataIndex: 'task_id', key: 'task_id', width: 240, render: value => <Text code>{value}</Text> },
+    { title: 'Task', dataIndex: 'task_id', key: 'task_id', width: 240, render: value => <Text code className="skillwiki-identifier-cell">{value}</Text> },
     { title: 'Fallback', dataIndex: 'fallback_status', key: 'fallback_status', width: 140, render: statusTag },
     { title: 'LLM', dataIndex: 'llm_status', key: 'llm_status', width: 120, render: statusTag },
     { title: 'API State', dataIndex: 'llm_api_error_type', key: 'llm_api_error_type', width: 140, render: value => value || 'N/A' },
@@ -348,6 +350,7 @@ function LlmPlannerPanel({ artifact }: { artifact: EvaluationDashboardResponse['
         rowKey={row => row.task_id || 'planner-row'}
         size="small"
         pagination={{ pageSize: 6 }}
+        className="skillwiki-table-contained"
         scroll={{ x: 920 }}
       />
     </Card>

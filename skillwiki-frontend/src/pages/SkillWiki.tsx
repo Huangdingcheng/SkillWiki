@@ -416,7 +416,8 @@ export default function SkillWiki() {
           loading={loading}
           size="middle"
           pagination={{ pageSize: 15, showSizeChanger: true }}
-          style={{ borderRadius: 8, overflow: 'hidden' }}
+          className="skillwiki-table-contained"
+          scroll={{ x: 980 }}
         />
       </motion.div>
 

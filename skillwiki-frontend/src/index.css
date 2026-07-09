@@ -6,6 +6,8 @@ body {
   margin: 0;
   font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
 }
 
 #root {
@@ -34,6 +36,108 @@ body {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.ant-btn,
+.ant-tag,
+.ant-segmented,
+.ant-select-selector,
+.ant-input,
+.ant-input-number,
+.ant-upload,
+.ant-table-wrapper .ant-table {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease, transform 160ms ease;
+}
+
+.ant-btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.ant-segmented {
+  padding: 3px;
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.ant-tag {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.ant-table-wrapper .ant-table {
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.skillwiki-table-contained {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.skillwiki-table-contained .ant-table {
+  background: #fff;
+}
+
+.skillwiki-table-contained .ant-table-container,
+.skillwiki-table-contained .ant-table-content {
+  max-width: 100%;
+  background: #fff;
+}
+
+.skillwiki-table-contained .ant-table-content {
+  overflow-x: auto !important;
+}
+
+.skillwiki-table-contained .ant-table-cell {
+  overflow-wrap: anywhere;
+}
+
+.skillwiki-table-contained .skillwiki-identifier-cell,
+.skillwiki-table-contained .skillwiki-proposal-id-cell {
+  min-width: max-content;
+}
+
+.skillwiki-table-contained .skillwiki-identifier-cell.ant-typography,
+.skillwiki-table-contained .skillwiki-identifier-cell .ant-typography,
+.skillwiki-table-contained .skillwiki-identifier-cell code,
+.skillwiki-table-contained .skillwiki-proposal-id-cell .ant-typography,
+.skillwiki-table-contained .skillwiki-proposal-id-cell code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.skillwiki-table-contained .skillwiki-proposal-id-cell .ant-typography-copy {
+  flex: 0 0 auto;
+}
+
+.skillwiki-table-contained .skillwiki-table-actions {
+  max-width: 100%;
+}
+
+.skillwiki-table-contained .skillwiki-table-actions .ant-btn {
+  min-width: 0;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: rgba(100, 116, 139, 0.08);
+  font-weight: 650;
+}
+
+:where(.ant-btn, .ant-select-selector, .ant-input, .ant-input-affix-wrapper, .ant-input-number, .ant-segmented, .ant-upload):focus-visible {
+  outline: 3px solid rgba(22, 119, 255, 0.22);
+  outline-offset: 2px;
+}
+
 pre {
   margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

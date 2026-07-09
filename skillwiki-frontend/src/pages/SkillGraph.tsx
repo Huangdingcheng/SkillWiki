@@ -158,10 +158,12 @@ type GraphInstance = {
   destroy: () => void
   draw: () => void | Promise<void>
   fitView: (options?: unknown, animation?: unknown) => void | Promise<void>
+  getElementRenderStyle: (id: string) => Record<string, unknown>
+  getNodeData: (id: string) => { style?: Record<string, unknown> }
   getZoom: () => number
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
-  updateEdgeData: (edges: Array<{ id: string; style: { badgeText: string } }>) => void
+  updateEdgeData: (edges: Array<{ id: string; style: Record<string, unknown> }>) => void
   updateNodeData: (nodes: Array<{ id: string; style: Record<string, unknown> }>) => void
   zoomBy: (ratio: number, animation?: unknown) => void | Promise<void>
 }
@@ -174,6 +176,10 @@ type ForceEdgeDatum = {
 const GRAPH_LAYOUT_STORAGE_KEY = 'skillwiki.graph.layoutSettings.v2'
 const EDGE_LABEL_ZOOM_THRESHOLD = 0.9
 const NEBULA_ZOOM_THRESHOLD = 0.65
+const NODE_HOVER_SHRINK_RATIO = 0.68
+const NODE_HOVER_BOUNCE_RATIO = 1.16
+const NODE_HOVER_RETURN_MS = 260
+const NODE_HOVER_STRETCH_PHASE = 0.58
 
 const DEFAULT_GRAPH_LAYOUT: GraphLayoutSettings = {
   repulsion: 260,
@@ -385,9 +391,136 @@ function nodeVisualSize(node: GraphViewNodeData, settings: GraphLayoutSettings, 
   return base
 }
 
+function nebulaVisualSize(node: GraphViewNodeData, selected: boolean, centered: boolean) {
+  const usageBoost = Math.floor(Number(node.usage_count || 0) * 0.025)
+  const base = 5 + usageBoost
+  return selected || centered ? base + 4 : base
+}
+
+function graphNodeRestSize(
+  node: GraphViewNodeData,
+  settings: GraphLayoutSettings,
+  selected: boolean,
+  centered: boolean,
+  nebulaMode: boolean,
+) {
+  return nebulaMode ? nebulaVisualSize(node, selected, centered) : nodeVisualSize(node, settings, selected, centered)
+}
+
+function graphNodeHoverSize(restSize: number) {
+  return Math.max(3.5, restSize * NODE_HOVER_SHRINK_RATIO)
+}
+
+function easeOutCubic(value: number) {
+  return 1 - Math.pow(1 - value, 3)
+}
+
+function interpolateNumber(from: number, to: number, progress: number) {
+  return from + (to - from) * progress
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 function nodeLabelFontSize(settings: GraphLayoutSettings, selected: boolean, centered: boolean) {
   if (selected || centered) return 10
   return settings.denseMode ? 7 : 8
+}
+
+function graphNodeVisualStyle(
+  node: GraphViewNodeData,
+  settings: GraphLayoutSettings,
+  selectedNodeId: string | null,
+  centerSkillId: string | null,
+  nebulaMode: boolean,
+): Record<string, unknown> {
+  const color = nodeColor(node)
+  const selected = node.id === selectedNodeId
+  const centered = node.id === centerSkillId
+  const { sizeScale, opacityScale } = nebulaMode ? depthScale(0) : { sizeScale: 1, opacityScale: 1 }
+  const restSize = graphNodeRestSize(node, settings, selected, centered, nebulaMode) * sizeScale
+
+  return {
+    fill: nebulaMode ? sphereGradient(color) : color,
+    fillOpacity: nebulaMode
+      ? (0.95 * opacityScale)
+      : (node.kind === 'skill' ? (STATE_OPACITY[String(node.state || '')] || 0.65) : 0.92),
+    stroke: nebulaMode
+      ? (selected ? color : blendColor(color, 'white', 0.4))
+      : (selected || centered ? '#111827' : color),
+    strokeOpacity: nebulaMode ? (selected ? 1 : 0.5 * opacityScale) : 1,
+    lineWidth: nebulaMode
+      ? (selected ? 1.2 : 0.6)
+      : (selected || centered ? 2.4 : Math.max(0.7, settings.edgeWidth * 0.8)),
+    size: restSize,
+    shadowColor: nebulaMode ? (selected ? color : 'transparent') : 'transparent',
+    shadowBlur: nebulaMode ? (selected ? 10 : 0) : 0,
+    labelText: nebulaMode ? '' : (shouldShowNodeLabel(settings.labelMode, {
+      selected,
+      centered,
+      denseMode: settings.denseMode,
+    }) ? node.name : ''),
+    labelFill: '#111827',
+    labelFontSize: nodeLabelFontSize(settings, selected, centered),
+    labelFontWeight: selected || centered ? 700 : 600,
+    labelMaxWidth: '260%',
+    labelPlacement: 'bottom' as const,
+    labelOffsetY: settings.denseMode ? 4 : 5,
+    labelStroke: '#fff',
+    labelLineWidth: settings.denseMode ? 2 : 3,
+    labelWordWrap: true,
+    cursor: 'pointer',
+  }
+}
+
+function graphEdgeVisualStyle(
+  edge: GraphViewEdgeData,
+  settings: GraphLayoutSettings,
+  selectedEdgeId: string | null,
+  nebulaMode: boolean,
+  showBadge: boolean,
+): Record<string, unknown> {
+  const selected = edge.id === selectedEdgeId
+  const color = EDGE_COLOR[edge.edge_type] || '#8c8c8c'
+  const edgeOpacityByDepth = nebulaMode ? 0.35 : settings.edgeOpacity
+  const edgeWidthByDepth = nebulaMode ? 0.9 : undefined
+  const label = formatEdgeLabel(edge)
+
+  return {
+    stroke: color,
+    strokeOpacity: nebulaMode
+      ? (selected ? 0.9 : edgeOpacityByDepth)
+      : (selected ? 1 : settings.edgeOpacity),
+    lineWidth: nebulaMode
+      ? (selected ? 1.2 : (edgeWidthByDepth ?? 0.5))
+      : (selected
+        ? Math.max(2.4, settings.edgeWidth + Number(edge.weight || 0) * 1.8)
+        : Math.max(0.4, settings.edgeWidth + Number(edge.weight || 0) * 0.7)),
+    endArrow: !nebulaMode,
+    labelText: nebulaMode ? '' : label,
+    labelFontSize: 9,
+    labelFill: color,
+    label: false,
+    labelStroke: '#fff',
+    labelLineWidth: 3,
+    labelPlacement: 'center' as const,
+    labelOffsetX: 0,
+    labelOffsetY: -18,
+    badgeText: nebulaMode || !showBadge ? '' : label,
+    badgeFontSize: 9,
+    badgeFill: color,
+    badgeBackgroundFill: '#fff',
+    badgeBackgroundOpacity: nebulaMode ? 0 : 0.9,
+    badgeBackgroundRadius: 4,
+    badgePadding: [1, 4, 1, 4],
+    badgePlacement: 'suffix' as const,
+    badgeOffsetX: 0,
+    badgeOffsetY: -18,
+    cursor: 'pointer',
+  }
 }
 
 function formatMetadataValue(value: unknown) {
@@ -525,6 +658,11 @@ export default function SkillGraph() {
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<GraphInstance | null>(null)
   const openedFromQuery = useRef<string | null>(null)
+  const selectedNodeIdRef = useRef<string | null>(null)
+  const selectedEdgeIdRef = useRef<string | null>(null)
+  const centerSkillIdRef = useRef<string | null>(null)
+  const nebulaModeRef = useRef(true)
+  const syncGraphVisualStateRef = useRef<(() => void) | null>(null)
 
   const [viewMode, setViewMode] = useState<GraphViewMode>('skill_only')
   const [mode, setMode] = useState<GraphMode>('full')
@@ -644,9 +782,10 @@ export default function SkillGraph() {
   useEffect(() => {
     if (!graphData?.nodes.length) return
     const preselectId = new URLSearchParams(location.search).get('preselect')
-    if (preselectId && graphData.nodes.some(n => n.id === preselectId)) {
-      setSelectedNodeId(preselectId)
-    }
+    if (!preselectId || !graphData.nodes.some(n => n.id === preselectId)) return
+
+    const timeoutId = window.setTimeout(() => setSelectedNodeId(preselectId), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [graphData, location.search])
 
   useEffect(() => {
@@ -680,9 +819,19 @@ export default function SkillGraph() {
   }, [graphData?.nodes.length])
 
   useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId
+    selectedEdgeIdRef.current = selectedEdgeId
+    centerSkillIdRef.current = centerSkillId
+    nebulaModeRef.current = nebulaMode
+    syncGraphVisualStateRef.current?.()
+  }, [centerSkillId, nebulaMode, selectedEdgeId, selectedNodeId])
+
+  useEffect(() => {
     if (!graphData || !containerRef.current || graphData.nodes.length === 0) return
 
     let disposed = false
+    const hoverAnimationFrames = new Map<string, number>()
+    const hoverRestSizes = new Map<string, number>()
 
     import('@antv/g6').then((G6) => {
       if (disposed || !containerRef.current) return
@@ -713,16 +862,7 @@ export default function SkillGraph() {
       )
 
       const nodes = graphData.nodes.map(node => {
-        const color = nodeColor(node)
-        const selected = node.id === selectedNodeId
-        const centered = node.id === centerSkillId
         const position = initialPositions.get(node.id)
-        const { sizeScale, opacityScale } = nebulaMode ? depthScale(0) : { sizeScale: 1, opacityScale: 1 }
-        const nebulaSize = (5 + Math.floor(Number(node.usage_count || 0) * 0.025)) * sizeScale
-        const nebulaFill = nebulaMode ? sphereGradient(color) : color
-        // Highlight ring for selected nebula nodes
-        const nebulaShadowColor = selected ? color : 'transparent'
-        const nebulaShadowBlur = selected ? 10 : 0
         return {
           id: node.id,
           data: {
@@ -733,83 +873,24 @@ export default function SkillGraph() {
           style: {
             x: position?.x,
             y: position?.y,
-            fill: nebulaFill,
-            fillOpacity: nebulaMode
-              ? (0.95 * opacityScale)
-              : (node.kind === 'skill' ? (STATE_OPACITY[String(node.state || '')] || 0.65) : 0.92),
-            stroke: nebulaMode
-              ? (selected ? color : blendColor(color, 'white', 0.4))
-              : (selected || centered ? '#111827' : color),
-            strokeOpacity: nebulaMode ? (selected ? 1 : 0.5 * opacityScale) : 1,
-            lineWidth: nebulaMode
-              ? (selected ? 1.2 : 0.6)
-              : (selected || centered ? 2.4 : Math.max(0.7, layoutSettings.edgeWidth * 0.8)),
-            size: nebulaMode
-              ? (selected ? nebulaSize + 4 : nebulaSize)
-              : nodeVisualSize(node, layoutSettings, selected, centered),
-            shadowColor: nebulaMode ? nebulaShadowColor : 'transparent',
-            shadowBlur: nebulaMode ? nebulaShadowBlur : 0,
-            labelText: nebulaMode ? '' : (shouldShowNodeLabel(layoutSettings.labelMode, {
-              selected,
-              centered,
-              denseMode: layoutSettings.denseMode,
-            }) ? node.name : ''),
-            labelFill: '#111827',
-            labelFontSize: nodeLabelFontSize(layoutSettings, selected, centered),
-            labelFontWeight: selected || centered ? 700 : 600,
-            labelMaxWidth: '260%',
-            labelPlacement: 'bottom' as const,
-            labelOffsetY: layoutSettings.denseMode ? 4 : 5,
-            labelStroke: '#fff',
-            labelLineWidth: layoutSettings.denseMode ? 2 : 3,
-            labelWordWrap: true,
-            cursor: 'pointer',
+            ...graphNodeVisualStyle(
+              node,
+              layoutSettings,
+              selectedNodeIdRef.current,
+              centerSkillIdRef.current,
+              nebulaModeRef.current,
+            ),
           },
         }
       })
 
       const edges = filteredEdges.map(edge => {
-        const selected = edge.id === selectedEdgeId
-        const color = EDGE_COLOR[edge.edge_type] || '#8c8c8c'
-        const edgeOpacityByDepth = nebulaMode ? 0.35 : layoutSettings.edgeOpacity
-        const edgeWidthByDepth = nebulaMode ? 0.9 : undefined
         return {
           id: edge.id,
           source: edge.source,
           target: edge.target,
           data: { edgeType: edge.edge_type, weight: edge.weight },
-          style: {
-            stroke: color,
-            strokeOpacity: nebulaMode
-              ? (selected ? 0.9 : edgeOpacityByDepth)
-              : (selected ? 1 : layoutSettings.edgeOpacity),
-            lineWidth: nebulaMode
-              ? (selected ? 1.2 : (edgeWidthByDepth ?? 0.5))
-              : (selected
-                ? Math.max(2.4, layoutSettings.edgeWidth + Number(edge.weight || 0) * 1.8)
-                : Math.max(0.4, layoutSettings.edgeWidth + Number(edge.weight || 0) * 0.7)),
-            endArrow: !nebulaMode,
-            labelText: nebulaMode ? '' : formatEdgeLabel(edge),
-            labelFontSize: 9,
-            labelFill: color,
-            label: false,
-            labelStroke: '#fff',
-            labelLineWidth: 3,
-            labelPlacement: 'center' as const,
-            labelOffsetX: 0,
-            labelOffsetY: -18,
-            badgeText: nebulaMode ? '' : formatEdgeLabel(edge),
-            badgeFontSize: 9,
-            badgeFill: color,
-            badgeBackgroundFill: '#fff',
-            badgeBackgroundOpacity: nebulaMode ? 0 : 0.9,
-            badgeBackgroundRadius: 4,
-            badgePadding: [1, 4, 1, 4],
-            badgePlacement: 'suffix' as const,
-            badgeOffsetX: 0,
-            badgeOffsetY: -18,
-            cursor: 'pointer',
-          },
+          style: graphEdgeVisualStyle(edge, layoutSettings, selectedEdgeIdRef.current, nebulaModeRef.current, true),
         }
       })
 
@@ -842,49 +923,233 @@ export default function SkillGraph() {
 
       let graphReady = false
       let edgeLabelsVisibleKey: string | null = null
+      let hoveredNodeId: string | null = null
+      let latestZoom = 1
+
+      const readGraphZoom = () => {
+        try {
+          const zoom = g.getZoom()
+          if (Number.isFinite(zoom)) latestZoom = zoom
+        } catch {
+          // G6 can emit transform events while its viewport controller is still settling.
+        }
+        return latestZoom
+      }
+
+      const cancelNodeHoverAnimation = (id: string) => {
+        const frameId = hoverAnimationFrames.get(id)
+        if (frameId !== undefined) {
+          window.cancelAnimationFrame(frameId)
+          hoverAnimationFrames.delete(id)
+        }
+      }
+
+      const drawNodePatch = (id: string, style: Record<string, unknown>) => {
+        if (disposed) return
+        g.updateNodeData([{ id, style }])
+        void Promise.resolve(g.draw())
+      }
+
+      const readRenderedNodeSize = (id: string) => {
+        const modelSize = Number(g.getNodeData(id)?.style?.size)
+        if (Number.isFinite(modelSize) && modelSize > 0) return modelSize
+
+        const renderedSize = Number(g.getElementRenderStyle(id)?.size)
+        if (Number.isFinite(renderedSize) && renderedSize > 0) return renderedSize
+
+        return null
+      }
+
+      const restoreNodeWithBounce = (
+        id: string,
+        node: GraphViewNodeData,
+        restSize: number,
+        labelText: string,
+        onComplete: () => void,
+      ) => {
+        cancelNodeHoverAnimation(id)
+
+        const restingStyle = {
+          labelText,
+          size: restSize,
+          shadowColor: nebulaModeRef.current ? (id === selectedNodeIdRef.current ? nodeColor(node) : 'transparent') : 'transparent',
+          shadowBlur: nebulaModeRef.current ? (id === selectedNodeIdRef.current ? 10 : 0) : 0,
+        }
+
+        if (prefersReducedMotion()) {
+          drawNodePatch(id, restingStyle)
+          onComplete()
+          return
+        }
+
+        const startTime = window.performance.now()
+        const peakSize = restSize * NODE_HOVER_BOUNCE_RATIO
+        const startSize = graphNodeHoverSize(restSize)
+
+        const step = (now: number) => {
+          if (disposed) return
+
+          const elapsed = now - startTime
+          const progress = Math.min(1, elapsed / NODE_HOVER_RETURN_MS)
+          const stretchProgress = Math.min(1, progress / NODE_HOVER_STRETCH_PHASE)
+          const settleProgress = progress <= NODE_HOVER_STRETCH_PHASE
+            ? 0
+            : (progress - NODE_HOVER_STRETCH_PHASE) / (1 - NODE_HOVER_STRETCH_PHASE)
+          const size = progress <= NODE_HOVER_STRETCH_PHASE
+            ? interpolateNumber(startSize, peakSize, easeOutCubic(stretchProgress))
+            : interpolateNumber(peakSize, restSize, easeOutCubic(settleProgress))
+
+          drawNodePatch(id, {
+            ...restingStyle,
+            size,
+          })
+
+          if (progress < 1) {
+            hoverAnimationFrames.set(id, window.requestAnimationFrame(step))
+            return
+          }
+
+          hoverAnimationFrames.delete(id)
+          drawNodePatch(id, restingStyle)
+          onComplete()
+        }
+
+        hoverAnimationFrames.set(id, window.requestAnimationFrame(step))
+      }
+
       const syncEdgeLabelVisibility = () => {
         if (disposed || !graphReady || filteredEdges.length === 0) return
+        const zoom = readGraphZoom()
+        const selectedEdgeId = selectedEdgeIdRef.current
+        const currentNebulaMode = nebulaModeRef.current
         const visibleIds = shouldShowEdgeLabels(
           layoutSettings.edgeLabelMode,
-          g.getZoom(),
+          zoom,
           filteredEdges,
           selectedEdgeId,
         )
-        const visibleKey = `${layoutSettings.edgeLabelMode}:${g.getZoom().toFixed(2)}:${selectedEdgeId || ''}:${visibleIds.size}`
+        const visibleKey = [
+          layoutSettings.edgeLabelMode,
+          zoom.toFixed(2),
+          selectedEdgeId || '',
+          currentNebulaMode ? 'nebula' : 'readable',
+          ...visibleIds,
+        ].join(':')
         if (edgeLabelsVisibleKey === visibleKey) return
 
         edgeLabelsVisibleKey = visibleKey
         g.updateEdgeData(filteredEdges.map(edge => ({
           id: edge.id,
-          style: { badgeText: visibleIds.has(edge.id) ? formatEdgeLabel(edge) : '' },
+          style: graphEdgeVisualStyle(
+            edge,
+            layoutSettings,
+            selectedEdgeId,
+            currentNebulaMode,
+            visibleIds.has(edge.id),
+          ),
         })))
         void Promise.resolve(g.draw())
       }
 
-      const updateHoveredNodeLabel = (id: string | undefined, visible: boolean) => {
-        if (!id || layoutSettings.labelMode !== 'hover') return
-        const node = graphData.nodes.find(item => item.id === id)
+      const syncGraphVisualState = () => {
+        if (disposed || !graphReady) return
+        const zoom = readGraphZoom()
+        const selectedNodeId = selectedNodeIdRef.current
+        const selectedEdgeId = selectedEdgeIdRef.current
+        const currentCenterSkillId = centerSkillIdRef.current
+        const currentNebulaMode = nebulaModeRef.current
+        const visibleIds = shouldShowEdgeLabels(
+          layoutSettings.edgeLabelMode,
+          zoom,
+          filteredEdges,
+          selectedEdgeId,
+        )
+        edgeLabelsVisibleKey = [
+          layoutSettings.edgeLabelMode,
+          zoom.toFixed(2),
+          selectedEdgeId || '',
+          currentNebulaMode ? 'nebula' : 'readable',
+          ...visibleIds,
+        ].join(':')
+
+        g.updateNodeData(graphData.nodes.map(node => ({
+          id: node.id,
+          style: graphNodeVisualStyle(
+            node,
+            layoutSettings,
+            selectedNodeId,
+            currentCenterSkillId,
+            currentNebulaMode,
+          ),
+        })))
+        g.updateEdgeData(filteredEdges.map(edge => ({
+          id: edge.id,
+          style: graphEdgeVisualStyle(
+            edge,
+            layoutSettings,
+            selectedEdgeId,
+            currentNebulaMode,
+            visibleIds.has(edge.id),
+          ),
+        })))
+        void Promise.resolve(g.draw())
+      }
+
+      const updateHoveredNodeState = (id: string | undefined, visible: boolean) => {
+        const activeId = id || hoveredNodeId || undefined
+        if (!activeId) return
+
+        if (!visible && hoveredNodeId !== activeId) return
+
+        const previousHoveredId = hoveredNodeId
+        if (visible && previousHoveredId && previousHoveredId !== activeId) {
+          updateHoveredNodeState(previousHoveredId, false)
+        }
+
+        if (visible) hoveredNodeId = activeId
+        if (!visible && hoveredNodeId === activeId) hoveredNodeId = null
+
+        const node = graphData.nodes.find(item => item.id === activeId)
         if (!node) return
-        const selected = id === selectedNodeId
-        const centered = id === centerSkillId
-        const shouldKeep = shouldShowNodeLabel(layoutSettings.labelMode, {
+
+        const selected = activeId === selectedNodeIdRef.current
+        const centered = activeId === centerSkillIdRef.current
+        const currentNebulaMode = nebulaModeRef.current
+        const labelShouldPersist = shouldShowNodeLabel(layoutSettings.labelMode, {
           selected,
           centered,
           denseMode: layoutSettings.denseMode,
         })
-        g.updateNodeData([{
-          id,
-          style: {
-            labelText: visible || shouldKeep ? node.name : '',
-            size: visible ? Math.max(nodeVisualSize(node, layoutSettings, selected, centered) + 5, 18) : nodeVisualSize(node, layoutSettings, selected, centered),
-          },
-        }])
-        void Promise.resolve(g.draw())
+        const labelText = layoutSettings.labelMode === 'hover'
+          ? (visible || labelShouldPersist ? node.name : '')
+          : (labelShouldPersist ? node.name : '')
+        const fallbackRestSize = graphNodeRestSize(node, layoutSettings, selected, centered, currentNebulaMode)
+
+        if (visible) {
+          cancelNodeHoverAnimation(activeId)
+          const restSize = hoverRestSizes.get(activeId) ?? readRenderedNodeSize(activeId) ?? fallbackRestSize
+          hoverRestSizes.set(activeId, restSize)
+          drawNodePatch(activeId, {
+            labelText,
+            size: graphNodeHoverSize(restSize),
+            shadowColor: currentNebulaMode ? nodeColor(node) : 'rgba(22, 119, 255, 0.28)',
+            shadowBlur: currentNebulaMode ? 12 : 8,
+          })
+          return
+        }
+
+        const restSize = hoverRestSizes.get(activeId) ?? fallbackRestSize
+        restoreNodeWithBounce(activeId, node, restSize, labelText, () => {
+          hoverRestSizes.delete(activeId)
+        })
       }
 
       g.on('node:click', event => {
         const id = event.target?.id
         if (id) {
+          selectedNodeIdRef.current = id
+          selectedEdgeIdRef.current = null
+          syncGraphVisualState()
           setSelectedNodeId(id)
           setSelectedEdgeId(null)
         }
@@ -893,15 +1158,25 @@ export default function SkillGraph() {
       g.on('edge:click', event => {
         const id = event.target?.id
         if (id) {
+          selectedEdgeIdRef.current = id
+          selectedNodeIdRef.current = null
+          syncGraphVisualState()
           setSelectedEdgeId(id)
           setSelectedNodeId(null)
         }
       })
 
-      g.on('node:pointerenter', event => updateHoveredNodeLabel(event.target?.id, true))
-      g.on('node:pointerleave', event => updateHoveredNodeLabel(event.target?.id, false))
+      g.on('node:pointerenter', event => updateHoveredNodeState(event.target?.id, true))
+      g.on('node:pointerleave', event => updateHoveredNodeState(event.target?.id, false))
+      g.on('node:pointerout', event => updateHoveredNodeState(event.target?.id, false))
+      g.on('edge:pointerenter', () => updateHoveredNodeState(undefined, false))
+      g.on('canvas:pointermove', () => updateHoveredNodeState(undefined, false))
+      g.on('canvas:pointerleave', () => updateHoveredNodeState(undefined, false))
 
       g.on('canvas:click', () => {
+        selectedNodeIdRef.current = null
+        selectedEdgeIdRef.current = null
+        syncGraphVisualState()
         setSelectedNodeId(null)
         setSelectedEdgeId(null)
       })
@@ -909,19 +1184,25 @@ export default function SkillGraph() {
       // Zoom → nebula mode transition
       g.on('aftertransform', () => {
         if (disposed) return
-        const zoom = g.getZoom()
-        setNebulaMode(zoom < NEBULA_ZOOM_THRESHOLD)
+        const zoom = readGraphZoom()
+        const nextNebulaMode = zoom < NEBULA_ZOOM_THRESHOLD
+        if (nebulaModeRef.current !== nextNebulaMode) {
+          nebulaModeRef.current = nextNebulaMode
+          setNebulaMode(nextNebulaMode)
+          syncGraphVisualState()
+          return
+        }
         syncEdgeLabelVisibility()
       })
 
       graphRef.current = g
+      syncGraphVisualStateRef.current = syncGraphVisualState
       void Promise.resolve(g.render()).then(() => {
         if (!disposed) {
           graphReady = true
           syncEdgeLabelVisibility()
           void Promise.resolve(g.fitView({ when: 'always' }, { duration: 160 })).then(() => {
             syncEdgeLabelVisibility()
-            g.on('aftertransform', syncEdgeLabelVisibility)
           })
         }
       })
@@ -929,12 +1210,16 @@ export default function SkillGraph() {
 
     return () => {
       disposed = true
+      syncGraphVisualStateRef.current = null
+      hoverAnimationFrames.forEach(frameId => window.cancelAnimationFrame(frameId))
+      hoverAnimationFrames.clear()
+      hoverRestSizes.clear()
       if (graphRef.current) {
         graphRef.current.destroy()
         graphRef.current = null
       }
     }
-  }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, nebulaMode, selectedEdgeId, selectedNodeId])
+  }, [canvasSize, edgeFilter, graphData, layoutSettings])
 
   const handleViewChange = (nextView: GraphViewMode) => {
     setViewMode(nextView)
@@ -1177,7 +1462,7 @@ export default function SkillGraph() {
         >
           {loading && !graphData ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-              <Spin size="large" tip="Loading graph data..." />
+              <Spin size="large" description="Loading graph data..." />
             </div>
           ) : !hasNodes ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', padding: 24 }}>
@@ -1375,6 +1660,7 @@ export default function SkillGraph() {
         {graphData && (
           <Space size={8} wrap>
             <span>{graphPresetName(layoutSettings)} preset</span>
+            {relationStrengthText && <span>{relationStrengthText}</span>}
             <span>{graphData.nodes.length} nodes / {graphData.edges.length} edges</span>
           </Space>
         )}

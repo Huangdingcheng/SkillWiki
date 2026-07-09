@@ -286,7 +286,7 @@ export default function HarnessVerification() {
       title: 'Loop',
       dataIndex: 'loop_id',
       width: 190,
-      render: value => <Text code>{String(value)}</Text>,
+      render: value => <Text code className="skillwiki-identifier-cell">{String(value)}</Text>,
     },
     {
       title: 'Status',
@@ -556,6 +556,7 @@ export default function HarnessVerification() {
                 rowKey="loop_id"
                 size="small"
                 pagination={{ pageSize: 6 }}
+                className="skillwiki-table-contained"
                 scroll={{ x: 900 }}
                 locale={{ emptyText: 'No saved harness evidence yet' }}
               />
