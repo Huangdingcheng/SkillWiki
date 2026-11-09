@@ -1,5 +1,5 @@
 {
-  "source": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\worktrees\\integration\\skillwiki\\skillwiki",
+  "source": "integration/skillwiki/skillwiki",
   "files": {
     "cli.py": "2d75da5d7fdde785c17a5e46b71bb22b5cecf57de10be85d3325063d658f4f04",
     "__init__.py": "a943ad2a0ae4d2529447f190eea0d51708607c49dd059acddec773ed9e266ca4",

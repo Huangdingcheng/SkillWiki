@@ -3,7 +3,7 @@
   "branch": "codex/skillwiki-demo-product-20261109",
   "public_base": "050d540215374f73cf295c410a8beb4415f7c128",
   "integration_head": "6a8e042927890b48d809ef50922608727cc2777b",
-  "source_worktree": "C:\\Users\\m1516\\Desktop\\SKILLOS\\Codex-skilos\\worktrees\\integration",
+  "source_worktree": "integration",
   "experiment_freeze": "research/stage2-agreed-followup-execution-20261109-r1/01-freeze/product/manifest.json",
   "experiment_freeze_sha256": "6bc1ec5741173c8522b07431866645ca0f1e63e717b4a666c6522bd5ac370761",
   "copied_files": [

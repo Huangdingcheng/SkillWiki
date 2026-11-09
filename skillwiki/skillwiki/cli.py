@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlencode
 
 import click
 
@@ -23,13 +25,15 @@ API_PREFIX = "/api/v1"
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _api(ctx: click.Context, path: str, method: str = "GET", json_body=None):
     """Make a request to the running SkillWiki API."""
     import httpx
+
     base = ctx.obj.get("api_url", BASE_URL_DEFAULT)
     url = f"{base}{API_PREFIX}{path}"
     try:
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=ctx.obj.get("http_timeout", 600)) as client:
             if method == "GET":
                 r = client.get(url)
             elif method == "POST":
@@ -38,14 +42,32 @@ def _api(ctx: click.Context, path: str, method: str = "GET", json_body=None):
                 raise ValueError(f"Unsupported method: {method}")
         r.raise_for_status()
         return r.json()
+    except httpx.TimeoutException as exc:
+        raise click.ClickException(
+            "API request timed out; inspect server receipts before retrying a paid operation."
+        ) from exc
     except httpx.ConnectError:
-        click.echo(click.style(f"[FAIL] Cannot connect to SkillWiki API at {base}", fg="red"), err=True)
+        click.echo(
+            click.style(f"[FAIL] Cannot connect to SkillWiki API at {base}", fg="red"), err=True
+        )
         click.echo("  Start the backend first: skillwiki serve", err=True)
         sys.exit(1)
     except httpx.HTTPStatusError as e:
         detail = e.response.text
-        click.echo(click.style(f"[FAIL] API error {e.response.status_code}: {detail}", fg="red"), err=True)
+        click.echo(
+            click.style(f"[FAIL] API error {e.response.status_code}: {detail}", fg="red"), err=True
+        )
         sys.exit(1)
+
+
+def _read_json(path, expected=dict):
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(f"Cannot read JSON file {path}: {exc}") from exc
+    if not isinstance(value, expected):
+        raise click.ClickException(f"JSON file must contain a {expected.__name__}")
+    return value
 
 
 def _print_json(data):
@@ -56,48 +78,110 @@ def _print_json(data):
 # root group
 # ---------------------------------------------------------------------------
 
+
 @click.group()
-@click.option("--api-url", default=BASE_URL_DEFAULT, show_default=True, help="SkillWiki API base URL")
+@click.option(
+    "--api-url", default=BASE_URL_DEFAULT, show_default=True, help="SkillWiki API base URL"
+)
 @click.option("--config", default="config.yaml", show_default=True, help="Config file path")
+@click.option(
+    "--http-timeout",
+    type=click.FloatRange(min=1),
+    default=600,
+    show_default=True,
+    help="HTTP deadline; requests are never retried by CLI",
+)
 @click.option("--debug", is_flag=True, default=False, help="Enable debug mode")
 @click.version_option(version="0.1.0", prog_name="skillwiki")
 @click.pass_context
-def cli(ctx: click.Context, api_url: str, config: str, debug: bool) -> None:
+def cli(ctx: click.Context, api_url: str, config: str, debug: bool, http_timeout: float) -> None:
     """SkillWiki - A Skill-Centric Knowledge Wiki for Self-Evolving Agents"""
     ctx.ensure_object(dict)
     ctx.obj["api_url"] = api_url
     ctx.obj["config_file"] = config
     ctx.obj["debug"] = debug
+    ctx.obj["http_timeout"] = http_timeout
 
 
 # ---------------------------------------------------------------------------
 # serve
 # ---------------------------------------------------------------------------
 
+
 @cli.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8001, show_default=True)
-@click.option("--backend", default="memory", show_default=True,
-              help="Repository backend: memory | sqlite | postgres")
+@click.option("--backend", type=click.Choice(["git", "memory"]), default="git", show_default=True)
+@click.option(
+    "--storage-dir",
+    type=click.Path(path_type=Path),
+    default=Path("skillwiki-data"),
+    show_default=True,
+)
+@click.option(
+    "--governance-repo",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Existing Git repository for lifecycle snapshots and releases",
+)
+@click.option("--model", default=None, help="LLM model (otherwise LLM_MODEL)")
+@click.option("--llm-api-url", default=None, help="LLM endpoint (distinct from global API URL)")
+@click.option("--llm-retries", type=click.IntRange(0, 10), default=0, show_default=True)
+@click.option("--seed-demo/--no-seed-demo", default=False, show_default=True)
 @click.option("--api-key", default=None, envvar="LLM_API_KEY", help="LLM API key")
 @click.pass_context
-def serve(ctx: click.Context, host: str, port: int, backend: str, api_key: Optional[str]) -> None:
+def serve(
+    ctx: click.Context,
+    host: str,
+    port: int,
+    backend: str,
+    api_key: Optional[str],
+    storage_dir: Path,
+    governance_repo: Optional[Path],
+    model: Optional[str],
+    llm_api_url: Optional[str],
+    llm_retries: int,
+    seed_demo: bool,
+) -> None:
     """Start the SkillWiki API server."""
     import subprocess
+
     cmd = [
-        sys.executable, "-m", "skillwiki.api.main",
-        "--host", host, "--port", str(port),
-        "--repository-backend", backend,
+        sys.executable,
+        "-m",
+        "skillwiki.api.main",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--repository-backend",
+        backend,
     ]
+    cmd += [
+        "--skill-storage-dir",
+        str(storage_dir.resolve()),
+        "--llm-retry-count",
+        str(llm_retries),
+        "--seed-demo" if seed_demo else "--no-seed-demo",
+    ]
+    if model:
+        cmd += ["--model", model]
+    if llm_api_url:
+        cmd += ["--api-url", llm_api_url]
+    child_env = os.environ.copy()
+    if governance_repo:
+        child_env["SKILLOS_GOVERNANCE_REPO"] = str(governance_repo.resolve())
     if api_key:
-        cmd += ["--api-key", api_key]
+        child_env["LLM_API_KEY"] = api_key
     click.echo(f"Starting SkillWiki API on {host}:{port} (backend: {backend})")
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=child_env)
     except KeyboardInterrupt:
         click.echo("\nServer stopped.")
     except subprocess.CalledProcessError as e:
-        click.echo(click.style(f"[FAIL] Server exited with code {e.returncode}", fg="red"), err=True)
+        click.echo(
+            click.style(f"[FAIL] Server exited with code {e.returncode}", fg="red"), err=True
+        )
         sys.exit(e.returncode)
 
 
@@ -114,16 +198,22 @@ def ingest():
 
 
 @ingest.command("run")
-@click.argument("source_type", metavar="SOURCE_TYPE",
-                type=click.Choice(VALID_SOURCE_TYPES, case_sensitive=False))
+@click.argument(
+    "source_type",
+    metavar="SOURCE_TYPE",
+    type=click.Choice(VALID_SOURCE_TYPES, case_sensitive=False),
+)
 @click.argument("input_", metavar="INPUT")
-@click.option("--max-candidates", type=int, default=None,
-              help="Max candidates to extract (past_skills only)")
-@click.option("--create", is_flag=True, default=False,
-              help="Automatically create S1 candidates after parsing")
+@click.option(
+    "--max-candidates", type=int, default=None, help="Max candidates to extract (past_skills only)"
+)
+@click.option(
+    "--create", is_flag=True, default=False, help="Automatically create S1 candidates after parsing"
+)
 @click.pass_context
-def ingest_run(ctx: click.Context, source_type: str, input_: str,
-               max_candidates: Optional[int], create: bool) -> None:
+def ingest_run(
+    ctx: click.Context, source_type: str, input_: str, max_candidates: Optional[int], create: bool
+) -> None:
     """Parse INPUT (file path or raw text) and extract skill candidates.
 
     \b
@@ -163,13 +253,19 @@ def ingest_run(ctx: click.Context, source_type: str, input_: str,
     click.echo(f"Ingesting as '{source_type}'...")
     result = _api(ctx, endpoint, method="POST", json_body=body)
 
-    candidates = result.get("candidates") or result.get("units") or []
+    candidates = result.get("created_skills") if create else result.get("units")
+    candidates = candidates or []
+    for error in result.get("errors") or []:
+        click.echo(f"  error: {error}", err=True)
     click.echo(click.style(f"[OK] Extracted {len(candidates)} candidate(s)", fg="green"))
     for i, c in enumerate(candidates):
         cid = c.get("id") or c.get("skill_id") or f"#{i}"
         name = c.get("name") or c.get("skill_name") or "(unnamed)"
         state = c.get("state") or c.get("lifecycle_state") or ""
         click.echo(f"  [{cid}] {name} {state}")
+
+    if not result.get("success", True):
+        ctx.exit(1)
 
 
 @ingest.command("status")
@@ -192,97 +288,152 @@ def ingest_status(ctx: click.Context, candidate_id: str) -> None:
 # audit
 # ---------------------------------------------------------------------------
 
+
 @cli.command()
-@click.argument("candidate_id")
+@click.argument("candidate_id", required=False)
+@click.option(
+    "--candidate-file", type=click.Path(exists=True), help="Exact candidate-review API JSON payload"
+)
+@click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def audit(ctx: click.Context, candidate_id: str) -> None:
-    """Run static audit on a candidate skill (schema, safety, postconditions)."""
-    skill = _api(ctx, f"/skills/{candidate_id}/full")
-    body = {
-        "source_type": skill.get("source_type", "document"),
-        "raw_content": "",
-        "skill": skill,
-    }
+def audit(ctx, candidate_id, candidate_file, as_json):
+    """Audit a candidate without persisting; configured server models may be used."""
+    if bool(candidate_id) == bool(candidate_file):
+        raise click.UsageError("Supply a stored skill ID or --candidate-file, exclusively")
+    if candidate_file:
+        body = _read_json(candidate_file)
+    else:
+        skill = _api(ctx, f"/skills/{candidate_id}/full")
+        interface = skill.get("interface") or {}
+        impl = skill.get("implementation") or {}
+        if impl.get("code"):
+            raise click.ClickException(
+                "The candidate-review API accepts prompt-based drafts; it cannot preserve "
+                "this stored code implementation. Use the native verification workflow."
+            )
+        provenance = skill.get("provenance") or {}
+        context = provenance.get("creation_context") or {}
+        source = context.get("source") or {}
+        body = {
+            key: skill[key]
+            for key in (
+                "name",
+                "description",
+                "skill_type",
+                "tags",
+                "evaluation",
+                "dependency_ids",
+                "component_ids",
+            )
+            if key in skill
+        }
+        body.update(
+            {
+                key: interface[key]
+                for key in ("input_schema", "output_schema", "preconditions", "postconditions")
+                if key in interface
+            }
+        )
+        body.update(
+            {
+                key: impl[key]
+                for key in (
+                    "prompt_template",
+                    "prompt_format",
+                    "request_body_validation",
+                    "tool_calls",
+                    "sub_skill_ids",
+                )
+                if key in impl
+            }
+        )
+        body.update(
+            source_type=context.get("source_type") or provenance.get("source_type") or "document",
+            unit_id=context.get("unit_id") or candidate_id,
+            raw_content=source.get("content", ""),
+            provenance=provenance,
+        )
+        # Generic API-created skills have no source material; audit their contract
+        # as a document draft, without inventing source text or proof.
+        if body["source_type"] == "api":
+            body["source_type"] = "document"
     result = _api(ctx, "/ingest/audit-candidate", method="POST", json_body=body)
-    passed = result.get("passed", False)
-    score = result.get("score", 0)
-    icon = click.style("[OK]", fg="green") if passed else click.style("[FAIL]", fg="red")
-    click.echo(f"{icon} Audit {'passed' if passed else 'failed'} (score: {score:.2f})")
-    for issue in result.get("issues") or []:
-        click.echo(f"  - {issue}")
+    if as_json:
+        _print_json(result)
+    else:
+        click.echo(
+            f"Audit {'passed' if result.get('passed') else 'failed'} (score: {result.get('audit_score', 0):.2f})"
+        )
+        for field in ("issues", "warnings", "recommendations"):
+            for item in result.get(field) or []:
+                click.echo(f"  {field}: {item}")
+    if not result.get("passed"):
+        ctx.exit(1)
 
-
-# ---------------------------------------------------------------------------
-# verify
-# ---------------------------------------------------------------------------
 
 @cli.command()
 @click.argument("skill_id")
-@click.option("--harness", default="mock", show_default=True,
-              type=click.Choice(["mock", "claude_code", "codex"], case_sensitive=False),
-              help="Execution harness to use")
-@click.option("--max-retries", default=3, show_default=True, help="Max repair+retry attempts")
-@click.option("--promote/--no-promote", default=True, show_default=True,
-              help="Auto-promote to S3 on pass")
-@click.option("--watch", is_flag=True, default=False, help="Print each attempt result")
-@click.option("--timeout", default=60, show_default=True, help="Per-attempt timeout (seconds)")
+@click.option(
+    "--harness",
+    default="local_skillwiki",
+    show_default=True,
+    type=click.Choice(["local_skillwiki", "claude_code", "codex_cli", "codex"]),
+)
+@click.option(
+    "--max-attempts",
+    "--max-retries",
+    default=1,
+    type=click.IntRange(1, 5),
+    show_default=True,
+    help="Total attempts, including the first; --max-retries is a legacy alias",
+)
+@click.option("--allow-repair/--no-repair", default=False, show_default=True)
+@click.option("--promote/--no-promote", default=False, show_default=True)
+@click.option(
+    "--test-cases",
+    type=click.Path(exists=True),
+    help="JSON array of native HarnessTestCase objects",
+)
+@click.option("--watch", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--timeout", default=120, type=click.IntRange(1, 600), show_default=True)
 @click.pass_context
-def verify(ctx: click.Context, skill_id: str, harness: str, max_retries: int,
-           promote: bool, watch: bool, timeout: int) -> None:
-    """Execute-verify loop until postconditions pass or retries exhausted.
-
-    \b
-    Examples:
-      skillwiki verify abc123
-      skillwiki verify abc123 --harness claude_code --max-retries 5 --watch
-      skillwiki verify abc123 --no-promote
-    """
-    body = {
-        "harness": harness,
-        "max_attempts": max_retries,
-        "promote_on_pass": promote,
-        "allow_repair": True,
-        "timeout_s": timeout,
-    }
-
-    if watch:
-        click.echo(
-            f"Running verify loop for {skill_id} "
-            f"(harness={harness}, max_retries={max_retries})..."
-        )
-
+def verify(
+    ctx, skill_id, harness, max_attempts, allow_repair, promote, test_cases, watch, as_json, timeout
+):
+    """Run native verification; additional attempts/repair/promotion are opt-in."""
+    body = dict(
+        harness="codex_cli" if harness == "codex" else harness,
+        max_attempts=max_attempts,
+        promote_on_pass=promote,
+        allow_repair=allow_repair,
+        timeout_s=timeout,
+    )
+    if test_cases:
+        body["test_cases"] = _read_json(test_cases, list)
     result = _api(ctx, f"/harness/{skill_id}/verify-loop", method="POST", json_body=body)
-
-    status = result.get("status", "unknown")
-    score = result.get("score", 0)
-    attempts = result.get("attempt_count", 0)
-    final_state = result.get("final_state") or ""
-
-    if watch:
-        for i, attempt in enumerate(result.get("attempts") or []):
-            a_passed = attempt.get("passed", False)
-            a_icon = click.style("[OK]", fg="green") if a_passed else click.style("[FAIL]", fg="red")
-            click.echo(f"  Attempt {i + 1}: {a_icon} score={attempt.get('score', 0):.2f}")
-
-    if status == "passed":
-        click.echo(click.style(
-            f"[OK] Verified in {attempts} attempt(s) — score: {score:.2f}", fg="green"
-        ))
-        if promote and final_state:
-            click.echo(f"  State promoted to: {final_state}")
+    if as_json:
+        _print_json(result)
     else:
-        click.echo(click.style(
-            f"[FAIL] Verification failed after {attempts} attempt(s) — score: {score:.2f}", fg="red"
-        ))
-        repairs = result.get("repairs") or []
-        if repairs:
-            click.echo(f"  Repair attempts: {len(repairs)}")
-        sys.exit(1)
+        click.echo(
+            f"Verification: {result.get('status', 'unknown')}; attempts: {result.get('attempt_count', 0)}"
+        )
+        click.echo("Score: " + json.dumps(result.get("score", {}), ensure_ascii=False))
+        click.echo(
+            f"Promotion allowed: {result.get('promotion_allowed', False)}; state: {result.get('final_state', '')}"
+        )
+        click.echo(f"Evidence: {result.get('evidence_path', '')}")
+        if watch:
+            for attempt in result.get("attempts") or []:
+                _print_json(attempt)
+    if result.get("status") not in {"passed", "verified"}:
+        ctx.exit(1)
 
 
 # ---------------------------------------------------------------------------
 # promote
 # ---------------------------------------------------------------------------
+
 
 @cli.command()
 @click.argument("skill_id")
@@ -292,14 +443,14 @@ def promote(ctx: click.Context, skill_id: str, target_state: str) -> None:
     """Manually advance a skill's lifecycle state.
 
     \b
-    States: S0 (raw) -> S1 (candidate) -> S2 (draft) -> S3 (verified) -> S4 (released)
+    Use native state values S0 through S7; server governance gates still apply.
 
     \b
     Examples:
       skillwiki promote abc123 S3
-      skillwiki promote abc123 released
+      skillwiki promote abc123 S4
     """
-    body = {"target_state": target_state}
+    body = {"new_state": target_state}
     result = _api(ctx, f"/lifecycle/{skill_id}/transition", method="POST", json_body=body)
     new_state = result.get("lifecycle_state") or result.get("state") or target_state
     click.echo(click.style(f"[OK] {skill_id} -> {new_state}", fg="green"))
@@ -309,26 +460,29 @@ def promote(ctx: click.Context, skill_id: str, target_state: str) -> None:
 # skill group
 # ---------------------------------------------------------------------------
 
+
 @cli.group()
 def skill():
     """Query and execute skills."""
 
 
 @skill.command("list")
-@click.option("--state", default=None, help="Filter by lifecycle state (e.g. S3, released)")
+@click.option(
+    "--state",
+    type=click.Choice([f"S{i}" for i in range(8)]),
+    help="Filter by native lifecycle state",
+)
 @click.option("--tag", default=None, help="Filter by tag")
-@click.option("--limit", default=20, show_default=True)
+@click.option("--limit", type=click.IntRange(1, 1000), default=20, show_default=True)
 @click.pass_context
 def skill_list(ctx: click.Context, state: Optional[str], tag: Optional[str], limit: int) -> None:
     """List skills in the wiki."""
-    params = []
+    params = {"limit": limit}
     if state:
-        params.append(f"state={state}")
+        params["state"] = state
     if tag:
-        params.append(f"tag={tag}")
-    if limit:
-        params.append(f"limit={limit}")
-    qs = ("?" + "&".join(params)) if params else ""
+        params["tags"] = tag
+    qs = "?" + urlencode(params)
     skills = _api(ctx, f"/skills{qs}")
     if not skills:
         click.echo("No skills found.")
@@ -345,8 +499,9 @@ def skill_list(ctx: click.Context, state: Optional[str], tag: Optional[str], lim
 
 @skill.command("get")
 @click.argument("skill_id")
-@click.option("--full", is_flag=True, default=False,
-              help="Show full schema including implementation")
+@click.option(
+    "--full", is_flag=True, default=False, help="Show full schema including implementation"
+)
 @click.pass_context
 def skill_get(ctx: click.Context, skill_id: str, full: bool) -> None:
     """Show details of a skill."""
@@ -366,10 +521,10 @@ def skill_status(ctx: click.Context, skill_id: str) -> None:
       skillwiki skill status abc123
     """
     result = _api(ctx, f"/skills/{skill_id}")
-    name  = result.get("name") or result.get("skill_name") or skill_id
+    name = result.get("name") or result.get("skill_name") or skill_id
     state = result.get("lifecycle_state") or result.get("state") or "unknown"
-    ver   = result.get("version") or ""
-    sr    = result.get("success_rate")
+    ver = result.get("version") or ""
+    sr = result.get("success_rate")
     click.echo(f"Skill : {name}")
     click.echo(f"ID    : {skill_id}")
     click.echo(f"State : {state}" + (f"  (v{ver})" if ver else ""))
@@ -384,8 +539,7 @@ def skill_status(ctx: click.Context, skill_id: str) -> None:
 
 @skill.command("exec")
 @click.argument("skill_id")
-@click.option("--input", "input_data", default="{}", show_default=True,
-              help="JSON input object")
+@click.option("--input", "input_data", default="{}", show_default=True, help="JSON input object")
 @click.pass_context
 def skill_exec(ctx: click.Context, skill_id: str, input_data: str) -> None:
     """Execute a skill with the given JSON input.
@@ -400,21 +554,29 @@ def skill_exec(ctx: click.Context, skill_id: str, input_data: str) -> None:
         click.echo(click.style(f"[FAIL] Invalid JSON input: {e}", fg="red"), err=True)
         sys.exit(1)
 
-    body = {"skill_id": skill_id, "input": payload}
+    if not isinstance(payload, dict):
+        raise click.UsageError("--input must be a JSON object")
+    body = {"skill_id": skill_id, "inputs": payload}
     click.echo(f"Executing skill {skill_id}...")
-    result = _api(ctx, "/execution/run", method="POST", json_body=body)
+    result = _api(ctx, "/execution/skill", method="POST", json_body=body)
     status = result.get("status") or "unknown"
-    icon = click.style("[OK]", fg="green") if status == "success" else click.style("[FAIL]", fg="red")
+    icon = (
+        click.style("[OK]", fg="green") if status == "success" else click.style("[FAIL]", fg="red")
+    )
     click.echo(f"{icon} Status: {status}")
-    output = result.get("output") or result.get("result")
-    if output:
+    output = result.get("outputs", result.get("output", result.get("result")))
+    if output is not None:
         click.echo("Output:")
         _print_json(output)
+
+    if status != "success":
+        ctx.exit(1)
 
 
 # ---------------------------------------------------------------------------
 # run
 # ---------------------------------------------------------------------------
+
 
 @cli.command()
 @click.argument("task")
@@ -428,26 +590,32 @@ def run(ctx: click.Context, task: str, verbose: bool) -> None:
       skillwiki run "analyze the attached PDF and summarize key points"
       skillwiki run "create an Excel report from this data" --verbose
     """
-    body = {"task": task}
+    body = {"goal": task}
     click.echo(f"Running task: {task}")
-    result = _api(ctx, "/execution/task", method="POST", json_body=body)
+    result = _api(ctx, "/execution/plan", method="POST", json_body=body)
     status = result.get("status") or "unknown"
-    icon = click.style("[OK]", fg="green") if status == "success" else click.style("[FAIL]", fg="red")
+    icon = (
+        click.style("[OK]", fg="green") if status == "success" else click.style("[FAIL]", fg="red")
+    )
     click.echo(f"{icon} {status}")
     if verbose:
-        for step in (result.get("plan") or []):
+        for step in result.get("steps") or []:
             click.echo(f"  -> {step}")
-    output = result.get("output") or result.get("result")
-    if output:
+    output = result.get("outputs", result.get("output", result.get("result")))
+    if output is not None:
         if isinstance(output, (dict, list)):
             _print_json(output)
         else:
             click.echo(output)
 
+    if status != "success":
+        ctx.exit(1)
+
 
 # ---------------------------------------------------------------------------
 # health
 # ---------------------------------------------------------------------------
+
 
 @cli.command()
 @click.argument("skill_id", required=False, default=None)
@@ -467,12 +635,12 @@ def health(ctx: click.Context, skill_id: Optional[str], as_json: bool) -> None:
         if as_json:
             _print_json(result)
             return
-        name    = result.get("skill_name") or skill_id
-        status  = result.get("status") or "unknown"
-        sr      = result.get("success_rate", 0.0)
-        usage   = result.get("usage_count", 0)
+        name = result.get("skill_name") or skill_id
+        status = result.get("status") or "unknown"
+        sr = result.get("success_rate", 0.0)
+        usage = result.get("usage_count", 0)
         latency = result.get("avg_latency_ms", 0.0)
-        color   = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
+        color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
         click.echo(f"Skill   : {name}  ({skill_id})")
         click.echo(f"Status  : {click.style(status.upper(), fg=color)}")
         click.echo(f"  Success rate  : {sr * 100:.1f}%")
@@ -484,20 +652,22 @@ def health(ctx: click.Context, skill_id: Optional[str], as_json: bool) -> None:
             click.echo(f"  {click.style('->', fg='cyan')} Recommend : {rec}")
         mp = result.get("maintenance_proposal")
         if mp:
-            click.echo(f"  {click.style('!', fg='magenta')} Maintenance proposal available: "
-                       f"{mp.get('proposal_id', '')[:8]}  ({mp.get('recommended_action', '')})")
+            click.echo(
+                f"  {click.style('!', fg='magenta')} Maintenance proposal available: "
+                f"{mp.get('proposal_id', '')[:8]}  ({mp.get('recommended_action', '')})"
+            )
     else:
         result = _api(ctx, "/evolution/health")
         if as_json:
             _print_json(result)
             return
-        total   = result.get("total_skills", 0)
+        total = result.get("total_skills", 0)
         healthy = result.get("healthy_count", 0)
         degraded = result.get("degraded_count", 0)
         critical = result.get("critical_count", 0)
-        stale   = result.get("stale_count", 0)
-        ratio   = result.get("health_ratio", 1.0)
-        color   = "green" if ratio >= 0.9 else "yellow" if ratio >= 0.7 else "red"
+        stale = result.get("stale_count", 0)
+        ratio = result.get("health_ratio", 1.0)
+        color = "green" if ratio >= 0.9 else "yellow" if ratio >= 0.7 else "red"
         click.echo(f"System health  : {click.style(f'{ratio * 100:.1f}%', fg=color)}")
         click.echo(f"  Total     : {total}")
         click.echo(f"  Healthy   : {click.style(str(healthy), fg='green')}")
@@ -514,6 +684,7 @@ def health(ctx: click.Context, skill_id: Optional[str], as_json: bool) -> None:
 # ---------------------------------------------------------------------------
 # proposal
 # ---------------------------------------------------------------------------
+
 
 @cli.group()
 def proposal():
@@ -545,13 +716,15 @@ def proposal_list(ctx: click.Context, status: Optional[str], as_json: bool) -> N
     click.echo(f"{'ID':<10} {'Skill':<32} {'Action':<10} {'Status':<12} {'Confidence'}")
     click.echo("-" * 80)
     for p in proposals:
-        pid    = (p.get("proposal_id") or "")[:8]
-        sid    = (p.get("skill_id") or "")[:32]
+        pid = (p.get("proposal_id") or "")[:8]
+        sid = (p.get("skill_id") or "")[:32]
         action = (p.get("recommended_action") or "")[:10]
-        pstat  = (p.get("status") or "")[:12]
-        conf   = p.get("confidence", 0.0)
-        color  = "green" if pstat == "accepted" else "red" if pstat == "rejected" else "yellow"
-        click.echo(f"{pid:<10} {sid:<32} {action:<10} {click.style(pstat, fg=color):<12} {conf:.0%}")
+        pstat = (p.get("status") or "")[:12]
+        conf = p.get("confidence", 0.0)
+        color = "green" if pstat == "accepted" else "red" if pstat == "rejected" else "yellow"
+        click.echo(
+            f"{pid:<10} {sid:<32} {action:<10} {click.style(pstat, fg=color):<12} {conf:.0%}"
+        )
         rc = p.get("root_cause") or ""
         if rc:
             click.echo(f"  root_cause: {rc}")
@@ -589,6 +762,7 @@ def proposal_reject(ctx: click.Context, proposal_id: str) -> None:
 # ---------------------------------------------------------------------------
 # repair / evolve
 # ---------------------------------------------------------------------------
+
 
 @cli.command()
 @click.argument("skill_id")
@@ -634,12 +808,12 @@ def evolve(ctx: click.Context, as_json: bool) -> None:
     if as_json:
         _print_json(result)
         return
-    repaired   = result.get("repaired") or []
+    repaired = result.get("repaired") or []
     deprecated = result.get("deprecated") or []
-    merged     = result.get("merged") or []
-    split_     = result.get("split") or []
-    errors     = result.get("errors") or []
-    proposals  = result.get("maintenance_proposals") or []
+    merged = result.get("merged") or []
+    split_ = result.get("split") or []
+    errors = result.get("errors") or []
+    proposals = result.get("maintenance_proposals") or []
     click.echo(click.style("[OK] Evolution cycle complete", fg="green"))
     click.echo(f"  Repair candidates : {len(repaired)}")
     click.echo(f"  Deprecated        : {len(deprecated)}")
@@ -651,8 +825,8 @@ def evolve(ctx: click.Context, as_json: bool) -> None:
         for e in errors:
             click.echo(f"    - {e}")
     for p in proposals:
-        pid    = (p.get("proposal_id") or "")[:8]
-        sid    = p.get("skill_id") or ""
+        pid = (p.get("proposal_id") or "")[:8]
+        sid = p.get("skill_id") or ""
         action = p.get("recommended_action") or ""
         click.echo(f"  -> {sid}  [{pid}]  {action}")
 
@@ -660,6 +834,7 @@ def evolve(ctx: click.Context, as_json: bool) -> None:
 # ---------------------------------------------------------------------------
 # graph group
 # ---------------------------------------------------------------------------
+
 
 @cli.group()
 def graph():
@@ -714,9 +889,13 @@ def graph_neighbors(ctx: click.Context, skill_id: str, depth: int, as_json: bool
 
 @graph.command("show")
 @click.argument("skill_id")
-@click.option("--view", default="provenance",
-              type=click.Choice(["skill_only", "provenance", "version_impact"], case_sensitive=False),
-              show_default=True, help="Graph view to render")
+@click.option(
+    "--view",
+    default="provenance",
+    type=click.Choice(["skill_only", "provenance", "version_impact"], case_sensitive=False),
+    show_default=True,
+    help="Graph view to render",
+)
 @click.option("--depth", default=2, show_default=True)
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
@@ -739,7 +918,7 @@ def graph_show(ctx: click.Context, skill_id: str, view: str, depth: int, as_json
     click.echo(f"{'Node':<36} {'Type':<20} {'Label'}")
     click.echo("-" * 80)
     for n in nodes:
-        nid   = (n.get("id") or "")[:36]
+        nid = (n.get("id") or "")[:36]
         ntype = (n.get("type") or n.get("skill_type") or "")[:20]
         label = n.get("label") or n.get("name") or ""
         marker = click.style("*", fg="cyan") if skill_id in nid else " "
@@ -749,7 +928,7 @@ def graph_show(ctx: click.Context, skill_id: str, view: str, depth: int, as_json
         for e in edges[:20]:
             src = (e.get("source") or e.get("source_id") or "")[:20]
             tgt = (e.get("target") or e.get("target_id") or "")[:20]
-            et  = e.get("type") or e.get("edge_type") or ""
+            et = e.get("type") or e.get("edge_type") or ""
             click.echo(f"  {src}  --[{et}]-->  {tgt}")
         if len(edges) > 20:
             click.echo(f"  ... and {len(edges) - 20} more edges")
@@ -775,22 +954,26 @@ def graph_deps(ctx: click.Context, skill_id: str, as_json: bool) -> None:
         return
     click.echo(f"Dependency chain for {skill_id}:")
     for dep in result:
-        sid  = dep.get("skill_id") or ""
+        sid = dep.get("skill_id") or ""
         name = dep.get("name") or sid
-        ver  = dep.get("version") or ""
+        ver = dep.get("version") or ""
         click.echo(f"  -> {name:<36} {sid}  v{ver}")
 
 
 @graph.command("export")
 @click.argument("skill_id")
 @click.option("--output", "-o", default=None, help="Output file path (.json)")
-@click.option("--view", default="skill_only",
-              type=click.Choice(["skill_only", "provenance", "version_impact"], case_sensitive=False),
-              show_default=True)
+@click.option(
+    "--view",
+    default="skill_only",
+    type=click.Choice(["skill_only", "provenance", "version_impact"], case_sensitive=False),
+    show_default=True,
+)
 @click.option("--depth", default=2, show_default=True)
 @click.pass_context
-def graph_export(ctx: click.Context, skill_id: str, output: Optional[str],
-                 view: str, depth: int) -> None:
+def graph_export(
+    ctx: click.Context, skill_id: str, output: Optional[str], view: str, depth: int
+) -> None:
     """Export the subgraph around SKILL_ID as JSON.
 
     \b
@@ -809,6 +992,7 @@ def graph_export(ctx: click.Context, skill_id: str, output: Optional[str],
 # legacy config commands
 # ---------------------------------------------------------------------------
 
+
 @cli.command()
 @click.option("--api-key", required=True, help="LLM API key")
 @click.option("--api-url", default="https://yunwu.ai", show_default=True)
@@ -816,8 +1000,14 @@ def graph_export(ctx: click.Context, skill_id: str, output: Optional[str],
 @click.option("--temperature", type=float, default=None)
 @click.option("--max-tokens", type=int, default=None)
 @click.pass_context
-def init(ctx: click.Context, api_key: str, api_url: str, model: str,
-         temperature: Optional[float], max_tokens: Optional[int]) -> None:
+def init(
+    ctx: click.Context,
+    api_key: str,
+    api_url: str,
+    model: str,
+    temperature: Optional[float],
+    max_tokens: Optional[int],
+) -> None:
     """Initialize SkillWiki LLM configuration."""
     cli_args: dict = {"api_key": api_key, "api_url": api_url, "model": model}
     if temperature is not None:
@@ -844,10 +1034,10 @@ def init(ctx: click.Context, api_key: str, api_url: str, model: str,
 @click.option("--api-url", default=None)
 @click.option("--model", default=None)
 @click.pass_context
-def ping(ctx: click.Context, api_key: str, api_url: Optional[str],
-         model: Optional[str]) -> None:
+def ping(ctx: click.Context, api_key: str, api_url: Optional[str], model: Optional[str]) -> None:
     """Test LLM API connectivity."""
     from .utils.validators import test_llm_connectivity
+
     try:
         reset_config_manager()
         cli_args: dict = {"api_key": api_key}
@@ -866,6 +1056,159 @@ def ping(ctx: click.Context, api_key: str, api_url: Optional[str],
     except Exception as e:
         click.echo(click.style(f"[FAIL] {e}", fg="red"), err=True)
         sys.exit(1)
+
+
+@cli.group()
+def lifecycle():
+    """Version, snapshot, evidence-bound release and recovery (native API)."""
+
+
+def _file_action(group, name, endpoint, help_text):
+    @group.command(name, help=help_text)
+    @click.option(
+        "--file",
+        "payload_file",
+        required=True,
+        type=click.Path(exists=True),
+        help="Native API request JSON object",
+    )
+    @click.pass_context
+    def action(ctx, payload_file, skill_id=None):
+        result = _api(
+            ctx,
+            endpoint.format(skill_id=skill_id),
+            method="POST",
+            json_body=_read_json(payload_file),
+        )
+        _print_json(result)
+        if (
+            result.get("success") is False
+            or result.get("passed") is False
+            or result.get("decision") in {"reject", "defer"}
+        ):
+            ctx.exit(1)
+
+    if "{skill_id}" in endpoint:
+        click.argument("skill_id")(action)
+    return action
+
+
+_file_action(
+    ingest,
+    "audit-candidate",
+    "/ingest/audit-candidate",
+    "Audit an exact edited candidate JSON payload; no persistence.",
+)
+_file_action(
+    ingest,
+    "create-candidate",
+    "/ingest/create-candidate",
+    "Persist a reviewed candidate; creation is not release qualification.",
+)
+_file_action(
+    lifecycle,
+    "new-version",
+    "/lifecycle/{skill_id}/new-version",
+    "Create a new draft identity; old verification does not transfer.",
+)
+_file_action(
+    lifecycle,
+    "release",
+    "/lifecycle/{skill_id}/release-with-evidence",
+    "Submit identity-bound evidence for a release decision.",
+)
+_file_action(
+    lifecycle,
+    "rollback",
+    "/lifecycle/{skill_id}/rollback",
+    "Create a separate recovery draft; verify and release it afresh.",
+)
+_file_action(
+    lifecycle, "snapshot", "/lifecycle/{skill_id}/snapshot", "Commit a native governance snapshot."
+)
+
+
+@lifecycle.command("history")
+@click.argument("skill_id")
+@click.pass_context
+def lifecycle_history(ctx, skill_id):
+    """Read Git governance snapshot history."""
+    _print_json(_api(ctx, f"/lifecycle/{skill_id}/snapshot/history"))
+
+
+@lifecycle.command("diff")
+@click.argument("skill_id")
+@click.option("--from-ref", required=True)
+@click.option("--to-ref", default="HEAD", show_default=True)
+@click.pass_context
+def lifecycle_diff(ctx, skill_id, from_ref, to_ref):
+    """Inspect native snapshot differences between Git refs."""
+    _print_json(
+        _api(
+            ctx,
+            f"/lifecycle/{skill_id}/snapshot/diff?"
+            + urlencode(dict(from_ref=from_ref, to_ref=to_ref)),
+        )
+    )
+
+
+@skill.command("versions")
+@click.argument("skill_id")
+@click.pass_context
+def skill_versions(ctx, skill_id):
+    """List persisted versions."""
+    _print_json(_api(ctx, f"/skills/{skill_id}/versions"))
+
+
+@skill.command("search")
+@click.argument("query")
+@click.option(
+    "--mode", type=click.Choice(["lexical", "rule", "hybrid", "semantic"]), default="lexical"
+)
+@click.option("--limit", type=click.IntRange(1, 100), default=20)
+@click.pass_context
+def skill_search(ctx, query, mode, limit):
+    """Search skills using the configured repository capability."""
+    _print_json(
+        _api(
+            ctx,
+            "/skills/search",
+            method="POST",
+            json_body=dict(query=query, mode=mode, limit=limit),
+        )
+    )
+
+
+@cli.group()
+def execution():
+    """Read execution receipts, retrieval traces and retained experience."""
+
+
+@execution.command("history")
+@click.pass_context
+def execution_history(ctx):
+    _print_json(_api(ctx, "/execution/history"))
+
+
+@execution.command("get")
+@click.argument("execution_id")
+@click.pass_context
+def execution_get(ctx, execution_id):
+    _print_json(_api(ctx, f"/execution/history/{execution_id}"))
+
+
+@execution.command("trace")
+@click.argument("execution_id")
+@click.pass_context
+def execution_trace(ctx, execution_id):
+    _print_json(_api(ctx, f"/execution/trace/{execution_id}"))
+
+
+@execution.command("experience")
+@click.argument("execution_id")
+@click.pass_context
+def execution_experience(ctx, execution_id):
+    _print_json(_api(ctx, f"/execution/history/{execution_id}/experience"))
 
 
 if __name__ == "__main__":

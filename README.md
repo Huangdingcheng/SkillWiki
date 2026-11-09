@@ -44,7 +44,7 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 | 🕸️ | **Provenance knowledge graph** | Typed edges — `depends_on`, `composes_with`, `evolved_from`, `replaces`, and more |
 | 🩺 | **Health & evolution engine** | Continuous monitoring detects degraded skills and queues repair proposals automatically |
 | 🌐 | **Bilingual UI** | English (default) and Chinese — toggle via the language button in the header |
-| ⌨️ | **CLI-first** | Every operation available as a `skillwiki` command for scripting and agent integration |
+| ⌨️ | **CLI-first** | Native commands for ingestion, verification, governance, execution and inspection |
 
 ---
 
@@ -87,7 +87,7 @@ source venv/bin/activate      # Linux / Mac
 venv\Scripts\activate         # Windows
 
 pip install -r requirements.txt
-pip install -e .
+pip install -e ".[api]"
 ```
 
 ### Start the backend
@@ -139,15 +139,15 @@ RESTORE_SKILLWIKI_DEMO_STATE.bat
 Install once after cloning:
 
 ```bash
-cd skillwiki && pip install -e .
+cd skillwiki && pip install -e ".[api]"
 ```
 
-All commands accept `--api-url <URL>` (default `http://127.0.0.1:8001`).
+Place global options before the subcommand: `skillwiki --api-url <URL> <command>`. All commands accept `--api-url <URL>` (default `http://127.0.0.1:8001`).
 
 ### Server
 
 ```bash
-skillwiki serve [--host HOST] [--port PORT] [--backend memory|sqlite|postgres]
+skillwiki serve [--host HOST] [--port PORT] [--backend git|memory]
 ```
 
 ### Knowledge Ingestion
@@ -171,7 +171,7 @@ skillwiki skill status  <skill_id>
 skillwiki skill exec    <skill_id>   --input '{"key": "value"}'
 
 skillwiki audit   <skill_id>
-skillwiki verify  <skill_id>  [--harness mock|claude_code|codex] [--max-retries 3] [--watch]
+skillwiki verify  <skill_id>  [--harness local_skillwiki] [--max-attempts 1] [--watch]
 skillwiki promote <skill_id>  <target_state>
 ```
 
@@ -236,3 +236,70 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 ## License
 
 [MIT](LICENSE) © 2026 SkillWiki Authors
+
+
+## Native CLI workflow
+
+The CLI calls the same API as the web UI. Install the API extra with
+`pip install -e ".[api]"` from the `skillwiki` backend directory. Use
+`skillwiki --help` and `skillwiki <command> --help` for the full command tree.
+
+```bash
+# Persistent Git storage, no synthetic seed data, zero LLM transport retries.
+# Set LLM_API_KEY in the environment; avoid putting credentials in shell history.
+skillwiki serve --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
+# Optional: --model MODEL --llm-api-url URL. memory is an ephemeral alternative.
+
+# Global --api-url is the SkillWiki server, not the LLM provider endpoint.
+skillwiki --api-url http://127.0.0.1:8001 skill list --tag nlp
+skillwiki skill search "extract structured records" --mode lexical
+skillwiki ingest run document ./source.md
+# Edit the parsed draft into the native candidate-review request JSON.
+skillwiki ingest audit-candidate --file candidate.json
+skillwiki ingest create-candidate --file candidate.json
+skillwiki audit SKILL_ID --json
+
+# Calls the native runtime. Ingestion, auditing and verification may incur model costs.
+# Default: one total attempt, no repair, no promotion. No automatic fallback.
+skillwiki verify SKILL_ID --test-cases cases.json --json
+# Explicit opt-ins: --allow-repair --max-attempts 3 --promote
+skillwiki skill exec SKILL_ID --input '{"text":"example"}'
+skillwiki execution history
+skillwiki execution get EXECUTION_ID
+skillwiki execution trace EXECUTION_ID
+skillwiki execution experience EXECUTION_ID
+
+# Lifecycle commands pass the native API request object unchanged.
+skillwiki lifecycle new-version SKILL_ID --file version.json
+skillwiki skill versions SKILL_ID
+skillwiki lifecycle snapshot SKILL_ID --file snapshot.json
+skillwiki lifecycle history SKILL_ID
+skillwiki lifecycle diff SKILL_ID --from-ref COMMIT --to-ref HEAD
+skillwiki lifecycle release SKILL_ID --file release-evidence.json
+skillwiki lifecycle rollback SKILL_ID --file recovery.json
+```
+
+Request file examples (UTF-8 JSON):
+
+- `candidate.json`: `{"source_type":"document","unit_id":"source-1","raw_content":"Return a structured result.","name":"structured_result","description":"Return a structured result.","prompt_template":"Return {\"result\":true}","prompt_format":"literal"}`.
+- `cases.json`: an array of native harness cases, e.g. `[{"test_id":"case-1","name":"result present","goal":"Return the result","input_data":{},"verifier_specs":[{"type":"json_exists","path":"output.result"}]}]`.
+- `version.json`: `{"bump":"patch","description":"Updated documented behavior"}`; include `interface` or `implementation` objects when changing behavior.
+- `snapshot.json`: `{"author":"reviewer","message":"Review candidate snapshot"}`.
+- `recovery.json`: `{"source_ref":"COMMIT","source_version":"1.0.0","reason":"Review recovery draft"}`.
+- `release-evidence.json`: the complete native `EvidenceReleaseRequest` (`schema_version`, `manifest`, `traces`, `evaluation`, optional `author`); use actual identity-bound run evidence, not a copied success flag. The running server's `/docs` describes the schema.
+
+`audit` is a non-persisting draft contract check that may use the server-configured model; it does not grant validation or
+release evidence to the stored identity. `new-version` and `rollback` create
+separate drafts; verify and release their new identities afresh. `promote` remains
+a manual transition command, subject to server gates. Evidence-bound release uses
+`lifecycle release`.
+
+`verify` returns exit code 1 for any non-passing outcome and prints the native score
+object and evidence path. Audits, skill/task execution and file-based governance
+commands also return failure exits when the server reports failure. JSON output
+is available on audit, verify and lifecycle/readback commands. The CLI never retries
+HTTP calls; after a timeout, inspect server execution history before resubmitting.
+The global `--http-timeout` controls the HTTP deadline (default 600 seconds).
+`--max-retries` is retained only as an alias for **total** `--max-attempts`.
+External `claude_code` and `codex_cli` adapters are explicit selections with their
+own environment requirements; they are never used as native execution fallbacks.

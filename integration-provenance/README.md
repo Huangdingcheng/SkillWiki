@@ -17,6 +17,10 @@ Known integration issues found before this snapshot:
   outside this source export. Keep the original research workspace for those.
 - Full browser interaction and a fresh dependency installation are not accepted yet.
 
-No product behavior was changed to fix these issues in this snapshot. Preserve
-this commit and apply any agreed integration fixes as subsequent commits. Keep
-historical experiment identities and results separate from later CLI/UI fixes.
+The follow-up CLI integration commit corrects the API contracts, exposes the
+native local verification and lifecycle routes, uses persistent Git storage by
+default, and documents the real command tree. The CLI still does not retry HTTP
+requests or use external agent tools as fallbacks. Candidate audits may call the
+configured server model; delivery checks used a model-blocking fixture.
+Historical experiment identities and results remain separate from these product
+and documentation changes.
