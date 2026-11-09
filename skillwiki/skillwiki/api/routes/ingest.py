@@ -263,6 +263,8 @@ async def _sync_candidate_graph(app: AppState, skill: Skill) -> None:
             skills = await app.wiki.list(limit=10000)
             await graph.sync_auto_edges(skill, [item.skill_id for item in skills])
         await _sync_candidate_hetero_graph(app, skill)
+        from ..graph_sync import refresh_repository_graph
+        await refresh_repository_graph(app)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
 
@@ -329,7 +331,7 @@ async def _sync_candidate_hetero_graph(app: AppState, skill: Skill) -> None:
     await graph.add_hetero_node(ExecutionGraphNode(
         node_id=execution_node_id,
         name=f"ingest_review:{skill.name}",
-        description="Candidate creation and audit event used as lightweight execution evidence.",
+        description="Candidate import audit event; this is not task execution evidence.",
         execution_id=execution_node_id,
         status="completed",
         skill_ref=skill_node_id,
@@ -546,6 +548,10 @@ async def create_candidate_skill(
 
     auditor = getattr(app, "auditor", None) or SkillAuditorAgent()
     audit = _audit_to_out(auditor.audit(skill))
+    skill.provenance.creation_context['candidate_import_receipt'] = {
+        'skill_id': skill.skill_id, 'skill_version': skill.version,
+        'audit_status': 'completed', 'audit': audit.model_dump(mode='json'),
+    }
     try:
         created = await app.wiki.create(skill)
     except ValueError as exc:
@@ -662,6 +668,10 @@ async def parse_and_create_skills(
             )
             reset_version_evidence(skill, reason='candidate_import')
             skill.state = SkillState.SKILL_CANDIDATE
+            skill.provenance.creation_context['candidate_import_receipt'] = {
+                'skill_id': skill.skill_id, 'skill_version': skill.version,
+                'audit_status': 'not_run', 'audit': None,
+            }
             created = await app.wiki.create(skill)
             persisted = await _sync_persisted_candidate(app, created)
             created_skills.append(persisted)

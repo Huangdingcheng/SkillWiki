@@ -40,6 +40,8 @@ class LocalSkillWikiHarness:
             {"verifier_specs": test_case.verifier_specs},
         )
 
+        from ...skill_governance.artifact_identity import canonical_skill_artifact_hash
+        artifact_hash = canonical_skill_artifact_hash(skill)
         start = perf_counter()
         previous_timeout = getattr(self._executor, "_step_timeout", None)
         if previous_timeout is not None:
@@ -63,6 +65,7 @@ class LocalSkillWikiHarness:
             "final_state": record.state_after,
             "record": _jsonable(record),
         }
+        payload['artifact_hash'] = artifact_hash
         if record.status != ExecutionStatus.SUCCESS:
             verifier_passed = False
             verifier_summary: Dict[str, Any] = {

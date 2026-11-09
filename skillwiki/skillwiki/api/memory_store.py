@@ -262,6 +262,36 @@ class MemoryGraphManager:
         self._nodes: Dict[str, SkillGraphNode] = {}
         self._edges: List[SkillEdge] = []
         self._hetero_graph = HeteroGraph(name="heterogeneous-memory")
+        self._repository_ids: Set[str] = set()
+
+    async def sync_repository_snapshot(self, skills: Iterable[Skill]) -> None:
+        skills = list(skills)
+        ids = {skill.skill_id for skill in skills}
+        for missing_id in self._repository_ids - ids:
+            await self.remove_skill(missing_id)
+        for skill in skills:
+            await self.sync_skill(skill)
+            await self.sync_auto_edges(skill, ids)
+        await self.sync_persisted_skill_graph(skills)
+        self._repository_ids = ids
+
+    async def replace_receipt_projection(self, nodes, edges, diagnostics) -> None:
+        owned = {'runtime_receipt', 'ingest_pipeline'}
+        old_ids = {key for key, node in self._hetero_graph.nodes.items()
+                   if node.created_by in owned}
+        self._hetero_graph.nodes = {key: node for key, node in self._hetero_graph.nodes.items()
+                                   if key not in old_ids}
+        self._hetero_graph.edges = [edge for edge in self._hetero_graph.edges
+                                   if edge.created_by not in owned]
+        for node in nodes:
+            self._hetero_graph.add_node(node)
+        # Repository deletion may also invalidate an explicitly added edge.
+        self._hetero_graph.edges = [edge for edge in self._hetero_graph.edges
+                                   if edge.source_id in self._hetero_graph.nodes
+                                   and edge.target_id in self._hetero_graph.nodes]
+        for edge in edges:
+            self._hetero_graph.add_edge(edge)
+        self._hetero_graph.metadata['evidence_sync'] = diagnostics
 
     async def sync_skill(self, skill: Skill) -> None:
         self._nodes[skill.skill_id] = _skill_to_graph_node(skill)
@@ -502,6 +532,10 @@ class MemoryGraphManager:
         skills = list(skills)
         valid_ids = {skill.skill_id for skill in skills}
         source = "skill_repository"
+        owned_ids = {node_id for node_id, node in self._hetero_graph.nodes.items()
+                     if node.created_by == source}
+        self._hetero_graph.nodes = {node_id: node for node_id, node in self._hetero_graph.nodes.items()
+                                    if node_id not in owned_ids}
         self._hetero_graph.edges = [
             edge for edge in self._hetero_graph.edges
             if edge.metadata.get("source") != source
@@ -535,6 +569,15 @@ class MemoryGraphManager:
             await link(skill_node_id, version_node_id, HeteroEdgeType.VERSIONED_AS)
             provenance = skill.provenance
             if provenance:
+                group = next((tag.split(':', 1)[1] for tag in skill.tags
+                              if tag.startswith('source_group:') and tag.split(':', 1)[1]), '')
+                if group:
+                    source_node_id = f'source:{group}'
+                    await self.add_hetero_node(SourceGraphNode(
+                        node_id=source_node_id, name=group, source_uri=f'{provenance.source_type}://{group}',
+                        source_type=provenance.source_type, created_by=source,
+                        metadata={'source_group': group, 'source_ids': provenance.source_ids}))
+                    await link(source_node_id, skill_node_id, HeteroEdgeType.DERIVED_FROM)
                 for source_id in _unique_ids(provenance.source_ids):
                     source_node_id = f"source:{provenance.source_type}:{source_id}"
                     await self.add_hetero_node(SourceGraphNode(
@@ -554,6 +597,9 @@ class MemoryGraphManager:
             for component_id in _unique_ids(component_ids):
                 if component_id in valid_ids and component_id != skill.skill_id:
                     await link(skill_node_id, f"skill:{component_id}", HeteroEdgeType.COMPOSES_WITH)
+        self._hetero_graph.edges = [edge for edge in self._hetero_graph.edges
+                                   if edge.source_id in self._hetero_graph.nodes
+                                   and edge.target_id in self._hetero_graph.nodes]
 
     async def seed_demo_hetero_chain(
         self,
@@ -826,6 +872,11 @@ def _collect_validation_evidence(
                 "validation_node_id": validation.node_id,
                 "outcome": getattr(validation, "outcome", ""),
                 "validator": getattr(validation, "validator", ""),
+                'event_type': validation.metadata.get('event_type'),
+                'receipt_ref': validation.metadata.get('receipt_ref'),
+                'artifact_binding': validation.metadata.get('artifact_binding'),
+                'recorded_outcome': validation.metadata.get('recorded_outcome'),
+                'qualification_proof': False,
                 "confidence": min(first.weight, second.weight),
                 "source_edge_ids": [first.edge_id, second.edge_id],
             })

@@ -69,6 +69,10 @@ async def _sync_graph_from_wiki(wiki: Any, graph_mgr: MemoryGraphManager) -> Non
     try:
         list_skills = getattr(wiki, "list_all_versions", wiki.list)
         stored_skills = await list_skills(limit=10000)
+        snapshot_sync = getattr(graph_mgr, 'sync_repository_snapshot', None)
+        if callable(snapshot_sync):
+            await snapshot_sync(stored_skills)
+            return
         skill_ids = [skill.skill_id for skill in stored_skills]
         for skill in stored_skills:
             await graph_mgr.sync_skill(skill)

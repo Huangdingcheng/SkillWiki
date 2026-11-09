@@ -82,6 +82,7 @@ async def execute_skill(
     proposed_tracker = StateTracker("single-request", state_before)
     proposed_tracker.update(req.context)
     t0 = time.monotonic()
+    graph_identity = _graph_artifact_identity(skill)
 
     try:
         record = await app.executor.execute_single(
@@ -103,7 +104,7 @@ async def execute_skill(
         input_mapping=req.inputs,
         outputs=record.output_data or {},
         result=record.output_data or {},
-        execution_evidence=record.execution_evidence,
+        execution_evidence={**record.execution_evidence, 'artifact_identity': graph_identity},
         latency_ms=record.latency_ms or latency,
         error=record.error_message,
     )
@@ -445,6 +446,7 @@ async def execute_plan(
                 detail={"message": "Selected SkillWiki release changed after retrieval; execution blocked", "skill_ids": changed, "trace_id": request_trace_id},
             )
 
+    graph_identities = {skill_id: _graph_artifact_identity(skill) for skill_id, skill in skill_map.items()}
     # 执行计划
     try:
         final_state = await app.executor.execute_plan(
@@ -471,7 +473,7 @@ async def execute_plan(
             input_mapping=step.input_mapping,
             outputs=step_output,
             result=step_output,
-            execution_evidence=step.execution_evidence,
+            execution_evidence={**step.execution_evidence, 'artifact_identity': graph_identities.get(step.skill_id, {})},
             latency_ms=step_latency,
             error=step.error,
         ))
@@ -879,6 +881,14 @@ def _step_verifier_document(
             "error": step.error,
         },
     }
+
+
+def _graph_artifact_identity(skill: Any) -> Dict[str, Any]:
+    if skill is None:
+        return {}
+    from ...layers.skill_governance.artifact_identity import canonical_skill_artifact_hash
+    return {'skill_id': skill.skill_id, 'skill_version': skill.version,
+            'artifact_hash': canonical_skill_artifact_hash(skill)}
 
 
 def _store_execution_history(

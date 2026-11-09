@@ -97,7 +97,8 @@ with sync_playwright() as pw:
         picture = Image.open(BytesIO(canvas.screenshot())).convert('RGB')
         cx, cy = int(midpoint[0]-box['x']), int(midpoint[1]-box['y'])
         edge_pixels = [(x,y) for x in range(cx-2,cx+3) for y in range(cy-12,cy+13)
-                       if (lambda r,g,b: b > r+45 and b > g+20)(*picture.getpixel((x,y)))]
+                       if (lambda r,g,b: (b > r+45 and b > g+20)
+                           or (r > b+60 and g > b+25 and r > g+20))(*picture.getpixel((x,y)))]
         assert edge_pixels, 'No rendered edge at the midpoint'
         edge_y = min(edge_pixels, key=lambda point: abs(point[1]-cy))[1]
         midpoint = (box['x']+cx, box['y']+edge_y)
