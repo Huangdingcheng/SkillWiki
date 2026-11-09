@@ -203,7 +203,11 @@ class SkillReviewer:
 
         # 自动决策
         llm_status = data.get("status", "needs_revision")
-        if result.overall_score >= self._auto_approve_threshold and not result.blocking_issues:
+        if llm_status == "rejected":
+            result.status = ReviewStatus.REJECTED
+        elif llm_status == "needs_revision":
+            result.status = ReviewStatus.NEEDS_REVISION
+        elif result.overall_score >= self._auto_approve_threshold and not result.blocking_issues:
             result.status = ReviewStatus.AUTO_APPROVED
         elif result.overall_score <= self._auto_reject_threshold or len(result.blocking_issues) >= 3:
             result.status = ReviewStatus.REJECTED
@@ -221,11 +225,11 @@ class SkillReviewer:
         return result
 
     async def review_and_release(self, skill: Skill) -> tuple[Skill, ReviewResult]:
-        """审核并在通过时自动发布。"""
+        """Compatibility wrapper returning a recommendation without publication.
+
+        The explicit lifecycle API owns persistence and evidence gates.
+        """
         result = await self.review(skill)
-        if result.is_approved and skill.state == SkillState.VERIFIED:
-            skill.transition_to(SkillState.RELEASED)
-            logger.info(f"Skill 已自动发布: {skill.name} v{skill.version}")
         return skill, result
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:

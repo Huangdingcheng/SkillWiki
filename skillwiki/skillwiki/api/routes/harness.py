@@ -5,9 +5,22 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...layers.skill_runtime.harness import HarnessEvidenceStore, VerificationLoop
+from ...layers.skill_runtime.harness.benchflow_registry import (
+    get_historical_benchflow_run,
+    list_historical_benchflow_runs,
+)
+from ...layers.skill_runtime.harness.benchflow_current_registry import (
+    formal_benchflow_matrix,
+    get_current_benchflow_run,
+    list_current_benchflow_runs,
+)
 from ..deps import AppState, get_app_state
 from ..schemas import (
     HarnessLoopListResponse,
+    HistoricalBenchFlowRun,
+    HistoricalBenchFlowRunListResponse,
+    CurrentBenchFlowRun,
+    CurrentBenchFlowRunListResponse,
     HarnessVerifyLoopRequest,
     HarnessVerifyLoopResponse,
 )
@@ -22,6 +35,17 @@ async def run_verify_loop(
     app: AppState = Depends(get_app_state),
 ) -> HarnessVerifyLoopResponse:
     """Run Draft -> harness -> verifier -> repair/retry -> S3 gate."""
+
+    # External Codex execution has its own provider and billing path. When the
+    # M1 budget guard is enabled, fail before dispatch so every paid route stays
+    # inside the single DeepSeek ledger.
+    if req.harness.value == "codex_cli":
+        llm = getattr(app, "llm", None)
+        if llm is not None and getattr(llm, "_budget", None) is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="codex_cli harness is disabled while the M1 budget guard is enabled",
+            )
 
     loop = VerificationLoop(
         wiki=app.wiki,
@@ -66,6 +90,38 @@ async def list_verify_loops(
 ) -> HarnessLoopListResponse:
     loops = HarnessEvidenceStore().list_recent(limit=limit)
     return HarnessLoopListResponse(loops=loops, total=len(loops))
+
+
+@router.get("/benchflow/runs", response_model=HistoricalBenchFlowRunListResponse)
+async def list_historical_benchflow() -> HistoricalBenchFlowRunListResponse:
+    runs = list_historical_benchflow_runs()
+    return HistoricalBenchFlowRunListResponse(runs=runs, total=len(runs))
+
+
+@router.get("/benchflow/current-runs", response_model=CurrentBenchFlowRunListResponse)
+async def list_current_benchflow() -> CurrentBenchFlowRunListResponse:
+    runs = list_current_benchflow_runs()
+    return CurrentBenchFlowRunListResponse(
+        runs=[CurrentBenchFlowRun.model_validate(run) for run in runs],
+        total=len(runs),
+        formal_matrix=formal_benchflow_matrix(runs),
+    )
+
+
+@router.get("/benchflow/current-runs/{run_id:path}", response_model=CurrentBenchFlowRun)
+async def get_current_benchflow(run_id: str) -> CurrentBenchFlowRun:
+    result = get_current_benchflow_run(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Current BenchFlow run {run_id} not found")
+    return CurrentBenchFlowRun.model_validate(result)
+
+
+@router.get("/benchflow/runs/{run_id:path}", response_model=HistoricalBenchFlowRun)
+async def get_historical_benchflow(run_id: str) -> HistoricalBenchFlowRun:
+    result = get_historical_benchflow_run(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"BenchFlow historical run {run_id} not found")
+    return HistoricalBenchFlowRun.model_validate(result)
 
 
 @router.get("/{loop_id}", response_model=dict)

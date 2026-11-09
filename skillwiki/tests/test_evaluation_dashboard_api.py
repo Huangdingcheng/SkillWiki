@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillos.api.routes import evaluation
+from skillwiki.api.routes import evaluation
 
 
 def _client(results_dir: Path, monkeypatch) -> TestClient:

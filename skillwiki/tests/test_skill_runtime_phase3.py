@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from skillos.layers.skill_runtime.executor import SkillExecutor
-from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
-from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
+from skillwiki.layers.skill_runtime.executor import SkillExecutor
+from skillwiki.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
+from skillwiki.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
 
 def make_skill(name: str, code: str) -> Skill:

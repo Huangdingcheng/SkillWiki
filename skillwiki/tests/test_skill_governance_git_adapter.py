@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from skillos.layers.skill_governance import GitVersionStore, GitVersionStoreError
+from skillwiki.layers.skill_governance import GitVersionStore, GitVersionStoreError
 
 
 def _run_git(repo: Path, args: list[str]) -> None:
@@ -38,6 +38,26 @@ def test_detects_git_repo_and_head(git_repo: Path) -> None:
     assert store.current_branch()
     assert store.head_commit() == commit_hash
     assert len(commit_hash) == 40
+
+
+def test_commit_paths_force_adds_explicit_ignored_skill_snapshot(git_repo: Path) -> None:
+    """A parent project may ignore runtime skill snapshots by default."""
+    (git_repo / ".gitignore").write_text("skills/\n", encoding="utf-8")
+    skill_path = git_repo / "skills" / "ignored_skill.json"
+    skill_path.parent.mkdir()
+    skill_path.write_text('{"name": "ignored_skill"}\n', encoding="utf-8")
+
+    commit_hash = GitVersionStore(git_repo).commit_paths(
+        ["skills/ignored_skill.json"], "add ignored skill snapshot"
+    )
+
+    assert len(commit_hash) == 40
+    assert "skills/ignored_skill.json" in subprocess.check_output(
+        ["git", "ls-tree", "-r", "--name-only", commit_hash],
+        cwd=git_repo,
+        text=True,
+        encoding="utf-8",
+    ).splitlines()
 
 
 def test_commit_history_for_skill_snapshot(git_repo: Path) -> None:

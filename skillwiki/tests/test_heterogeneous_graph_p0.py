@@ -5,11 +5,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillos.api.deps import app_state
-from skillos.api.main import _seed_demo_heterogeneous_graph
-from skillos.api.memory_store import MemoryGraphManager, MemoryWikiManager
-from skillos.api.routes import graph
-from skillos.models.graph_model import (
+from skillwiki.api.deps import app_state
+from skillwiki.api.main import _seed_demo_heterogeneous_graph
+from skillwiki.api.memory_store import MemoryGraphManager, MemoryWikiManager
+from skillwiki.api.routes import graph
+from skillwiki.models.graph_model import (
     ExecutionGraphNode,
     GraphNodeKind,
     HeteroEdgeType,
@@ -21,7 +21,7 @@ from skillos.models.graph_model import (
     ValidationGraphNode,
     VersionGraphNode,
 )
-from skillos.models.skill_model import EdgeType, Skill, SkillImplementation, SkillState, SkillType
+from skillwiki.models.skill_model import EdgeType, Skill, SkillImplementation, SkillState, SkillType
 
 
 def make_skill(name: str, skill_id: str | None = None) -> Skill:
@@ -505,7 +505,10 @@ def test_skill_only_projection_endpoint_returns_metadata_and_validation_evidence
         assert edge["metadata"]["validation_evidence"]["source"][0]["validation_node_id"] == "validation_alpha"
 
 
-def test_heterogeneous_graph_endpoint_returns_demo_structure(api_app: FastAPI):
+def test_heterogeneous_graph_endpoint_returns_demo_structure(
+    api_app: FastAPI, graph_mgr: MemoryGraphManager,
+):
+    anyio.run(graph_mgr.seed_demo_hetero_chain)
     client = TestClient(api_app)
     response = client.get("/api/v1/graph/heterogeneous")
     assert response.status_code == 200
@@ -597,7 +600,10 @@ def test_graph_view_endpoint_returns_skill_only_view(
     assert "not an execution dependency" in relation_strength["weak"]["similar_to"]
 
 
-def test_graph_view_endpoint_returns_provenance_view(api_app: FastAPI):
+def test_graph_view_endpoint_returns_provenance_view(
+    api_app: FastAPI, graph_mgr: MemoryGraphManager,
+):
+    anyio.run(graph_mgr.seed_demo_hetero_chain)
     client = TestClient(api_app)
     response = client.get("/api/v1/graph/view?view=provenance")
     assert response.status_code == 200
@@ -624,7 +630,10 @@ def test_graph_view_endpoint_returns_provenance_view(api_app: FastAPI):
     assert payload["validation_evidence"]["fill_form"][0]["validation_node_id"] == "validation_demo"
 
 
-def test_graph_view_endpoint_focuses_provenance_view_on_same_skill(api_app: FastAPI):
+def test_graph_view_endpoint_focuses_provenance_view_on_same_skill(
+    api_app: FastAPI, graph_mgr: MemoryGraphManager,
+):
+    anyio.run(graph_mgr.seed_demo_hetero_chain)
     client = TestClient(api_app)
     response = client.get("/api/v1/graph/view?view=provenance&skill_id=fill_form")
     assert response.status_code == 200

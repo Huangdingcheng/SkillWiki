@@ -19,8 +19,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+from ...utils.git_paths import ensure_local_longpaths, git_process_cwd, git_process_path_error
+from ...utils.filesystem_paths import filesystem_path
+from ...layers.skill_governance.version_evidence import reset_version_evidence, require_current_identity_proof
+from ...layers.skill_governance.release_preparation import prepare_evidence_release
 from ...models.skill_model import (
     Skill,
+    SkillEvaluation,
     SkillMetrics,
     SkillProvenance,
     SkillState,
@@ -50,7 +55,7 @@ class GitSkillStore:
         *,
         auto_commit: bool = True,
     ) -> None:
-        self.base_dir = Path(base_dir).expanduser().resolve() if base_dir else default_storage_dir()
+        self.base_dir = filesystem_path(Path(base_dir).expanduser() if base_dir else default_storage_dir()).resolve()
         self.skills_dir = self.base_dir / "skills"
         self.metadata_dir = self.base_dir / "metadata"
         self.index_file = self.metadata_dir / "skills_index.json"
@@ -106,9 +111,13 @@ class GitSkillStore:
                 )
 
             if not self._is_git_repo():
-                self._run_git(["init"], check=True)
+                # New repositories do not yet have a local config to enable
+                # long paths while Git installs its template files.
+                init_args = ["-c", "core.longpaths=true", "init"] if os.name == "nt" else ["init"]
+                self._run_git(init_args, check=True)
                 self._run_git(["checkout", "-B", default_branch], check=False)
 
+            ensure_local_longpaths(self.base_dir)
             self._run_git(["config", "user.name", "SkillWiki Bot"], check=False)
             self._run_git(["config", "user.email", "skillos-bot@example.com"], check=False)
             self._run_git(["config", "commit.gpgsign", "false"], check=False)
@@ -154,6 +163,7 @@ class GitSkillStore:
         event_extra: Optional[Dict[str, Any]] = None,
     ) -> Skill:
         """Create a skill version file, or overwrite the same version when allowed."""
+        require_current_identity_proof(skill, skill.state)
         with self._lock:
             self.init_repo(initial_commit=False)
             skill_file = self._skill_file(skill.name, skill.version)
@@ -198,6 +208,7 @@ class GitSkillStore:
         event_action: str = "update",
         event_extra: Optional[Dict[str, Any]] = None,
     ) -> Skill:
+        require_current_identity_proof(skill, skill.state)
         return self.add_skill(
             skill,
             author=author,
@@ -285,7 +296,7 @@ class GitSkillStore:
 
         rows: List[Dict[str, Any]] = []
         for skill_name, meta in index.items():
-            if meta.get("deleted") and not include_deleted:
+            if meta.get("deleted") and not include_deleted and latest_only:
                 continue
 
             versions = meta.get("versions", {})
@@ -365,7 +376,7 @@ class GitSkillStore:
             else:
                 manifest["versions"] = versions
                 manifest["latest_version"] = self._latest_version_from_versions(versions)
-                manifest["deleted"] = manifest["latest_version"] is None
+                manifest["deleted"] = not any(not meta.get("deleted", False) for meta in versions.values())
                 self._save_manifest(skill_name, manifest)
 
             self._update_index_for_skill(skill_name)
@@ -422,7 +433,43 @@ class GitSkillStore:
         for key, value in (overrides or {}).items():
             setattr(new_skill, key, value)
 
+        recovery = bool(
+            new_skill.provenance
+            and new_skill.provenance.creation_context.get("recovery_draft")
+        )
+        if recovery and "version" not in (overrides or {}):
+            # Recovery drafts do not advance the active version pointer, but
+            # they still reserve unique version numbers in durable history.
+            versions = self.get_skill_versions(skill_name, include_deleted=True)
+            latest_recorded = max(versions, key=self._semver_key)
+            new_skill.version = self._next_version(latest_recorded, bump)
+
+        reset_version_evidence(new_skill, source_skill=source)
         return self.add_skill(new_skill, author=author, commit=commit, event_action="new_version")
+
+    def release_with_evaluation(
+        self, skill_id: str, evaluation: SkillEvaluation, *, author: str = "system",
+    ) -> Skill:
+        """Validate the full release before the first write.
+
+        The final multi-file Git save retains its existing storage guarantees;
+        this boundary prevents business-validation failures from writing proof.
+        """
+        with self._lock:
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                raise ValueError(f"Skill does not exist: {skill_id}")
+            released, transitions = prepare_evidence_release(skill, evaluation)
+            return self.update_skill_version(
+                released, author=author, event_action="transition",
+                event_extra={
+                    "from_state": skill.state.value,
+                    "to_state": released.state.value,
+                    "transitions": transitions,
+                    "reason": "evidence-bound release",
+                    "evaluation_id": evaluation.harness_validation["evidence_decision"]["evaluation_id"],
+                },
+            )
 
     def transition_skill_state(
         self,
@@ -438,6 +485,7 @@ class GitSkillStore:
         if not skill:
             raise ValueError(f"Skill does not exist: {skill_name} v{version}")
         old_state = skill.state
+        require_current_identity_proof(skill, new_state)
         skill.transition_to(new_state)
         if new_state == SkillState.DEPRECATED and reason:
             skill.deprecation_reason = reason
@@ -538,6 +586,7 @@ class GitSkillStore:
         )
         merged_data["provenance"] = provenance
         merged = self._dict_to_skill(merged_data)
+        reset_version_evidence(merged, source_skill=base, reason="merge")
         return self.add_skill(merged, author=author, commit=commit, event_action="merge")
 
     def rebuild_index(self, *, commit: Optional[bool] = None) -> Dict[str, Any]:
@@ -645,6 +694,9 @@ class GitSkillStore:
                 "display_name": data.get("display_name"),
                 "description": data.get("description"),
                 "tags": data.get("tags", []),
+                "recovery_draft": bool(
+                    (data.get("provenance") or {}).get("creation_context", {}).get("recovery_draft")
+                ),
                 "file": file_path.name,
                 "deleted": old_meta.get("deleted", False),
                 "created_at": old_meta.get("created_at", data.get("created_at", self._utc_now())),
@@ -653,7 +705,7 @@ class GitSkillStore:
             }
         manifest["versions"] = versions
         manifest["latest_version"] = self._latest_version_from_versions(versions)
-        manifest["deleted"] = manifest["latest_version"] is None
+        manifest["deleted"] = not any(not meta.get("deleted", False) for meta in versions.values())
         self._save_manifest(skill_name, manifest)
         return manifest
 
@@ -705,6 +757,9 @@ class GitSkillStore:
             "display_name": skill.display_name,
             "description": skill.description,
             "tags": skill.tags,
+            "recovery_draft": bool(
+                skill.provenance and skill.provenance.creation_context.get("recovery_draft")
+            ),
             "file": f"{skill.version}.json",
             "deleted": False,
             "created_at": old_meta.get("created_at", self._utc_now()),
@@ -749,13 +804,16 @@ class GitSkillStore:
         capture: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        return subprocess.run(
-            ["git", *args],
-            cwd=self.base_dir,
-            check=check,
-            capture_output=capture,
-            text=True,
-        )
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=git_process_cwd(self.base_dir),
+                check=check,
+                capture_output=capture,
+                text=True,
+            )
+        except OSError as exc:
+            raise RuntimeError(git_process_path_error(self.base_dir, exc)) from exc
 
     def _is_git_repo(self) -> bool:
         return (self.base_dir / ".git").exists()
@@ -810,7 +868,11 @@ class GitSkillStore:
         return f"{major}.{minor}.{patch + 1}"
 
     def _latest_version_from_versions(self, versions: Dict[str, Any]) -> Optional[str]:
-        visible = [version for version, meta in versions.items() if not meta.get("deleted", False)]
+        visible = [
+            version for version, meta in versions.items()
+            if not meta.get("deleted", False)
+            and (not meta.get("recovery_draft") or meta.get("state") == SkillState.RELEASED.value)
+        ]
         return sorted(visible, key=self._semver_key)[-1] if visible else None
 
     def _merge_value(self, base_value: Any, other_value: Any, strategy: MergeStrategy) -> Any:

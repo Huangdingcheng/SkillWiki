@@ -19,11 +19,11 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from skillos.layers.skill_repository.indexing import (  # noqa: E402
+from skillwiki.layers.skill_repository.indexing import (  # noqa: E402
     SearchQuery,
     rank_search_results,
 )
-from skillos.models.skill_model import (  # noqa: E402
+from skillwiki.models.skill_model import (  # noqa: E402
     MetaSkillCategory,
     Skill,
     SkillImplementation,

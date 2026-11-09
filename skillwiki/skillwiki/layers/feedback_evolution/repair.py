@@ -154,6 +154,8 @@ class SkillRepair:
             repaired = skill.model_copy(deep=True)
             repaired.bump_version("patch")
             repaired.state = SkillState.DRAFT  # 修复后回到 Draft 重新验证
+            repaired.evaluation.harness_validation = {}
+            repaired.evaluation.validation_summary = None
 
             impl_data = data.get("fixed_implementation", {})
             if impl_data:
@@ -167,9 +169,19 @@ class SkillRepair:
                     language=impl_data.get("language", "python"),
                     code=code,
                     prompt_template=prompt_template,
+                    prompt_format=(skill.implementation.prompt_format if skill.implementation else None),
+                    request_body_validation=(
+                        skill.implementation.request_body_validation if skill.implementation else None
+                    ),
                     tool_calls=impl_data.get("tool_calls", []),
                     sub_skill_ids=sub_skill_ids,
                 )
+                if repaired.implementation.request_body_validation is not None:
+                    from ..skill_runtime.request_body_validation import compile_request_body_policy
+                    # Repair changes the implementation, not its source contract. The
+                    # policy is inherited from the parent and its pinned bytes are checked.
+                    # Source updates require a separate update flow and fresh validation.
+                    compile_request_body_policy(repaired.implementation.request_body_validation)
             else:
                 result.error = "missing fixed_implementation"
                 return result

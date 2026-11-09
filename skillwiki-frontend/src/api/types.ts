@@ -1,6 +1,7 @@
 // SkillWiki API type definitions
 
 export type SkillType = 'atomic' | 'functional' | 'strategic'
+export type PromptFormat = 'literal' | 'python_format'
 export type SkillState = 'S0' | 'S1' | 'S2' | 'S3' | 'S4' | 'S5' | 'S6' | 'S7'
 
 export const STATE_LABELS: Record<SkillState, string> = {
@@ -51,6 +52,7 @@ export interface SkillImplementation {
   language: string
   code?: string
   prompt_template?: string
+  prompt_format?: PromptFormat | null
   tool_calls?: string[]
   sub_skill_ids?: string[]
 }
@@ -187,6 +189,8 @@ export interface CandidateSkillReviewRequest {
   preconditions: string[]
   postconditions: string[]
   prompt_template: string
+  prompt_format?: PromptFormat | null
+  request_body_validation?: Record<string, unknown> | null
   provenance?: SkillProvenance | null
   evaluation: SkillEvaluation
   dependency_ids?: string[]
@@ -582,6 +586,13 @@ export interface SkillRollbackRecord {
   skill_id: string
   skill_name: string
   version: string
+  restored_skill_id?: string
+  restored_version?: string
+  restored_state?: SkillState
+  source_skill_id?: string
+  source_version?: string
+  live_skill_updated?: boolean
+  draft_created?: boolean
 }
 
 export interface HealthReport {
@@ -626,6 +637,49 @@ export interface RetrievedSkill {
   skill_type: string
   score: number
   match_reason: string
+  version?: string | null
+  graph_depth?: number
+  is_seed?: boolean
+}
+
+export interface RetrievalTrace {
+  trace_id?: string
+  adapter: string
+  source_commit?: string | null
+  embedding_model?: string | null
+  embedding_mode?: string | null
+  candidates: Array<Record<string, unknown>>
+  alternatives: Array<Record<string, unknown>>
+  blocked: string[]
+  governance?: Record<string, unknown>
+  plan?: Record<string, unknown>
+  execution?: {
+    status?: string
+    verifier_passed?: boolean | null
+    verifier_summary?: Record<string, unknown> | null
+  }
+}
+
+export type EvolutionComponent = 'gepa' | 'skillopt' | 'arex' | 'skillguard'
+
+export interface ComponentRun {
+  run_id: string
+  component: EvolutionComponent
+  skill_id: string
+  parent_version: string
+  parent_hash: string
+  status: 'success' | 'failed' | 'blocked' | 'running'
+  result: Record<string, unknown>
+  candidate?: {
+    draft_skill_id: string
+    version: string
+    branch_name: string
+    diffs: unknown
+    candidate_hash: string
+    validation_status: string
+  } | null
+  error?: string | null
+  created_at: string
 }
 
 export interface ExecutionExperienceUnit {
@@ -658,6 +712,7 @@ export interface ExecutionResult {
   suggested_skill?: Record<string, unknown>
   verifier_passed?: boolean | null
   verifier_summary?: Record<string, unknown> | null
+  retrieval_trace?: RetrievalTrace
 }
 
 export interface ExecutionHistoryItem {
@@ -673,7 +728,7 @@ export interface ExecutionHistoryItem {
   experience_source_type?: string | null
 }
 
-export type HarnessKind = 'local_skillos' | 'codex_cli' | 'claude_code'
+export type HarnessKind = 'local_skillwiki' | 'codex_cli' | 'claude_code'
 
 export interface HarnessTestCase {
   test_id: string
@@ -732,6 +787,90 @@ export interface HarnessVerifyLoopResponse {
 export interface HarnessLoopListResponse {
   loops: HarnessVerifyLoopResponse[]
   total: number
+}
+
+export interface HistoricalBenchFlowRun {
+  run_id: string
+  label: string
+  evidence_kind: 'historical_real_run'
+  task_id: string
+  task_digest: string
+  skill_mode: string
+  agent: string
+  requested_model: string
+  sandbox: string
+  observed_reward: number | null
+  admission_status: string
+  admission_reason: string
+  evidence_integrity: 'verified' | 'mismatch' | 'missing'
+  model_result_eligible: false
+  promotion_allowed: false
+  skill_binding: null
+  cost: {
+    usd: number | null
+    total_tokens: number | null
+    input_tokens: number | null
+    output_tokens: number | null
+    usage_source: string
+    [key: string]: unknown
+  }
+  raw_artifacts: { path: string; sha256: string; size: number }[]
+  runtime_attestation_valid: boolean
+  source_manifest_present: false
+  limitations: string[]
+}
+
+export interface HistoricalBenchFlowRunListResponse {
+  runs: HistoricalBenchFlowRun[]
+  total: number
+}
+
+export interface CurrentBenchFlowRun {
+  run_id: string
+  condition: string
+  status: string
+  task_id: string
+  task_digest: string
+  task_commit: string
+  verifier_sha256: string
+  product_commit?: string | null
+  benchflow_commit: string
+  runtime_version?: string | null
+  skill_mode: string
+  skill_binding?: Record<string, unknown> | null
+  observed_skill_mode?: string | null
+  observed_model?: string | null
+  observed_agent?: string | null
+  observed_runtime_version?: string | null
+  observed_reward?: number | null
+  observed_cost: Record<string, unknown>
+  usage: Record<string, unknown>
+  cost: Record<string, unknown>
+  run_path: string
+  raw_artifacts: Record<string, { sha256: string; size: number }>
+  evidence_integrity: 'verified' | 'mismatch'
+  integrity_errors: string[]
+  model_result_eligible: false
+  promotion_allowed: false
+  notes: string[]
+}
+
+export interface CurrentBenchFlowRunListResponse {
+  runs: CurrentBenchFlowRun[]
+  total: number
+  formal_matrix?: FormalBenchFlowCondition[]
+}
+
+export interface FormalBenchFlowCondition {
+  formal_slot: string
+  condition: string
+  status: string
+  run_id: string | null
+  attempt_count: number
+  observed_reward: number | null
+  verifier_ran: boolean
+  evidence_integrity: string | null
+  reason: string
 }
 
 export interface OverviewStats {

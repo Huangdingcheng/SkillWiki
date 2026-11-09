@@ -26,7 +26,7 @@ To stop the demo, double-click:
 STOP_SKILLWIKI_DEMO.bat
 ```
 
-To restore public demo fixtures after a memory-backend restart, double-click:
+Skills and their real dependency graph survive restarts in the default Git backend. To explicitly import public demo fixtures, double-click:
 
 ```text
 RESTORE_SKILLWIKI_DEMO_STATE.bat
@@ -57,19 +57,22 @@ Then fill:
 
 ```powershell
 $env:LLM_API_URL = "https://api.deepseek.com"
-$env:LLM_MODEL = "deepseek-v4-flash"
+$env:LLM_MODEL = "deepseek-flash"
 $env:LLM_API_KEY = "your-api-key"
 ```
 
 `config.local.ps1` is ignored by Git. Do not commit or share it.
 
-For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SKILLWIKIDemo.ps1` or set `SKILLWIKI_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
+For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SkillWikiDemo.ps1` or set `SKILLOS_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
 
 ## Defaults
 
 - Backend port: `8001`
 - Frontend port: `5174`
-- Repository backend: `memory`
+- Repository backend: `git`, stored in `runtime/skill-storage-git`
+- Governance snapshots: `runtime/governance-git` unless `SKILLOS_GOVERNANCE_REPO` is set
+- Synthetic demo fixtures: disabled; use `-SeedDemo` to add them explicitly
+- LLM model: `deepseek-flash`; retries: `0`
 - WebSocket: disabled by default for a more stable Windows local demo
 - Open page: `/wiki`
 
@@ -78,8 +81,12 @@ For non-interactive offline smoke checks only, advanced users may pass `-AllowPl
 Run from PowerShell:
 
 ```powershell
-.\skillwiki-launcher\scripts\Start-SKILLWIKIDemo.ps1 -RepositoryBackend git -OpenPath /evaluation
+.\skillwiki-launcher\scripts\Start-SkillWikiDemo.ps1 -OpenPath /evaluation
 ```
+
+For an explicitly authorized M1 model smoke run, add `-EnableM1Budget`. This sets a CNY 1 M1 ceiling, CNY 10 shared ledger ceiling, scope `m1`, and 2048 maximum output tokens using `runtime/llm-budget.jsonl`. The switch only configures admission limits; starting the launcher does not itself make a model call. The same settings can be supplied via `SKILLWIKI_LLM_BUDGET_LIMIT_CNY`, `SKILLWIKI_LLM_BUDGET_TOTAL_LIMIT_CNY`, `SKILLWIKI_LLM_BUDGET_LEDGER_PATH`, `SKILLWIKI_LLM_BUDGET_SCOPE`, and `SKILLWIKI_LLM_BUDGET_MAX_OUTPUT_TOKENS`.
+
+Use `-RepositoryBackend memory` only for disposable sessions. Existing Git skills are reused, and enabling `-SeedDemo` adds only missing fixture identities without replacing existing versions.
 
 Stop silently:
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -36,6 +36,9 @@ import type {
   HarnessKind,
   HarnessRunResult,
   HarnessVerifyLoopResponse,
+  HistoricalBenchFlowRun,
+  CurrentBenchFlowRun,
+  FormalBenchFlowCondition,
   SkillSummary,
 } from '@/api/types'
 
@@ -64,7 +67,7 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 const HARNESS_LABEL: Record<HarnessKind, string> = {
-  local_skillos: 'Local SkillWiki',
+  local_skillwiki: 'Local SkillWiki',
   codex_cli: 'Codex CLI',
   claude_code: 'Claude Code',
 }
@@ -170,6 +173,171 @@ function AttemptTimeline({ attempts }: { attempts: HarnessRunResult[] }) {
   )
 }
 
+function observedNumber(value: number | null | undefined, currency = false) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Not reported'
+  return currency ? `$${value.toFixed(6)}` : String(value)
+}
+
+function HistoricalBenchFlowEvidence() {
+  const [runs, setRuns] = useState<HistoricalBenchFlowRun[]>([])
+  const [total, setTotal] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<HistoricalBenchFlowRun | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRequest = useRef(0)
+
+  const loadRuns = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    setDetail(null)
+    setDetailError(null)
+    setSelectedRunId(null)
+    setDetailLoading(false)
+    detailRequest.current += 1
+    try {
+      const response = await harnessApi.benchflowRuns()
+      setRuns(response.runs)
+      setTotal(response.total)
+    } catch (err) {
+      setRuns([])
+      setTotal(null)
+      setError(getApiErrorMessage(err, 'Load historical BenchFlow evidence failed'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadRuns() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadRuns])
+
+  const loadDetail = async (runId: string) => {
+    const request = ++detailRequest.current
+    setSelectedRunId(runId)
+    setDetail(null)
+    setDetailError(null)
+    setDetailLoading(true)
+    try {
+      const response = await harnessApi.benchflowRun(runId)
+      if (request !== detailRequest.current) return
+      setDetail(response)
+    } catch (err) {
+      if (request !== detailRequest.current) return
+      setDetailError(getApiErrorMessage(err, 'Load historical run details failed'))
+    } finally {
+      if (request === detailRequest.current) setDetailLoading(false)
+    }
+  }
+
+  const columns: TableColumnsType<HistoricalBenchFlowRun> = [
+    { title: 'Historical run', render: (_, run) => <Space direction="vertical" size={0}><Text strong>{run.label}</Text><Text code>{run.run_id}</Text><Text type="secondary">{run.task_id} · {run.skill_mode}</Text></Space> },
+    { title: 'Agent / requested model', render: (_, run) => <Space direction="vertical" size={0}><Text>{run.agent}</Text><Text type="secondary">{run.requested_model}</Text></Space> },
+    { title: 'Observed reward', render: (_, run) => observedNumber(run.observed_reward) },
+    { title: 'Estimated USD (not a bill)', render: (_, run) => observedNumber(run.cost?.usd, true) },
+    { title: 'Evidence integrity', render: (_, run) => <Tag color={run.evidence_integrity === 'verified' ? 'blue' : 'red'}>{run.evidence_integrity}</Tag> },
+    { title: 'Admission', render: (_, run) => <Text>{run.admission_status}</Text> },
+    { title: 'Details', render: (_, run) => <Button size="small" disabled={loading} onClick={() => void loadDetail(run.run_id)}>View details</Button> },
+  ]
+
+  return (
+    <Card title="Historical BenchFlow real-run evidence" variant="borderless" style={{ borderRadius: 8, marginBottom: 20 }}
+      extra={<Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadRuns()}>Refresh historical evidence</Button>}>
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert type="warning" showIcon message="Historical observation only — current Skill version is not bound"
+          description="These records are separate from verification loops. Observed rewards do not verify the selected Skill. Source-manifest proof is missing; model-result eligibility and promotion remain blocked. USD costs are estimates, not provider bills. Refresh and details only read saved evidence." />
+        {error && <Alert type="error" showIcon message="Historical evidence request failed" description={error} />}
+        {total !== null && !error && <Text type="secondary">{total} historical record(s) reported by the backend</Text>}
+        <Table dataSource={runs} columns={columns} rowKey="run_id" size="small" loading={loading} pagination={{ pageSize: 5 }} scroll={{ x: 1100 }}
+          locale={{ emptyText: error ? 'Evidence unavailable because the request failed' : loading ? 'Loading historical records' : 'No historical BenchFlow records reported' }} />
+        {selectedRunId && <Card size="small" title={<Text code>{selectedRunId}</Text>}
+          extra={<Button size="small" loading={detailLoading} onClick={() => void loadDetail(selectedRunId)}>Refresh details</Button>}>
+          {detailError && <Alert type="error" showIcon message="Historical detail request failed" description={detailError} />}
+          {detailLoading && <Spin description="Loading saved run details" />}
+          {detail && <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
+              <Descriptions.Item label="Evidence kind">{detail.evidence_kind}</Descriptions.Item>
+              <Descriptions.Item label="Task">{detail.task_id}</Descriptions.Item>
+              <Descriptions.Item label="Task digest" span={2}><Text code copyable>{detail.task_digest}</Text></Descriptions.Item>
+              <Descriptions.Item label="Agent">{detail.agent}</Descriptions.Item>
+              <Descriptions.Item label="Requested model">{detail.requested_model}</Descriptions.Item>
+              <Descriptions.Item label="Skill mode">{detail.skill_mode}</Descriptions.Item>
+              <Descriptions.Item label="Sandbox">{detail.sandbox}</Descriptions.Item>
+              <Descriptions.Item label="Observed reward">{observedNumber(detail.observed_reward)} (historical observation)</Descriptions.Item>
+              <Descriptions.Item label="Estimated USD">{observedNumber(detail.cost?.usd, true)} — not a bill</Descriptions.Item>
+              <Descriptions.Item label="Tokens: input / output / total">{observedNumber(detail.cost?.input_tokens)} / {observedNumber(detail.cost?.output_tokens)} / {observedNumber(detail.cost?.total_tokens)}</Descriptions.Item>
+              <Descriptions.Item label="Usage source">{detail.cost?.usage_source || 'Not reported'}</Descriptions.Item>
+              <Descriptions.Item label="Evidence integrity">{detail.evidence_integrity}</Descriptions.Item>
+              <Descriptions.Item label="Runtime attestation valid">{String(detail.runtime_attestation_valid)}</Descriptions.Item>
+              <Descriptions.Item label="Admission status">{detail.admission_status}</Descriptions.Item>
+              <Descriptions.Item label="Admission reason">{detail.admission_reason}</Descriptions.Item>
+              <Descriptions.Item label="Current Skill binding">Unbound (skill_binding: {JSON.stringify(detail.skill_binding)})</Descriptions.Item>
+              <Descriptions.Item label="Source manifest present">{String(detail.source_manifest_present)} — proof missing</Descriptions.Item>
+              <Descriptions.Item label="Model result eligible">{String(detail.model_result_eligible)}</Descriptions.Item>
+              <Descriptions.Item label="Promotion allowed">{String(detail.promotion_allowed)} — blocked</Descriptions.Item>
+            </Descriptions>
+            {detail.limitations.length > 0 && <Alert type="warning" showIcon message="Evidence limitations" description={<ul style={{ margin: 0, paddingLeft: 20 }}>{detail.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>} />}
+            <Text strong>Raw artifact references</Text>
+            <Table dataSource={detail.raw_artifacts} rowKey="path" size="small" pagination={false} scroll={{ x: 800 }}
+              columns={[{ title: 'Path', dataIndex: 'path', render: value => <Text code copyable style={{ wordBreak: 'break-all' }}>{value}</Text> }, { title: 'SHA-256', dataIndex: 'sha256', render: value => <Text code copyable style={{ wordBreak: 'break-all' }}>{value}</Text> }, { title: 'Bytes', dataIndex: 'size' }]}
+              locale={{ emptyText: 'No raw artifact references returned' }} />
+            <Text strong>Cost metadata (estimate, not billing evidence)</Text>
+            {renderJson(detail.cost)}
+          </Space>}
+        </Card>}
+      </Space>
+    </Card>
+  )
+}
+
+function CurrentBenchFlowEvidence() {
+  const [runs, setRuns] = useState<CurrentBenchFlowRun[]>([])
+  const [matrix, setMatrix] = useState<FormalBenchFlowCondition[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await harnessApi.currentBenchflowRuns()
+      setRuns(response.runs)
+      setMatrix(response.formal_matrix || [])
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Load current BenchFlow evidence failed'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  const columns: TableColumnsType<CurrentBenchFlowRun> = [
+    { title: 'Condition', render: (_, run) => <Space direction="vertical" size={0}><Text strong>{run.condition}</Text><Text code>{run.run_id}</Text></Space> },
+    { title: 'Status', render: (_, run) => <Tag color={run.status === 'completed' ? 'green' : 'volcano'}>{run.status}</Tag> },
+    { title: 'Skill / model', render: (_, run) => <Space direction="vertical" size={0}><Text>{run.skill_mode}</Text><Text type="secondary">{run.observed_model || 'Not observed'}</Text></Space> },
+    { title: 'Reward', render: (_, run) => run.observed_reward == null ? 'Not reported' : String(run.observed_reward) },
+    { title: 'Evidence', render: (_, run) => <Tag color={run.evidence_integrity === 'verified' ? 'blue' : 'red'}>{run.evidence_integrity}</Tag> },
+  ]
+  const matrixColumns: TableColumnsType<FormalBenchFlowCondition> = [
+    { title: 'Formal slot', dataIndex: 'formal_slot' },
+    { title: 'Condition', dataIndex: 'condition' },
+    { title: 'Status', render: (_, row) => <Tag color={row.status === 'completed' ? 'green' : 'default'}>{row.status}</Tag> },
+    { title: 'Verifier', render: (_, row) => row.verifier_ran ? 'Ran' : 'Not run' },
+    { title: 'Reward', render: (_, row) => row.observed_reward == null ? 'Not reported' : String(row.observed_reward) },
+    { title: 'Attempts', dataIndex: 'attempt_count' },
+    { title: 'Latest attempt', render: (_, row) => row.run_id || 'Not started' },
+  ]
+  return <Card title="Current M2 BenchFlow runs" variant="borderless" style={{ borderRadius: 8, marginBottom: 20 }} extra={<Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>Refresh current runs</Button>}>
+    {error && <Alert type="error" showIcon message={error} />}
+    <Alert type="info" showIcon message="Fresh runs only" description="These rows are receipt-bound to the current M2/M5 evidence directory. Historical pilots and fixtures are shown separately; a row never grants promotion." style={{ marginBottom: 12 }} />
+    <Text strong>Formal comparison: six conditions</Text>
+    <Table rowKey="formal_slot" loading={loading} columns={matrixColumns} dataSource={matrix} pagination={false} style={{ marginTop: 8, marginBottom: 20 }} />
+    <Text strong>Registered attempts (separate from the six-condition denominator)</Text>
+    <Table rowKey="run_id" loading={loading} columns={columns} dataSource={runs} pagination={false} locale={{ emptyText: 'No fresh M2 runs registered yet' }} />
+  </Card>
+}
+
 function RepairList({ repairs }: { repairs: Record<string, unknown>[] }) {
   if (!repairs.length) {
     return <Empty description="No repair was needed yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -202,7 +370,7 @@ export default function HarnessVerification() {
   const location = useLocation()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [harness, setHarness] = useState<HarnessKind>('local_skillos')
+  const [harness, setHarness] = useState<HarnessKind>('local_skillwiki')
   const [maxAttempts, setMaxAttempts] = useState(3)
   const [timeoutS, setTimeoutS] = useState(120)
   const [allowRepair, setAllowRepair] = useState(true)
@@ -227,7 +395,7 @@ export default function HarnessVerification() {
     try {
       const [skillList, loopList] = await Promise.all([
         skillsApi.list({ limit: 200 }),
-        harnessApi.list(20).catch(() => ({ loops: [], total: 0 })),
+        harnessApi.list(20),
       ])
       setSkills(skillList)
       setRecentLoops(loopList.loops || [])
@@ -351,6 +519,9 @@ export default function HarnessVerification() {
         />
       )}
 
+      <HistoricalBenchFlowEvidence />
+      <CurrentBenchFlowEvidence />
+
       <Spin spinning={loading && !running}>
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={9}>
@@ -412,7 +583,7 @@ export default function HarnessVerification() {
                     onChange={value => setHarness(value as HarnessKind)}
                     style={{ marginTop: 8 }}
                     options={[
-                      { label: 'Local', value: 'local_skillos' },
+                      { label: 'Local', value: 'local_skillwiki' },
                       { label: 'Codex CLI', value: 'codex_cli' },
                       { label: 'Claude Code', value: 'claude_code', disabled: true },
                     ]}

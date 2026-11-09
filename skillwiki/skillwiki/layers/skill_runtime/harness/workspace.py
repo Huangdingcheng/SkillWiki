@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from ....utils.filesystem_paths import filesystem_path
 from .base import VerificationLoopResult
 
 
@@ -20,7 +21,7 @@ class HarnessWorkspace:
 
     def __init__(self, loop_id: str, root: Path | None = None) -> None:
         self.loop_id = loop_id
-        self.root = (root or default_harness_root()).resolve()
+        self.root = filesystem_path(root or default_harness_root()).resolve()
         self.loop_dir = self.root / loop_id
         self.loop_dir.mkdir(parents=True, exist_ok=True)
 
@@ -31,10 +32,12 @@ class HarnessWorkspace:
         return path
 
     def write_text(self, path: Path, content: str) -> None:
+        path = filesystem_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
     def write_json(self, path: Path, payload: Dict[str, Any]) -> None:
+        path = filesystem_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, default=str),
@@ -49,7 +52,7 @@ class HarnessEvidenceStore:
     """Read/list helper for saved verification loops."""
 
     def __init__(self, root: Path | None = None) -> None:
-        self.root = (root or default_harness_root()).resolve()
+        self.root = filesystem_path(root or default_harness_root()).resolve()
 
     def get(self, loop_id: str) -> Dict[str, Any] | None:
         path = self.root / loop_id / "result.json"

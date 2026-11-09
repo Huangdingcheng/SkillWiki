@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from skillos.layers.skill_runtime.harness import HarnessTestCase, HarnessWorkspace, LocalSkillOSHarness
-from skillos.layers.skill_runtime.executor import SkillExecutor
-from skillos.models.skill_model import Skill, SkillEvaluation, SkillImplementation, SkillInterface
+from skillwiki.layers.skill_runtime.harness import HarnessTestCase, HarnessWorkspace, LocalSkillWikiHarness
+from skillwiki.layers.skill_runtime.executor import SkillExecutor
+from skillwiki.models.skill_model import Skill, SkillEvaluation, SkillImplementation, SkillInterface
 
 
 class JsonLLM:
@@ -52,7 +52,7 @@ async def test_local_skillos_harness_records_passing_evidence(tmp_path):
         verifier_specs=skill.evaluation.verifier_specs,
     )
 
-    result = await LocalSkillOSHarness().run_skill(skill, test_case, workspace, attempt=1)
+    result = await LocalSkillWikiHarness().run_skill(skill, test_case, workspace, attempt=1)
 
     assert result.status == "passed"
     assert result.verifier_passed is True
@@ -71,7 +71,7 @@ async def test_local_skillos_harness_keeps_failed_postcondition_evidence(tmp_pat
         verifier_specs=skill.evaluation.verifier_specs,
     )
 
-    result = await LocalSkillOSHarness().run_skill(skill, test_case, workspace, attempt=1)
+    result = await LocalSkillWikiHarness().run_skill(skill, test_case, workspace, attempt=1)
 
     assert result.status == "failed"
     assert result.verifier_passed is False
@@ -96,7 +96,7 @@ async def test_local_skillos_harness_enforces_input_contract_specs(tmp_path):
         verifier_specs=specs,
     )
 
-    result = await LocalSkillOSHarness().run_skill(skill, test_case, workspace, attempt=1)
+    result = await LocalSkillWikiHarness().run_skill(skill, test_case, workspace, attempt=1)
 
     assert result.status == "failed"
     assert result.verifier_passed is False
@@ -148,7 +148,7 @@ async def test_local_skillos_harness_verifies_prompt_skill_structured_json(tmp_p
         verifier_specs=skill.evaluation.verifier_specs,
     )
 
-    result = await LocalSkillOSHarness(
+    result = await LocalSkillWikiHarness(
         executor=SkillExecutor(llm_client=JsonLLM())  # type: ignore[arg-type]
     ).run_skill(skill, test_case, workspace, attempt=1)
 

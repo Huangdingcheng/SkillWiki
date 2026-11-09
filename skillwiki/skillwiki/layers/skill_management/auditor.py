@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from ...models.skill_model import Skill, SkillState, SkillType
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from ..skill_runtime.executor import is_literal_instruction_skill, prompt_template_fields
 
 logger = get_logger(__name__)
 
@@ -153,11 +154,10 @@ class SkillAuditorAgent:
             has_atomic_implementation = bool(
                 (impl.code and impl.code.strip())
                 or (impl.prompt_template and impl.prompt_template.strip())
-                or impl.tool_calls
             )
             if not has_atomic_implementation:
-                issues.append("atomic Skill must define code, prompt_template, or tool_calls")
-                recommendations.append("Use atomic Skills for directly executable code, prompts, or tool calls")
+                issues.append("atomic Skill must define executable code or prompt_template; tool-only execution is unsupported")
+                recommendations.append("Provide supported code or prompt implementation; tool metadata alone is not executable")
                 postcondition_ok = False
 
         if skill.skill_type == SkillType.FUNCTIONAL and impl:
@@ -201,8 +201,13 @@ class SkillAuditorAgent:
                     issues.append(f"code contains potentially dangerous operation: {d}")
                     recommendations.append("Remove dangerous operations or wrap them in a reviewed safe tool")
                     safety_ok = False
-        if impl and impl.prompt_template and impl.prompt_template.strip():
-            prompt_vars = _extract_prompt_variables(impl.prompt_template)
+        if impl and impl.prompt_template and impl.prompt_template.strip() and not is_literal_instruction_skill(skill):
+            try:
+                prompt_vars = _extract_prompt_variables(impl.prompt_template)
+            except ValueError as exc:
+                prompt_vars = set()
+                issues.append(f"prompt_template has invalid format syntax: {exc}")
+                schema_ok = False
             for var_name in sorted(prompt_vars):
                 if var_name not in input_properties:
                     issues.append(
@@ -219,7 +224,8 @@ class SkillAuditorAgent:
                 impl_str = ""
                 if impl:
                     if impl.prompt_template:
-                        impl_str = f"prompt_template: {_audit_preview(impl.prompt_template, 3000)}"
+                        impl_str = (f"prompt_format: {impl.prompt_format or 'legacy'}\n"
+                                    f"prompt_template: {_audit_preview(impl.prompt_template, 3000)}")
                     elif impl.code:
                         impl_str = f"code: {_audit_preview(impl.code, 1600)}"
                     elif impl.sub_skill_ids:
@@ -348,13 +354,9 @@ def _requires_provenance_contract(skill: Skill) -> bool:
 
 
 def _extract_prompt_variables(prompt_template: str) -> set[str]:
-    """Return field names used as `{name}` or `{{name}}` in a prompt template."""
-    variables: set[str] = set()
-    for match in re.finditer(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", prompt_template):
-        variables.add(match.group(1))
-    for match in re.finditer(r"(?<!\{)\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}(?!\})", prompt_template):
-        variables.add(match.group(1))
-    return variables
+    """Use the executor's literal-JSON and escaped-brace interpretation."""
+    return {re.split(r"[.\[]", field_name, maxsplit=1)[0]
+            for field_name in prompt_template_fields(prompt_template)}
 
 
 def _string_list(value: Any) -> List[str]:

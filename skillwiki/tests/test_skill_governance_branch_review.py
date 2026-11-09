@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from skillos.layers.skill_governance import (
+from skillwiki.layers.skill_governance import (
     GitVersionStore,
     GitVersionStoreError,
     propose_skill_change,
     skill_change_branch_name,
     skill_snapshot_path,
 )
-from skillos.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
+from skillwiki.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 
 
 def _run_git(repo: Path, args: list[str]) -> None:

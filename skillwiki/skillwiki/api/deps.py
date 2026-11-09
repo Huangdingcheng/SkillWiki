@@ -23,6 +23,7 @@ from ..layers.skill_runtime import (
     StateTracker,
     VerifierAgent,
 )
+from ..layers.skill_runtime.skillnet_fabric_adapter import retrieve_with_fabric
 from ..utils.llm_client import LLMClient
 
 
@@ -52,6 +53,8 @@ class AppState:
         self.meta_controller: Optional[MetaControllerAgent] = None
         self.pipeline: Optional[ExperiencePipeline] = None
         self.evolution: Optional[EvolutionEngine] = None
+        self.fabric_retriever = retrieve_with_fabric
+        self.execution_trace_path: Optional[Any] = None
         self.state_tracker: StateTracker = StateTracker(task_id="session")
 
     def initialize(self, llm: LLMClient, wiki: Any, graph: Any) -> None:
@@ -67,7 +70,7 @@ class AppState:
         self.version_ctrl = VersionController()
         self.retriever = SkillRetriever(llm_client=llm, search_engine=self.search)
         self.planner = SkillPlanner(llm_client=llm)
-        self.executor = SkillExecutor(skill_registry=wiki, llm_client=llm)
+        self.executor = SkillExecutor(skill_registry=wiki, llm_client=llm, max_retries=0)
         self.composer = CompositionAgent(llm_client=llm)
         self.verifier = VerifierAgent(llm_client=llm)
         self.reflector = ReflectionAgent(llm_client=llm)

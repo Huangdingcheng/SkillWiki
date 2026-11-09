@@ -10,18 +10,18 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from skillos.api.deps import get_app_state
-from skillos.api.main import _seed_demo_skills, create_app
-from skillos.api.memory_store import MemoryGraphManager, MemoryWikiManager
-from skillos.api.routes import evolution as evolution_routes
-from skillos.api.routes import lifecycle as lifecycle_routes
-from skillos.api.schemas import (
+from skillwiki.api.deps import get_app_state
+from skillwiki.api.main import _seed_demo_skills, create_app
+from skillwiki.api.memory_store import MemoryGraphManager, MemoryWikiManager
+from skillwiki.api.routes import evolution as evolution_routes
+from skillwiki.api.routes import lifecycle as lifecycle_routes
+from skillwiki.api.schemas import (
     EvolutionCycleResponse,
     HealthReportResponse,
     MaintenanceProposalListResponse,
     SystemHealthResponse,
 )
-from skillos.layers.feedback_evolution import (
+from skillwiki.layers.feedback_evolution import (
     EvolutionAction,
     EvolutionEngine,
     EvolutionReport,
@@ -33,14 +33,14 @@ from skillos.layers.feedback_evolution import (
     SkillRepair,
     SystemHealthReport,
 )
-from skillos.layers.skill_management import (
+from skillwiki.layers.skill_management import (
     MaintenanceAction,
     SkillAuditorAgent,
     SkillBuilderAgent,
     SkillMaintainerAgent,
 )
-from skillos.layers.skill_governance import SkillMerger
-from skillos.models.skill_model import (
+from skillwiki.layers.skill_governance import SkillMerger
+from skillwiki.models.skill_model import (
     EdgeType,
     MetaSkillCategory,
     Skill,
@@ -51,7 +51,7 @@ from skillos.models.skill_model import (
     SkillState,
     SkillType,
 )
-from skillos.models.maintenance_model import (
+from skillwiki.models.maintenance_model import (
     MaintenanceProposal,
     MaintenanceProposalStatus,
     MaintenanceValidationStatus,
@@ -239,7 +239,7 @@ def test_auditor_fails_when_prompt_variable_missing_from_schema() -> None:
             },
             output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
         ),
-        implementation=SkillImplementation(prompt_template="Login {username} with {{otp_code}}."),
+            implementation=SkillImplementation(prompt_template="Login {username} with {otp_code}."),
     )
 
     result = SkillAuditorAgent(FakeLLM(should_raise=True)).audit(skill)

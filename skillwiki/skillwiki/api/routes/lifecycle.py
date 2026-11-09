@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...layers.skill_governance import (
+    EvidenceGateResult,
     GitVersionStore,
     GitVersionStoreError,
+    canonical_skill_artifact_hash,
+    decide_evidence_gate,
     diff_skill_snapshots,
     has_breaking_changes,
     propose_skill_change,
@@ -23,9 +27,12 @@ from ...layers.skill_governance import (
     write_skill_snapshot,
 )
 from ...layers.skill_management import SkillAuditorAgent
+from ...layers.skill_governance.version_evidence import require_current_identity_proof
 from ..deps import AppState, get_app_state
 from ..schemas import (
     DeprecateRequest,
+    EvidenceReleaseRequest,
+    EvidenceReleaseResponse,
     MaintenanceReviewRequest,
     MaintenanceReviewResponse,
     NewVersionRequest,
@@ -40,11 +47,32 @@ from ..schemas import (
     SnapshotHistoryResponse,
     TransitionRequest,
 )
-from ...models.skill_model import Skill, SkillState
+from ...models.skill_model import Skill, SkillState, SkillProvenance, SkillMetrics
 from ...models.skill_model import EdgeType
 
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
 _AUDITED_TARGET_STATES = {SkillState.VERIFIED, SkillState.RELEASED}
+
+
+def _raise_evidence_decision(
+    skill: Skill,
+    *,
+    gate_result: Optional[EvidenceGateResult] = None,
+    decision: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> None:
+    result_decision = gate_result.decision if gate_result is not None else decision or "defer"
+    result_reason = gate_result.reason if gate_result is not None else reason or "evidence decision unavailable"
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "skill_id": skill.skill_id,
+            "version": skill.version,
+            "decision": result_decision,
+            "reason": result_reason,
+            "released": False,
+        },
+    )
 
 
 def _to_summary(skill):
@@ -52,9 +80,26 @@ def _to_summary(skill):
     return ts(skill)
 
 
+async def _sync_version_graph(app: AppState, skill: Skill) -> None:
+    graph = getattr(app, "graph", None)
+    if graph is None or not hasattr(graph, "sync_skill"):
+        return
+    await graph.sync_skill(skill)
+    if hasattr(graph, "sync_auto_edges"):
+        list_skills = getattr(app.wiki, "list_all_versions", None) or getattr(app.wiki, "list", None)
+        if list_skills:
+            stored = await list_skills(limit=10000)
+            await graph.sync_auto_edges(skill, [item.skill_id for item in stored])
+
+
 def _audit_skill_for_target_state(app: AppState, skill: Skill, target_state: SkillState) -> None:
     if target_state not in _AUDITED_TARGET_STATES:
         return
+
+    try:
+        require_current_identity_proof(skill, target_state)
+    except ValueError as exc:
+        _raise_evidence_decision(skill, reason=str(exc))
 
     candidate = skill.model_copy(deep=True)
     object.__setattr__(candidate, "state", target_state)
@@ -110,6 +155,7 @@ async def transition_state(
         skill = await app.wiki.transition_state(skill_id, req.new_state, req.reason)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await _sync_version_graph(app, skill)
     return _to_summary(skill)
 
 
@@ -119,7 +165,7 @@ async def release_skill(
     req: ReleaseRequest,
     app: AppState = Depends(get_app_state),
 ) -> SkillSummary:
-    """发布 Skill。若当前为 Draft，自动推进到 Verified 再发布。"""
+    """Legacy unbound release boundary; use release-with-evidence for M1."""
     try:
         skill = await app.wiki.get(skill_id)
         if not skill:
@@ -131,6 +177,115 @@ async def release_skill(
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _to_summary(skill)
+
+
+@router.post(
+    "/{skill_id}/release-with-evidence",
+    response_model=EvidenceReleaseResponse,
+)
+async def release_skill_with_evidence(
+    skill_id: str,
+    req: EvidenceReleaseRequest,
+    app: AppState = Depends(get_app_state),
+) -> EvidenceReleaseResponse:
+    """Release only when the current Skill matches accepted M1 evidence."""
+    skill = await app.wiki.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
+
+    manifest = req.manifest
+    manifest_skill_id = str(manifest.get("skill_id") or "").strip()
+    manifest_version = str(manifest.get("version") or "").strip()
+    manifest_artifact_id = str(manifest.get("artifact_id") or "").strip()
+    expected_artifact_id = f"{skill.skill_id}@{skill.version}"
+    if (
+        manifest_skill_id != skill.skill_id
+        or manifest_version != skill.version
+        or (manifest_artifact_id and manifest_artifact_id != expected_artifact_id)
+    ):
+        _raise_evidence_decision(
+            skill,
+            decision="reject",
+            reason="manifest skill identity or version does not match current Skill",
+        )
+
+    declared_content_hash: Any = manifest.get("content_hash")
+    if isinstance(declared_content_hash, dict):
+        declared_content_hash = declared_content_hash.get("value")
+    if str(declared_content_hash or "").strip() != canonical_skill_artifact_hash(skill):
+        _raise_evidence_decision(
+            skill,
+            decision="reject",
+            reason="manifest content hash does not match current Skill artifact",
+        )
+
+    # A repository-owned qualification contract cannot be narrowed by the
+    # submitted proof packet. Absent this opt-in, retain legacy M1 behavior.
+    registered = (skill.provenance.creation_context.get("evidence_release_contract")
+                  if skill.provenance else None)
+    if registered is not None:
+        if not isinstance(registered, dict):
+            _raise_evidence_decision(skill, reason="registered evidence release contract is malformed")
+        required = registered.get("complete_U")
+        if not isinstance(required, list) or not required:
+            _raise_evidence_decision(skill, reason="registered complete qualification U is missing")
+        if manifest.get("required_U") != required:
+            _raise_evidence_decision(skill, reason="manifest qualification U does not match registered complete U")
+        for field in ("source_snapshot", "contract_version", "environment_fingerprint", "verifier_version"):
+            if not registered.get(field) or manifest.get(field) != registered[field]:
+                _raise_evidence_decision(skill, reason=f"manifest {field} does not match registered qualification contract")
+
+    gate_result = decide_evidence_gate(manifest, req.traces, req.evaluation)
+    if gate_result.decision != "accept":
+        _raise_evidence_decision(skill, gate_result=gate_result)
+
+    evaluation_id = str(req.evaluation.get("evaluation_id") or "").strip()
+    if not evaluation_id:
+        _raise_evidence_decision(
+            skill,
+            decision="defer",
+            reason="evaluation id is missing",
+        )
+
+    reference = {
+        "schema_version": req.schema_version,
+        "skill_id": skill.skill_id,
+        "version": skill.version,
+        "artifact_hash": str(req.evaluation["artifact_hash"]),
+        "evaluation_id": evaluation_id,
+        "trace_ids": [str(item) for item in req.evaluation.get("trace_ids", [])],
+        "applicability": dict(req.evaluation["applicability"]),
+        "decision": "accept",
+        "actor": req.author,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+    evaluation = skill.evaluation.model_copy(deep=True)
+    evaluation.harness_validation = {"evidence_decision": reference}
+    candidate = skill.model_copy(deep=True)
+    candidate.evaluation = evaluation
+    _audit_skill_for_target_state(app, candidate, SkillState.RELEASED)
+    try:
+        released = await app.wiki.release(skill.skill_id, evaluation=evaluation)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "decision": "defer",
+                "reason": f"evidence-bound release could not be persisted: {exc}",
+                "released": False,
+            },
+        ) from exc
+
+    return EvidenceReleaseResponse(
+        skill_id=released.skill_id,
+        version=released.version,
+        state=released.state,
+        decision="accept",
+        reason=gate_result.reason,
+        released=True,
+        evidence_reference=reference,
+    )
 
 
 @router.post("/{skill_id}/deprecate", response_model=SkillSummary)
@@ -170,7 +325,12 @@ async def create_new_version(
         overrides["test_cases"] = req.test_cases
     if req.metadata is not None:
         overrides["metadata"] = req.metadata
-    skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
+    await _get_skill_or_404(skill_id, app)
+    try:
+        skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _sync_version_graph(app, skill)
     return _to_summary(skill)
 
 
@@ -189,7 +349,7 @@ async def review_skill(
         "overall_score": result.overall_score,
         "summary": result.summary,
         "comments": [
-            {"field": c.field, "severity": c.severity, "message": c.message, "score": c.score}
+            {"field": c.field, "severity": c.severity, "message": c.message, "suggestion": c.suggestion}
             for c in result.comments
         ],
         "is_approved": result.is_approved,
@@ -204,10 +364,37 @@ async def review_and_release(
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found")
+    # Calling this route is the explicit human release trigger. The reviewer
+    # supplies a recommendation only; state changes use the real repository.
+    reviewed_hash = canonical_skill_artifact_hash(skill)
     try:
-        released = await app.reviewer.review_and_release(skill, app.wiki)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        result = await app.reviewer.review(skill.model_copy(deep=True))
+        current = await app.wiki.get(skill_id)
+        if current is None or canonical_skill_artifact_hash(current) != reviewed_hash:
+            raise ValueError("Skill changed while review was running; review the current identity again")
+        evaluation = current.evaluation.model_copy(deep=True)
+        evaluation.harness_validation["review"] = {
+            "review_id": result.review_id, "skill_id": current.skill_id,
+            "skill_version": current.version, "artifact_hash": reviewed_hash,
+            "status": result.status.value, "is_approved": result.is_approved,
+            "overall_score": result.overall_score, "summary": result.summary,
+        }
+        current = await app.wiki.update(skill_id, evaluation=evaluation)
+        if current is None:
+            raise ValueError("Review result could not be persisted")
+        if not result.is_approved:
+            _raise_evidence_decision(current, decision="reject" if result.status.value == "rejected" else "defer",
+                                     reason=f"Review recommendation: {result.status.value}")
+        require_current_identity_proof(current, SkillState.RELEASED, force=True)
+        _audit_skill_for_target_state(app, current, SkillState.RELEASED)
+        if current.state == SkillState.DRAFT:
+            current = await app.wiki.transition_state(skill_id, SkillState.VERIFIED)
+        released = await app.wiki.release(current.skill_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _sync_version_graph(app, released)
     return _to_summary(released)
 
 
@@ -433,8 +620,20 @@ async def get_skill_snapshot_diff(
     skill = await _get_skill_or_404(skill_id, app)
     repo_path = _governance_repo_path()
     store = GitVersionStore(repo_path)
-    from_snapshot_path = _skill_snapshot_path_for_version(skill, from_version)
-    to_snapshot_path = _skill_snapshot_path_for_version(skill, to_version)
+    from_snapshot_path = _resolve_snapshot_path_at_ref(
+        repo_path,
+        store,
+        skill,
+        from_version,
+        from_ref,
+    )
+    to_snapshot_path = _resolve_snapshot_path_at_ref(
+        repo_path,
+        store,
+        skill,
+        to_version,
+        to_ref,
+    )
     try:
         if from_snapshot_path == to_snapshot_path:
             raw_diff = store.diff_between(from_ref, to_ref, to_snapshot_path)
@@ -478,6 +677,12 @@ async def create_skill_release_tag(
     app: AppState = Depends(get_app_state),
 ) -> Dict[str, Any]:
     skill = await _get_skill_or_404(skill_id, app)
+    if skill.state != SkillState.RELEASED:
+        _raise_evidence_decision(skill, reason="Release tags require an explicitly released Skill; drafts need fresh verification")
+    try:
+        require_current_identity_proof(skill, SkillState.RELEASED)
+    except ValueError as exc:
+        _raise_evidence_decision(skill, reason=str(exc))
     repo_path = _governance_repo_path()
     try:
         return release_skill_snapshot(repo_path, skill, ref=req.ref).to_dict()
@@ -491,11 +696,79 @@ async def rollback_skill_snapshot(
     req: RollbackRequest,
     app: AppState = Depends(get_app_state),
 ) -> Dict[str, Any]:
+    """Compatibility route: create a separate recovery draft; never overwrite a Skill."""
     skill = await _get_skill_or_404(skill_id, app)
     repo_path = _governance_repo_path()
+    draft = None
     try:
-        return restore_skill_snapshot(repo_path, skill, req.source_ref).to_dict()
+        store = GitVersionStore(repo_path)
+        related = [skill]
+        history = getattr(app.wiki, "get_version_history", None)
+        if history:
+            related.extend(reversed(await history(skill.name)))
+        paths = [skill_snapshot_path(item) for item in related
+                 if not req.source_version or item.version == req.source_version]
+        if skill.provenance:
+            parent_version = req.source_version or skill.provenance.creation_context.get("source_version")
+            if parent_version:
+                paths.extend(f"skills/{parent}/{parent_version}.json"
+                             for parent in skill.provenance.parent_skill_ids)
+        snapshot = None
+        last_error = None
+        for path in dict.fromkeys(paths):
+            try:
+                snapshot = read_skill_snapshot_at_ref(repo_path, req.source_ref, path, store)
+                break
+            except GitVersionStoreError as exc:
+                last_error = exc
+        if snapshot is None:
+            raise last_error or ValueError("No matching source version snapshot exists at this ref")
+        restored = Skill.model_validate({**skill.model_dump(mode="json"), **snapshot})
+        if restored.name != skill.name:
+            raise ValueError("Recovery source must belong to the same named Skill")
+        provenance = (restored.provenance.model_copy(deep=True) if restored.provenance
+                      else SkillProvenance(source_type="adapt"))
+        provenance.parent_skill_ids = list(dict.fromkeys([
+            *provenance.parent_skill_ids, skill.skill_id, restored.skill_id]))
+        provenance.source_type = "adapt"
+        provenance.created_by_agent = req.author
+        provenance.creation_context.update({
+            "source_version": skill.version, "recovery_draft": True,
+            "recovery_source_ref": req.source_ref,
+            "recovery_source_skill_id": restored.skill_id,
+            "recovery_source_version": restored.version,
+            "recovery_reason": req.reason,
+        })
+        evaluation = restored.evaluation.model_copy(deep=True)
+        evaluation.harness_validation = {}
+        evaluation.validation_summary = "Recovery draft: fresh task verification required before release."
+        fields = {field: getattr(restored, field) for field in snapshot
+                  if field not in {"skill_id", "name", "version", "state", "provenance", "evaluation"}
+                  and hasattr(restored, field)}
+        fields.update(provenance=provenance, evaluation=evaluation,
+                      state=SkillState.DRAFT, metrics=SkillMetrics())
+        with store.lock():
+            draft = await app.wiki.create_new_version(skill_id, "patch", **fields)
+            snapshot_path = write_skill_snapshot(repo_path, draft)
+            message = f"skill({skill.name}): recovery draft v{draft.version} from {req.source_ref}"
+            commit = store.commit_paths([snapshot_path], message, author_name=req.author)
+        await _sync_version_graph(app, draft)
+        return {
+            "skill_id": skill_id, "skill_name": skill.name, "version": draft.version,
+            "source_ref": req.source_ref, "restore_commit": commit,
+            "restored_snapshot_path": snapshot_path, "commit_message": message,
+            "restored_skill_id": draft.skill_id, "restored_version": draft.version,
+            "restored_state": draft.state.value, "source_skill_id": restored.skill_id,
+            "source_version": restored.version, "live_skill_updated": False,
+            "draft_created": True, "release_blocked_reason": evaluation.validation_summary,
+        }
     except (GitVersionStoreError, ValueError) as e:
+        if draft is not None:
+            raise HTTPException(status_code=500, detail={
+                "message": str(e), "restored_skill_id": draft.skill_id,
+                "draft_created": True, "snapshot_complete": False,
+                "live_skill_updated": False,
+            }) from e
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -768,6 +1041,36 @@ def _skill_snapshot_path_for_version(skill, version: Optional[str]) -> str:
     if not version:
         return skill_snapshot_path(skill)
     return f"skills/{skill.skill_id}/{version}.json"
+
+
+def _resolve_snapshot_path_at_ref(
+    repo_path: Path,
+    store: GitVersionStore,
+    skill: Skill,
+    version: Optional[str],
+    ref: str,
+) -> str:
+    """Resolve a version snapshot through the current skill and its parents.
+
+    New versions intentionally receive new IDs. Their provenance retains the
+    parent ID, so cross-version diffs can find the old snapshot without
+    changing the existing version identity model.
+    """
+    candidates = [_skill_snapshot_path_for_version(skill, version)]
+    parent_ids = skill.provenance.parent_skill_ids if skill.provenance else []
+    target_version = version or skill.version
+    candidates.extend(
+        f"skills/{parent_id}/{target_version}.json"
+        for parent_id in parent_ids
+        if parent_id and f"skills/{parent_id}/{target_version}.json" not in candidates
+    )
+    for candidate in candidates:
+        try:
+            store.read_file_at_ref(ref, candidate)
+            return candidate
+        except GitVersionStoreError:
+            continue
+    return candidates[0]
 
 
 def _build_patched_skill(skill: Skill, patch: Dict[str, Any]) -> Skill:

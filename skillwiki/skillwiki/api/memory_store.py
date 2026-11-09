@@ -7,16 +7,21 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from ..layers.skill_governance.version_evidence import reset_version_evidence, require_current_identity_proof
+from ..layers.skill_governance.release_preparation import prepare_evidence_release
 from ..layers.skill_repository.indexing import SearchQuery, SearchResult, rank_search_results
 from ..models.graph_model import (
     HeteroEdgeType,
     HeteroGraph,
     HeteroGraphEdge,
     HeteroGraphNode,
+    HeteroSkillNode,
     HeteroNodeKind,
     SkillEdge,
     SkillGraphNode,
     SkillSubgraph,
+    SourceGraphNode,
+    VersionGraphNode,
     build_demo_hetero_graph,
 )
 from ..models.skill_model import (
@@ -25,6 +30,7 @@ from ..models.skill_model import (
     SkillEvaluation,
     SkillImplementation,
     SkillInterface,
+    SkillProvenance,
     SkillState,
     SkillType,
 )
@@ -48,6 +54,9 @@ class MemoryWikiManager:
             return None
         if version:
             return next((skill for skill in matches if skill.version == version), None)
+        matches = [skill for skill in matches if not _is_unreleased_recovery(skill)]
+        if not matches:
+            return None
         released = [skill for skill in matches if skill.state == SkillState.RELEASED]
         return max(released or matches, key=lambda skill: skill.updated_at)
 
@@ -94,6 +103,7 @@ class MemoryWikiManager:
         return len(await self.list(skill_type=skill_type, state=state, limit=10000))
 
     async def create(self, skill: Skill) -> Skill:
+        require_current_identity_proof(skill, skill.state)
         existing = await self.get_by_name(skill.name, skill.version)
         if existing:
             raise ValueError(f"Skill '{skill.name}' v{skill.version} already exists")
@@ -121,6 +131,7 @@ class MemoryWikiManager:
             elif key == "evaluation" and isinstance(value, dict):
                 value = SkillEvaluation.model_validate(value)
             object.__setattr__(updated, key, value)
+        require_current_identity_proof(updated, updated.state)
         object.__setattr__(updated, "updated_at", datetime.utcnow())
         self._store[skill_id] = updated
         return updated
@@ -145,8 +156,30 @@ class MemoryWikiManager:
         object.__setattr__(new_skill, "updated_at", datetime.utcnow())
         object.__setattr__(new_skill, "released_at", None)
         object.__setattr__(new_skill, "deprecated_at", None)
+        if new_skill.provenance:
+            new_skill.provenance.parent_skill_ids = list(
+                dict.fromkeys([*new_skill.provenance.parent_skill_ids, source.skill_id])
+            )
+            new_skill.provenance.source_type = "adapt"
+            new_skill.provenance.creation_context.update({"source_version": source.version})
+        else:
+            object.__setattr__(
+                new_skill,
+                "provenance",
+                SkillProvenance(
+                    source_type="adapt",
+                    parent_skill_ids=[source.skill_id],
+                    creation_context={"source_version": source.version},
+                ),
+            )
         for key, value in overrides.items():
             object.__setattr__(new_skill, key, value)
+        if _is_unreleased_recovery(new_skill) and "version" not in overrides:
+            history = await self.get_version_history(source.name)
+            latest = max(history, key=lambda skill: _version_key(skill.version))
+            object.__setattr__(new_skill, "version", latest.version)
+            new_skill.bump_version(bump)
+        reset_version_evidence(new_skill, source_skill=source)
         return await self.create(new_skill)
 
     async def get_version_history(self, name: str) -> List[Skill]:
@@ -162,13 +195,21 @@ class MemoryWikiManager:
         skill = await self.get(skill_id)
         if not skill:
             raise ValueError(f"Skill does not exist: {skill_id}")
+        require_current_identity_proof(skill, new_state)
         skill.transition_to(new_state)
         if new_state == SkillState.DEPRECATED and reason:
             object.__setattr__(skill, "deprecation_reason", reason)
         self._store[skill_id] = skill
         return skill
 
-    async def release(self, skill_id: str) -> Skill:
+    async def release(self, skill_id: str, *, evaluation: Optional[SkillEvaluation] = None) -> Skill:
+        if evaluation is not None:
+            skill = self._store.get(skill_id)
+            if not skill:
+                raise ValueError(f"Skill does not exist: {skill_id}")
+            released, _ = prepare_evidence_release(skill, evaluation)
+            self._store[skill_id] = released
+            return released
         return await self.transition_state(skill_id, SkillState.RELEASED)
 
     async def deprecate(
@@ -454,9 +495,65 @@ class MemoryGraphManager:
         return edge
 
     async def get_hetero_graph(self) -> HeteroGraph:
-        if self._hetero_graph.nodes or self._hetero_graph.edges:
-            return self._hetero_graph
-        return build_demo_hetero_graph()
+        return self._hetero_graph
+
+    async def sync_persisted_skill_graph(self, skills: Iterable[Skill]) -> None:
+        """Rebuild source/version relationships without inventing execution evidence."""
+        skills = list(skills)
+        valid_ids = {skill.skill_id for skill in skills}
+        source = "skill_repository"
+        self._hetero_graph.edges = [
+            edge for edge in self._hetero_graph.edges
+            if edge.metadata.get("source") != source
+        ]
+        for skill in skills:
+            skill_node_id = f"skill:{skill.skill_id}"
+            version_node_id = f"version:{skill.skill_id}:{skill.version}"
+            await self.add_hetero_node(HeteroSkillNode(
+                node_id=skill_node_id, name=skill.name, description=skill.description,
+                skill_id=skill.skill_id, skill_version=skill.version, skill_state=skill.state.value,
+                metadata={"skill_type": skill.skill_type.value, "tags": skill.tags, "domain": skill.domain},
+                created_by=source,
+            ))
+            await self.add_hetero_node(VersionGraphNode(
+                node_id=version_node_id, name=f"{skill.name}@{skill.version}",
+                version_id=version_node_id, version_label=skill.version, release_state=skill.state.value,
+                metadata={"skill_id": skill.skill_id}, created_by=source,
+            ))
+
+        async def link(source_id: str, target_id: str, edge_type: HeteroEdgeType) -> None:
+            await self.add_hetero_edge(HeteroGraphEdge(
+                edge_id=f"repository:{edge_type.value}:{source_id}:{target_id}",
+                source_id=source_id, target_id=target_id, edge_type=edge_type,
+                metadata={"source": source, "persisted_skill_relationship": True},
+                created_by=source,
+            ))
+
+        for skill in skills:
+            skill_node_id = f"skill:{skill.skill_id}"
+            version_node_id = f"version:{skill.skill_id}:{skill.version}"
+            await link(skill_node_id, version_node_id, HeteroEdgeType.VERSIONED_AS)
+            provenance = skill.provenance
+            if provenance:
+                for source_id in _unique_ids(provenance.source_ids):
+                    source_node_id = f"source:{provenance.source_type}:{source_id}"
+                    await self.add_hetero_node(SourceGraphNode(
+                        node_id=source_node_id, name=source_id,
+                        source_uri=source_id if "://" in source_id else f"{provenance.source_type}://{source_id}",
+                        source_type=provenance.source_type,
+                        metadata={"source_ids": [source_id]}, created_by=source,
+                    ))
+                    await link(source_node_id, skill_node_id, HeteroEdgeType.DERIVED_FROM)
+                for parent_id in _unique_ids(provenance.parent_skill_ids):
+                    if parent_id in valid_ids and parent_id != skill.skill_id:
+                        await link(version_node_id, f"skill:{parent_id}", HeteroEdgeType.COMPOSES_WITH)
+            component_ids = [
+                *(skill.implementation.sub_skill_ids if skill.implementation else []),
+                *skill.component_ids,
+            ]
+            for component_id in _unique_ids(component_ids):
+                if component_id in valid_ids and component_id != skill.skill_id:
+                    await link(skill_node_id, f"skill:{component_id}", HeteroEdgeType.COMPOSES_WITH)
 
     async def seed_demo_hetero_chain(
         self,
@@ -535,6 +632,14 @@ def _version_key(version: str) -> List[int]:
         return [int(part) for part in version.split(".")]
     except ValueError:
         return [0, 0, 0]
+
+
+def _is_unreleased_recovery(skill: Skill) -> bool:
+    return bool(
+        skill.provenance
+        and skill.provenance.creation_context.get("recovery_draft")
+        and skill.state != SkillState.RELEASED
+    )
 
 
 def _skill_to_graph_node(skill: Skill) -> SkillGraphNode:

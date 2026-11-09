@@ -11,10 +11,10 @@ from benchmarks.run_llm_planner_eval import (
     run_planner_eval,
     write_eval_payload,
 )
-from skillos.config.llm_config import LLMConfig
-from skillos.layers.skill_runtime.planner import SkillPlanner
-from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
-from skillos.utils.llm_client import LLMRateLimitError
+from skillwiki.config.llm_config import LLMConfig
+from skillwiki.layers.skill_runtime.planner import SkillPlanner
+from skillwiki.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
+from skillwiki.utils.llm_client import LLMRateLimitError
 
 
 def test_llm_planner_eval_compares_fallback_and_llm_without_api_key_leak() -> None:

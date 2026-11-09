@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from skillos.layers.skill_runtime.harness import CodexCliHarness, HarnessTestCase, HarnessWorkspace
-from skillos.layers.skill_runtime.harness import codex_cli
-from skillos.models.skill_model import Skill, SkillEvaluation, SkillImplementation, SkillInterface
+from skillwiki.layers.skill_runtime.harness import CodexCliHarness, HarnessTestCase, HarnessWorkspace
+from skillwiki.layers.skill_runtime.harness import codex_cli
+from skillwiki.models.skill_model import Skill, SkillEvaluation, SkillImplementation, SkillInterface
 
 
 def _skill() -> Skill:

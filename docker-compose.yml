@@ -9,7 +9,8 @@ services:
       - "8000:8000"
     environment:
       - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-6}
+      - LLM_API_URL=${LLM_API_URL:-https://api.deepseek.com}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-flash}
     command: >
       python -m skillwiki.api.main
       --api-key ${LLM_API_KEY}

@@ -31,8 +31,9 @@ class LocalSkillWikiHarness:
         *,
         attempt: int = 1,
     ) -> HarnessRunResult:
-        attempt_path = workspace.attempt_dir(attempt)
         run_id = f"harness_run_{uuid4().hex[:12]}"
+        attempt_path = workspace.attempt_dir(attempt) / run_id
+        attempt_path.mkdir(parents=True, exist_ok=False)
         workspace.write_json(attempt_path / "input.json", test_case.input_data)
         workspace.write_json(
             attempt_path / "verifier_specs.json",
@@ -48,6 +49,7 @@ class LocalSkillWikiHarness:
                 skill,
                 test_case.input_data,
                 task_id=f"{workspace.loop_id}:{test_case.test_id}",
+                initial_state=test_case.context,
             )
         finally:
             if previous_timeout is not None:
@@ -58,7 +60,7 @@ class LocalSkillWikiHarness:
         payload = {
             "input": test_case.input_data,
             "output": output,
-            "final_state": record.state_after or output,
+            "final_state": record.state_after,
             "record": _jsonable(record),
         }
         if record.status != ExecutionStatus.SUCCESS:
@@ -71,6 +73,11 @@ class LocalSkillWikiHarness:
             }
             failure_reason = record.error_message or record.status.value
             status = "failed"
+        elif not test_case.verifier_specs:
+            verifier_passed = False
+            verifier_summary = {'passed': False, 'score': 0.0, 'issues': ['No evaluation contract provided.'], 'details': {'evaluation_status': 'not_evaluated'}}
+            failure_reason = 'Execution completed; task correctness was not evaluated.'
+            status = 'not_evaluated'
         else:
             verification = evaluate_verifier_specs(
                 test_case.verifier_specs,
@@ -99,6 +106,11 @@ class LocalSkillWikiHarness:
         )
         workspace.write_json(attempt_path / "output.json", payload)
         workspace.write_json(attempt_path / "result.json", result.model_dump(mode="json"))
+        # Preserve the historical single-case evidence location as a stable
+        # index; individual run directories remain authoritative for batches.
+        attempt_index = attempt_path.parent / "result.json"
+        if not attempt_index.exists():
+            workspace.write_json(attempt_index, result.model_dump(mode="json"))
         return result
 
 

@@ -5,14 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from skillos.api.main import _seed_demo_skills, _sync_graph_from_wiki
-from skillos.api.memory_store import MemoryGraphManager
-from skillos.api.routes import graph as graph_routes
-from skillos.api.routes import lifecycle, repository, skills
-from skillos.api.schemas import ExecutionStepResult, SkillUpdateRequest
-from skillos.layers.skill_management.librarian import SkillLibrarianAgent
-from skillos.layers.skill_repository.repository import SkillWikiManager
-from skillos.models.skill_model import (
+from skillwiki.api.main import _seed_demo_skills, _sync_graph_from_wiki
+from skillwiki.api.memory_store import MemoryGraphManager
+from skillwiki.api.routes import graph as graph_routes
+from skillwiki.api.routes import lifecycle, repository, skills
+from skillwiki.api.schemas import ExecutionStepResult, SkillUpdateRequest
+from skillwiki.layers.skill_management.librarian import SkillLibrarianAgent
+from skillwiki.layers.skill_repository.repository import SkillWikiManager
+from skillwiki.models.skill_model import (
     Skill,
     SkillImplementation,
     SkillInterface,
@@ -20,7 +20,7 @@ from skillos.models.skill_model import (
     SkillState,
     SkillType,
 )
-from skillos.storage.skill_repo.common import GitSkillStore
+from skillwiki.storage.skill_repo.common import GitSkillStore
 
 
 def make_skill(

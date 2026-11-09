@@ -117,3 +117,6 @@ skillwiki/USAGE_GUIDE.md
 skillwiki-frontend/scripts/pdf_to_png.mjs
 skillwiki/quickstart.sh
 skillwiki/quickstart.bat
+
+# Local immutable image archive; its SHA and construction evidence are versioned.
+artifacts/m3-p26-image-restore/task-image.tar

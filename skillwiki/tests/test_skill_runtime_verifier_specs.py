@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from skillos.layers.skill_runtime.verifier import VerifierAgent, evaluate_verifier_specs
+from skillwiki.layers.skill_runtime.verifier import VerifierAgent, evaluate_verifier_specs
 
 
 class FakeLLM:

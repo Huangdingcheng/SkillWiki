@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from ...models.skill_model import Skill
+from ...utils.filesystem_paths import filesystem_path
 from .git_version_store import GitVersionStore
 
 
@@ -44,6 +45,8 @@ DIFF_FIELDS = (
     "interface.postconditions",
     "interface.side_effects",
     "implementation.prompt_template",
+    "implementation.prompt_format",
+    "implementation.request_body_validation",
     "implementation.code",
     "implementation.tool_calls",
     "implementation.sub_skill_ids",
@@ -104,7 +107,7 @@ def skill_to_snapshot_json(skill: Skill) -> str:
 def write_skill_snapshot(repo_path: str | Path, skill: Skill) -> str:
     """Write a Skill snapshot under the repo path and return its relative path."""
     relative_path = skill_snapshot_path(skill)
-    target = Path(repo_path) / relative_path
+    target = filesystem_path(Path(repo_path) / relative_path)
     if target.exists():
         GitVersionStore(repo_path).ensure_paths_clean([relative_path])
     target.parent.mkdir(parents=True, exist_ok=True)

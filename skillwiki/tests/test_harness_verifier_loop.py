@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
-from skillos.api.memory_store import MemoryGraphManager, MemoryWikiManager
-from skillos.layers.skill_runtime.harness import HarnessKind, VerificationLoop
-from skillos.models.skill_model import (
+from skillwiki.api.memory_store import MemoryGraphManager, MemoryWikiManager
+from skillwiki.layers.skill_runtime.harness import HarnessKind, VerificationLoop
+from skillwiki.models.skill_model import (
     Skill,
     SkillEvaluation,
     SkillImplementation,
@@ -49,6 +50,13 @@ def _draft_skill(*, broken: bool = True) -> Skill:
     )
 
 
+class InputFieldRepair:
+    async def repair(self, skill, health, failure_cases=None):
+        repaired = skill.model_copy(deep=True)
+        repaired.implementation = SkillImplementation(code="output['email'] = input_data.get('email')")
+        return SimpleNamespace(success=True, repaired_skill=repaired, error='', root_cause='')
+
+
 @pytest.mark.asyncio
 async def test_verification_loop_repairs_retries_and_promotes_to_s3(tmp_path):
     wiki = MemoryWikiManager()
@@ -59,6 +67,7 @@ async def test_verification_loop_repairs_retries_and_promotes_to_s3(tmp_path):
     result = await VerificationLoop(
         wiki=wiki,
         graph=graph,
+        repair=InputFieldRepair(),
         evidence_root=tmp_path,
     ).run(
         skill.skill_id,
@@ -71,7 +80,7 @@ async def test_verification_loop_repairs_retries_and_promotes_to_s3(tmp_path):
     assert len(result.attempts) == 2
     assert result.attempts[0].verifier_passed is False
     assert result.attempts[1].verifier_passed is True
-    assert result.repairs[0]["source"] == "deterministic"
+    assert result.repairs[0]["source"] == "llm_skill_repair"
     assert result.final_state == SkillState.VERIFIED.value
 
     original = await wiki.get(skill.skill_id)
@@ -83,6 +92,13 @@ async def test_verification_loop_repairs_retries_and_promotes_to_s3(tmp_path):
     assert verified.state == SkillState.VERIFIED
     assert verified.evaluation.harness_validation["last_loop_id"] == result.loop_id
     assert verified.evaluation.harness_validation["promotion_gate"] == "passed"
+    proof = verified.evaluation.harness_validation["current_identity_proof"]
+    assert proof["skill_id"] == verified.skill_id
+    assert proof["skill_version"] == verified.version
+    assert proof["artifact_hash"]
+    assert proof["source"] == "harness_verification_loop"
+    assert proof["evidence_id"] == result.loop_id
+    assert proof["status"] == "passed"
     assert (tmp_path / result.loop_id / "result.json").exists()
 
     subgraph = await graph.get_subgraph([verified.skill_id], depth=1)
@@ -94,7 +110,7 @@ async def test_verification_loop_can_repeat_repair_without_version_collision(tmp
     wiki = MemoryWikiManager()
     skill = await wiki.create(_draft_skill(broken=True))
 
-    loop = VerificationLoop(wiki=wiki, evidence_root=tmp_path)
+    loop = VerificationLoop(wiki=wiki, evidence_root=tmp_path, repair=InputFieldRepair())
     first = await loop.run(
         skill.skill_id,
         harness_kind=HarnessKind.LOCAL_SKILLWIKI,
@@ -136,14 +152,14 @@ async def test_verification_loop_repairs_nested_json_contracts(tmp_path):
         )
     )
 
-    result = await VerificationLoop(wiki=wiki, evidence_root=tmp_path).run(
+    result = await VerificationLoop(wiki=wiki, evidence_root=tmp_path, allow_fixture_repair=True).run(
         skill.skill_id,
         harness_kind=HarnessKind.LOCAL_SKILLWIKI,
         max_attempts=3,
     )
 
-    assert result.status == "verified"
-    assert result.promotion_allowed is True
+    assert result.status == "fixture_only"
+    assert result.promotion_allowed is False
     assert len(result.attempts) == 2
     assert result.attempts[1].verifier_passed is True
     repaired_output = result.attempts[1].output["output"]

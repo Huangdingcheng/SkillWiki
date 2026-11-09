@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from skillos.api.routes import execution
-from skillos.api.schemas import ExecutePlanRequest
-from skillos.layers.skill_repository.indexing import SearchResult
-from skillos.layers.skill_runtime.executor import SkillExecutor
-from skillos.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
-from skillos.models.skill_model import (
+from skillwiki.api.routes import execution
+from skillwiki.api.schemas import ExecutePlanRequest
+from skillwiki.layers.skill_repository.indexing import SearchResult
+from skillwiki.layers.skill_runtime.executor import SkillExecutor
+from skillwiki.layers.skill_runtime.planner import ExecutionPlan, PlanStep, StepStatus
+from skillwiki.models.skill_model import (
     Skill,
     SkillEvaluation,
     SkillImplementation,
@@ -90,6 +90,34 @@ async def test_execute_plan_attaches_deterministic_verifier_summary():
     assert result.verifier_summary["mode"] == "deterministic"
     assert result.verifier_summary["checked_skills"] == 1
     assert result.verifier_summary["results"][0]["skill_id"] == skill.skill_id
+
+
+@pytest.mark.asyncio
+async def test_verifier_failure_does_not_increment_success_metrics():
+    skill = make_skill()
+    skill.evaluation = SkillEvaluation(verifier_specs=[{"type": "json_equals", "path": "output.ok", "value": False}])
+    app = FakeAppState(skills=[skill], search_results=[SearchResult(skill=skill, score=1)],
+        plan_steps=[PlanStep(step_index=0, skill_id=skill.skill_id, skill_name=skill.name)])
+    result = await execution.execute_plan(ExecutePlanRequest(goal="must fail verification"), app=app)
+    assert result.verifier_passed is False and result.status == "failed"
+    assert app.recorded == [(skill.skill_id, False)]
+    assert skill.metrics.success_count == 0
+
+
+@pytest.mark.asyncio
+async def test_model_mode_provider_failure_cannot_fall_back_to_execution():
+    from skillwiki.layers.skill_runtime.planner import SkillPlanner
+    from fastapi import HTTPException
+    skill = make_skill()
+    app = FakeAppState(skills=[skill], search_results=[SearchResult(skill=skill, score=1)], plan_steps=[])
+    class BrokenModel:
+        def chat(self, *args, **kwargs):
+            raise RuntimeError("provider unavailable")
+    app.planner = SkillPlanner(BrokenModel())
+    with pytest.raises(HTTPException) as exc:
+        await execution.execute_plan(ExecutePlanRequest(goal="parse", planning_mode="model"), app=app)
+    assert exc.value.status_code == 503
+    assert not app.recorded
 
 
 @pytest.mark.asyncio

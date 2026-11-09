@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator, computed_field
 
@@ -89,6 +89,14 @@ class SkillImplementation(BaseModel):
     language: str = Field(default="python", description="实现语言")
     code: Optional[str] = Field(default=None, description="可执行代码")
     prompt_template: Optional[str] = Field(default=None, description="LLM prompt 模板")
+    prompt_format: Optional[Literal["literal", "python_format"]] = Field(
+        default=None,
+        description="Prompt interpretation: literal text, Python format, or legacy behavior when omitted",
+    )
+    request_body_validation: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Opt-in source-bound request body validation policy",
+    )
     tool_calls: List[str] = Field(
         default_factory=list,
         description="调用的外部工具列表（工具名称引用）",
@@ -99,7 +107,7 @@ class SkillImplementation(BaseModel):
     )
     execution_order: Optional[List[str]] = Field(
         default=None,
-        description="子 Skill 执行顺序（支持并行标记）",
+        description="子 Skill 顺序执行列表，须为 sub_skill_ids 的排列；不支持并行标记",
     )
 
     @model_validator(mode="after")

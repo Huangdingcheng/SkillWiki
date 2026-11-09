@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -34,6 +35,8 @@ from ..schemas import (
     ReflectionMemoryRequest,
     ReflectionMemoryResponse,
     SystemHealthResponse,
+    UpstreamCandidateRequest,
+    ComponentRunRequest,
 )
 from .ws import broadcast
 
@@ -188,7 +191,7 @@ def _proposal_identity(proposal: MaintenanceProposal) -> Tuple[str, str, str, st
         proposal.trigger.value,
         proposal.recommended_action.value,
         proposal.source,
-        str(proposal.metadata.get("failure_signature") or ""),
+        str(proposal.metadata.get("candidate_hash") or proposal.metadata.get("failure_signature") or ""),
     )
 
 
@@ -463,6 +466,127 @@ async def list_maintenance_proposals(
 ) -> MaintenanceProposalListResponse:
     """List queued D-side maintenance proposals for human review."""
     return MaintenanceProposalListResponse.from_proposals(_list_queued_proposals(status))
+
+
+@router.post("/upstream-candidates", response_model=MaintenanceProposalResponse)
+async def record_upstream_candidate(req: UpstreamCandidateRequest, app: AppState = Depends(get_app_state)) -> MaintenanceProposalResponse:
+    """Record an optimizer candidate as a pending human-review proposal.
+
+    This endpoint deliberately never publishes or replaces a Skill.  The
+    candidate's parent/hash/provenance and model accounting remain attached to
+    the existing maintenance proposal queue so lifecycle review can continue
+    through the normal SkillWiki path.
+    """
+    expected_hash = "sha256:" + hashlib.sha256(req.candidate_text.encode("utf-8")).hexdigest()
+    if req.candidate_hash != expected_hash:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "candidate hash does not match candidate_text",
+                "expected": expected_hash,
+            },
+        )
+    if not req.parent_hash.startswith("sha256:") or len(req.parent_hash) != len("sha256:") + 64:
+        raise HTTPException(status_code=409, detail="parent_hash must be a sha256 digest")
+
+    from ..component_demo import instruction, digest, materialize_candidate, ComponentStore
+    from ...layers.skill_management.gepa_skillopt_adapter import GEPA_PROVENANCE, SKILLOPT_PROVENANCE
+    identities = {"gepa": GEPA_PROVENANCE, "skillopt": SKILLOPT_PROVENANCE}
+    identity = identities.get(req.component)
+    if not identity or req.upstream_commit != identity["commit"] or req.upstream_repository.rstrip("/") != identity["repository"].rstrip("/") or req.upstream_license != identity["license"]:
+        raise HTTPException(status_code=409, detail="candidate upstream identity does not match the pinned component")
+    parent = await app.wiki.get(req.skill_id)
+    if not parent or parent.version != req.parent_version or digest(instruction(parent)) != req.parent_hash:
+        raise HTTPException(status_code=409, detail="candidate parent ID/version/content does not match SkillWiki")
+    run_id = hashlib.sha256(json.dumps(["external-candidate", req.component, req.skill_id,
+        req.parent_version, req.parent_hash, req.candidate_hash]).encode()).hexdigest()
+    store = ComponentStore.for_app(app)
+    row, claimed = store.claim({"run_id": run_id, "component": req.component, "skill_id": req.skill_id,
+        "parent_version": req.parent_version, "parent_hash": req.parent_hash,
+        "created_at": datetime.now(UTC).isoformat(), "status": "running",
+        "origin": "external_unverified_candidate", "trace_id": req.trace_id})
+    try:
+        if not claimed:
+            draft = row.get("candidate", {})
+            if row.get("status") != "success" or draft.get("persistence_stage") != "complete":
+                raise ValueError("Candidate already has an incomplete or failed run; inspect its saved evidence")
+        else:
+            draft = await materialize_candidate(app, component=req.component, parent=parent,
+                candidate_text=req.candidate_text, parent_hash=req.parent_hash,
+                parent_version=req.parent_version, run_id=run_id)
+            row.update(status="success", candidate=draft)
+            store.save(row)
+    except (ValueError, RuntimeError) as exc:
+        if claimed:
+            row = store.get(run_id)
+            row.update(status="failed", error=str(exc))
+            store.save(row)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    proposal = MaintenanceProposal(
+        skill_id=req.skill_id,
+        trigger=MaintenanceTrigger.MANUAL,
+        recommended_action=MaintenanceRecommendedAction.REVIEW,
+        evidence=[
+            f"candidate_hash={req.candidate_hash}",
+            f"parent_hash={req.parent_hash}",
+        ],
+        root_cause="External optimizer candidate requires SkillWiki validation.",
+        patch_hint=req.candidate_text,
+        feedback_sources=[req.component],
+        targets_to_fix=["candidate review and replay validation"],
+        invariants_to_preserve=["Do not replace the current released Skill automatically."],
+        validation_plan=[
+            "Validate candidate hash and parent version against SkillWiki.",
+            "Replay the original failure and one independent retained case.",
+            "Review the Git diff before any lifecycle transition.",
+        ],
+        source=f"upstream:{req.component}",
+        metadata={
+            "component": req.component,
+            "upstream_repository": req.upstream_repository,
+            "upstream_commit": req.upstream_commit,
+            "upstream_version": req.upstream_version,
+            "upstream_license": req.upstream_license,
+            "parent_version": req.parent_version,
+            "parent_hash": req.parent_hash,
+            "candidate_hash": req.candidate_hash,
+            "failure_trace": req.failure_trace,
+            "model_status": req.model_status,
+            "trace_id": req.trace_id,
+            "candidate_status": "draft_pending_review",
+            "auto_publish": False,
+            "candidate_text": req.candidate_text,
+            "draft": draft,
+        },
+    )
+    return _proposal_response(_store_proposal(proposal), include_next_action=True)
+
+
+@router.post("/component-runs")
+async def create_component_run(req: ComponentRunRequest, app: AppState = Depends(get_app_state)) -> dict:
+    from ..component_demo import run_component
+    try:
+        return await run_component(app, req.component, req.skill_id, req.refresh)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/component-runs")
+async def list_component_runs(skill_id: Optional[str] = None, app: AppState = Depends(get_app_state)) -> dict:
+    from ..component_demo import ComponentStore
+    return {"runs": ComponentStore.for_app(app).list(skill_id)}
+
+
+@router.get("/component-runs/{run_id}")
+async def get_component_run(run_id: str, app: AppState = Depends(get_app_state)) -> dict:
+    from ..component_demo import ComponentStore
+    try:
+        return ComponentStore.for_app(app).get(run_id)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Component run not found") from exc
 
 
 @router.post("/proposals/{proposal_id}/accept", response_model=MaintenanceProposalResponse)

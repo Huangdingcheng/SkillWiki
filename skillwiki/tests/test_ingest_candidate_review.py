@@ -7,14 +7,14 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillos.api.deps import get_app_state
-from skillos.api.memory_store import MemoryGraphManager, MemoryWikiManager
-from skillos.api.routes import ingest
-from skillos.config.llm_config import LLMConfig
-from skillos.layers.input_knowledge.pipeline import ExperiencePipeline
-from skillos.layers.skill_management.auditor import SkillAuditorAgent
-from skillos.models.skill_model import Skill, SkillImplementation
-from skillos.utils.llm_client import LLMClient
+from skillwiki.api.deps import get_app_state
+from skillwiki.api.memory_store import MemoryGraphManager, MemoryWikiManager
+from skillwiki.api.routes import ingest
+from skillwiki.config.llm_config import LLMConfig
+from skillwiki.layers.input_knowledge.pipeline import ExperiencePipeline
+from skillwiki.layers.skill_management.auditor import SkillAuditorAgent
+from skillwiki.models.skill_model import Skill, SkillImplementation
+from skillwiki.utils.llm_client import LLMClient
 
 
 class FakeWiki:
@@ -290,7 +290,7 @@ Do not mutate source data during review.
     assert data["source_type"] == "script"
     metadata = data["units"][0]["metadata"]
     prompt_template = metadata["candidate_implementation"]["prompt_template"]
-    assert data["units"][0]["proposed_skill_name"] == "script_dry_run_analyzer"
+    assert data["units"][0]["proposed_skill_name"].startswith("script_dry_run_analyzer_")
     assert data["units"][0]["proposed_type"] == "functional"
     assert "functional" in metadata["layering_reason"]
     assert prompt_template.startswith(
@@ -394,7 +394,20 @@ def test_parse_past_skills_jsonl_enriches_schema_prompt_and_weak_relations() -> 
         spec["path"] for spec in metadata["candidate_evaluation"]["verifier_specs"]
     }
     assert "Legacy instructions excerpt" in metadata["candidate_implementation"]["prompt_template"]
-    assert "{placeholder}" not in metadata["candidate_implementation"]["prompt_template"]
+    from skillwiki.layers.skill_runtime.executor import SkillExecutor
+    from skillwiki.utils.llm_client import LLMResponse
+    captured = []
+    def respond(messages):
+        captured.extend(messages)
+        return LLMResponse('{"result":"ok"}', "fixed-no-network", {"total_tokens": 1}, "stop")
+    skill = Skill(name=docx_unit["proposed_skill_name"],
+                  implementation=SkillImplementation(**metadata["candidate_implementation"]))
+    record = asyncio.run(SkillExecutor(llm_client=SimpleNamespace(chat=respond), max_retries=0).execute_single(
+        skill, dict(task="review", source_context="context", source_files=[],
+                    project_files=[], artifact_type="code", target_runtime="python")))
+    assert record.status.value == "success"
+    rendered = captured[1].content
+    assert "{placeholder}" in rendered
     assert metadata["graph_relation_preview"]
     assert metadata["candidate_relations"]["unresolved_components"]
 

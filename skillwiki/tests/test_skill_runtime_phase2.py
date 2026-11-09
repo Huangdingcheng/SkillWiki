@@ -5,14 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from skillos.layers.skill_repository.indexing import SearchResult
-from skillos.layers.skill_runtime.planner import SkillPlanner, _PLAN_PROMPT
-from skillos.layers.skill_runtime.retriever import (
+from skillwiki.layers.skill_repository.indexing import SearchResult
+from skillwiki.layers.skill_runtime.planner import SkillPlanner, _PLAN_PROMPT
+from skillwiki.layers.skill_runtime.retriever import (
     RetrievalStrategy,
     SkillRetriever,
     _RETRIEVAL_PROMPT,
 )
-from skillos.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
+from skillwiki.models.skill_model import Skill, SkillImplementation, SkillInterface, SkillState
 
 
 def make_skill(name: str, description: str | None = None) -> Skill:

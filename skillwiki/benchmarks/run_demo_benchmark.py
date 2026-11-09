@@ -19,9 +19,9 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from skillos.layers.skill_runtime.executor import SkillExecutor  # noqa: E402
-from skillos.layers.skill_runtime.verifier import evaluate_verifier_specs  # noqa: E402
-from skillos.models.skill_model import (  # noqa: E402
+from skillwiki.layers.skill_runtime.executor import SkillExecutor  # noqa: E402
+from skillwiki.layers.skill_runtime.verifier import evaluate_verifier_specs  # noqa: E402
+from skillwiki.models.skill_model import (  # noqa: E402
     Skill,
     SkillImplementation,
     SkillInterface,
@@ -421,7 +421,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument(
         "--tasks",
         type=Path,
-        default=Path(__file__).parent / "skillos_demo_tasks.json",
+        default=Path(__file__).parent / "skillwiki_demo_tasks.json",
     )
     parser.add_argument(
         "--output",

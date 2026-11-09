@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Card, Steps, Tag, Button, Select, Divider,
+  Alert, Card, Steps, Tag, Button, Select, Divider,
   Timeline, Typography, Space, Row, Col, message,
 } from 'antd'
 import {
@@ -8,7 +8,10 @@ import {
   SyncOutlined, ExperimentOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import { skillsApi, lifecycleApi } from '@/api/client'
+import { getApiErrorMessage } from '@/api/errors'
+import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
 import type { SkillSummary } from '@/api/types'
 
 const { Text, Paragraph } = Typography
@@ -16,9 +19,9 @@ const { Text, Paragraph } = Typography
 // SkillWiki 8-state machine definition
 const STATES = [
   { key: 'S0', label: 'Raw Experience', color: '#722ed1', icon: '🌱', desc: 'Raw experience from trajectories, documents, or scripts' },
-  { key: 'S1', label: 'Candidate',      color: '#1677ff', icon: '🔍', desc: 'Skill candidate identified by an LLM' },
+  { key: 'S1', label: 'Candidate',      color: '#1677ff', icon: '🔍', desc: 'Imported or generated Skill candidate awaiting review' },
   { key: 'S2', label: 'Draft',          color: '#13c2c2', icon: '✏️', desc: 'Structured Skill draft' },
-  { key: 'S3', label: 'Verified',       color: '#52c41a', icon: '✅', desc: 'Passed static checks and semantic validation' },
+  { key: 'S3', label: 'Verified',       color: '#52c41a', icon: '✅', desc: 'Backend governance state; inspect evidence for task-run verification' },
   { key: 'S4', label: 'Released',       color: '#52c41a', icon: '🚀', desc: 'Released and callable by agents' },
   { key: 'S5', label: 'Degraded',       color: '#faad14', icon: '⚠️', desc: 'Success rate dropped and repair is needed' },
   { key: 'S6', label: 'Deprecated',     color: '#ff4d4f', icon: '🗑️', desc: 'Deprecated and no longer recommended' },
@@ -105,30 +108,40 @@ function StateMachineViz({ currentState }: { currentState: string }) {
 
 export default function LifecycleDemo() {
   const [skills, setSkills] = useState<SkillSummary[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const { skillId: selectedId, setSkillId: setSelectedId } = useSkillContext()
   const [selected, setSelected] = useState<SkillSummary | null>(null)
   const [history, setHistory] = useState<{ state: string; label: string; time: string }[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    skillsApi.list({ limit: 100 }).then(setSkills)
+    skillsApi.list({ limit: 100 }).then(items => setSkills(previous => [...new Map([...items, ...previous].map(skill => [skill.skill_id, skill])).values()])).catch(err => {
+      setError(getApiErrorMessage(err, 'Load Skills failed'))
+    })
   }, [])
 
   useEffect(() => {
     if (!selectedId) return
-    const timeoutId = window.setTimeout(() => {
-      const s = skills.find(x => x.skill_id === selectedId) || null
-      setSelected(s)
-      if (s) {
-        setHistory([{ state: s.state, label: STATES.find(x => x.key === s.state)?.label || s.state, time: new Date().toLocaleTimeString() }])
-      }
-    }, 0)
-    return () => window.clearTimeout(timeoutId)
-  }, [selectedId, skills])
+    let cancelled = false
+    skillsApi.get(selectedId).then(skill => {
+      if (cancelled) return
+      setSelected(skill)
+      setError(null)
+      setSkills(previous => previous.some(item => item.skill_id === skill.skill_id) ? previous : [skill, ...previous])
+      setHistory([{ state: skill.state, label: `Current state: ${STATES.find(x => x.key === skill.state)?.label || skill.state}`, time: `Updated ${new Date(skill.updated_at).toLocaleString()}` }])
+    }).catch(err => {
+      if (cancelled) return
+      setSelected(null)
+      setHistory([])
+      setError(getApiErrorMessage(err, 'Skill does not exist or is temporarily unavailable'))
+    })
+    return () => { cancelled = true }
+  }, [selectedId])
 
   const doTransition = async (targetState: string) => {
-    if (!selected) return
+    if (!selected || selected.skill_id !== selectedId) return
     setLoading(true)
+    setError(null)
     try {
       let updated: SkillSummary
       if (targetState === 'S4') {
@@ -147,7 +160,7 @@ export default function LifecycleDemo() {
       ])
       message.success(`State changed to ${stateInfo?.label}`)
     } catch (e: unknown) {
-      message.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Transition failed')
+      setError(getApiErrorMessage(e, 'Transition failed'))
     } finally {
       setLoading(false)
     }
@@ -164,6 +177,8 @@ export default function LifecycleDemo() {
           Select a Skill and interactively walk through its full lifecycle in the SkillWiki 8-state machine.
         </p>
       </motion.div>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Governance state is separate from task execution evidence" description="Static review and lifecycle transitions do not prove a real task ran or passed its verifier. Inspect the Skill evidence and verification records separately." />
+      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
 
       <Row gutter={[16, 16]}>
         {/* Left: state machine visualization and actions */}
@@ -177,7 +192,9 @@ export default function LifecycleDemo() {
               <Select
                 placeholder="Select a Skill"
                 style={{ width: '100%' }}
-                onChange={setSelectedId}
+                value={selectedId ?? undefined}
+                disabled={loading}
+                onChange={id => { setSelected(null); setHistory([]); setError(null); setSelectedId(id) }}
                 options={skills.map(s => ({
                   label: `${s.name} (${STATES.find(x => x.key === s.state)?.label || s.state})`,
                   value: s.skill_id,
@@ -189,7 +206,7 @@ export default function LifecycleDemo() {
               />
             </div>
 
-            {selected && (
+            {selected && selected.skill_id === selectedId && (
               <motion.div key={selected.skill_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <StateMachineViz currentState={selected.state} />
 
@@ -243,10 +260,10 @@ export default function LifecycleDemo() {
               </motion.div>
             )}
 
-            {!selected && (
+            {(!selected || selected.skill_id !== selectedId) && (
               <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
                 <ExperimentOutlined style={{ fontSize: 48, marginBottom: 12 }} />
-                <div>Select a Skill to start the demo.</div>
+                <div>{selectedId ? 'Loading selected Skill or waiting for a valid API response.' : 'Select a Skill to start the demo.'}</div>
               </div>
             )}
           </Card>
@@ -279,7 +296,7 @@ export default function LifecycleDemo() {
 
         {/* Right: transition history and Skill info */}
         <Col xs={24} lg={10}>
-          {selected && (
+          {selected && selected.skill_id === selectedId && (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
               <Card
                 title={`${selected.name} Info`}
@@ -287,6 +304,8 @@ export default function LifecycleDemo() {
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
               >
                 <Space orientation="vertical" style={{ width: '100%' }}>
+                  <Text code copyable>{selected.skill_id}</Text>
+                  <Space wrap><Link to={skillContextPath('/wiki', selectedId)}>Open in Wiki</Link><Link to={skillContextPath('/versions', selectedId)}>Version Governance</Link></Space>
                   <div>
                     <Text type="secondary">Type:</Text>
                     <Tag color={selected.skill_type === 'atomic' ? 'blue' : selected.skill_type === 'functional' ? 'purple' : 'gold'}>
@@ -316,7 +335,7 @@ export default function LifecycleDemo() {
               </Card>
 
               <Card
-                title="State Transition History"
+                title="Current state and transitions in this visit"
                 variant="borderless"
                 style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
               >

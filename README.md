@@ -228,7 +228,7 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 |---|---|---|
 | `LLM_API_KEY` | — | LLM API key *(required)* |
 | `LLM_API_URL` | `https://api.deepseek.com` | LLM base URL |
-| `LLM_MODEL` | `deepseek-v4-flash` | Model name |
+| `LLM_MODEL` | `deepseek-flash` | DeepSeek V4.1 Flash API model name |
 | `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
 
 ---

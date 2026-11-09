@@ -8,9 +8,11 @@ import {
   CloseCircleOutlined, SearchOutlined, DatabaseOutlined, ReloadOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useSearchParams } from 'react-router-dom'
 import { executionApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
-import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, RetrievedSkill } from '@/api/types'
+import { useSkillContext } from '@/hooks/useSkillContext'
+import type { ExecutionHistoryItem, ExecutionResult, ExecutionStepResult, RetrievedSkill, RetrievalTrace } from '@/api/types'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -30,6 +32,41 @@ const SKILL_TYPE_COLOR: Record<string, string> = {
 function formatHistoryTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function TraceChecks({ trace, verifierPassed, verifierSummary }: {
+  trace?: RetrievalTrace
+  verifierPassed?: boolean | null
+  verifierSummary?: Record<string, unknown> | null
+}) {
+  const passed = verifierPassed ?? trace?.execution?.verifier_passed
+  const summary = verifierSummary ?? trace?.execution?.verifier_summary
+  const checks = trace?.governance || {}
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Space wrap>
+        {trace?.trace_id && <Text code copyable>{trace.trace_id}</Text>}
+        {trace?.execution?.status && <Tag>Execution: {trace.execution.status}</Tag>}
+        <Tag color={passed === true ? 'green' : passed === false ? 'red' : 'default'}>
+          {passed === true ? 'Verifier passed' : passed === false ? 'Verifier failed' : 'Verification not confirmed'}
+        </Tag>
+      </Space>
+      <div style={{ marginTop: 8 }}>
+        <Text strong>Saved source / environment checks</Text>
+        {Object.keys(checks).length === 0 ? (
+          <div><Text type="secondary">No source or environment checks recorded in this trace.</Text></div>
+        ) : (
+          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 280, overflow: 'auto' }}>{JSON.stringify(checks, null, 2)}</pre>
+        )}
+      </div>
+      {summary && (
+        <details>
+          <summary>Verifier evidence</summary>
+          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 280, overflow: 'auto' }}>{JSON.stringify(summary, null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  )
 }
 
 function StepCard({ step, index }: { step: ExecutionStepResult; index: number }) {
@@ -83,9 +120,13 @@ function StepCard({ step, index }: { step: ExecutionStepResult; index: number })
 }
 
 export default function AgentExecution() {
+  const { skillId } = useSkillContext()
+  const [searchParams] = useSearchParams()
   const [goal, setGoal] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ExecutionResult | null>(null)
+  const [savedTrace, setSavedTrace] = useState<RetrievalTrace | null>(null)
+  const [traceLoading, setTraceLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<ExecutionHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -114,8 +155,9 @@ export default function AgentExecution() {
     setError(null)
     setResult(null)
     try {
-      const res = await executionApi.executePlan(goal)
+      const res = await executionApi.executePlan(goal, {}, skillId ? [skillId] : undefined)
       setResult(res)
+      setSavedTrace(null)
       void loadHistory()
     } catch (e: unknown) {
       setError(getApiErrorMessage(e, 'Execution failed'))
@@ -124,6 +166,25 @@ export default function AgentExecution() {
     }
   }
 
+  const handleLoadTrace = useCallback(async (executionId: string) => {
+    setTraceLoading(true)
+    setError(null)
+    try {
+      setSavedTrace(await executionApi.retrievalTrace(executionId))
+    } catch (e: unknown) {
+      setError(getApiErrorMessage(e, 'Retrieval evidence could not be loaded'))
+    } finally {
+      setTraceLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const executionId = searchParams.get('execution_id')
+    if (!executionId) return
+    const timer = window.setTimeout(() => { void handleLoadTrace(executionId) }, 0)
+    return () => window.clearTimeout(timer)
+  }, [searchParams, handleLoadTrace])
+
   const successCount = result?.steps.filter(s => s.status === 'success').length || 0
   const retrieved: RetrievedSkill[] = result?.retrieved_skills || []
 
@@ -131,6 +192,7 @@ export default function AgentExecution() {
     <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Agent Execution</h2>
+        {skillId && <Alert type="info" showIcon title={`本次检索限定技能：${skillId}；仍需通过发布状态、来源和环境检查。`} style={{ marginBottom: 12 }} />}
         <p style={{ color: '#666', marginBottom: 24 }}>
           Enter a task goal. SkillWiki will retrieve relevant Skills, build an execution plan, and run it.
         </p>
@@ -237,10 +299,43 @@ export default function AgentExecution() {
                 width: 170,
                 render: formatHistoryTime,
               },
+              {
+                title: 'Evidence',
+                width: 100,
+                render: (_: unknown, item: ExecutionHistoryItem) => (
+                  <Button type="link" size="small" loading={traceLoading} onClick={() => void handleLoadTrace(item.execution_id)}>
+                    Load trace
+                  </Button>
+                ),
+              },
             ]}
           />
         )}
       </Card>
+
+      {savedTrace && (
+        <Card title="Saved Retrieval Evidence" size="small" style={{ marginBottom: 16 }}>
+          {savedTrace.blocked.length > 0 && <Alert type="warning" showIcon title="Retrieval blocked or degraded" description={savedTrace.blocked.join('; ')} style={{ marginBottom: 12 }} />}
+          <Space wrap>
+            <Tag color="blue">{savedTrace.adapter}</Tag>
+            {savedTrace.source_commit && <Tag>Fabric {savedTrace.source_commit.slice(0, 12)}</Tag>}
+            {savedTrace.embedding_model && <Tag>{savedTrace.embedding_model}</Tag>}
+            {savedTrace.embedding_mode && <Tag>{savedTrace.embedding_mode}</Tag>}
+          </Space>
+          <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
+            {savedTrace.candidates.map((candidate, index) => (
+              <Text key={`${String(candidate.skill_id)}-${index}`} type="secondary" style={{ fontSize: 12 }}>
+                {String(candidate.name || candidate.skill_id)} · v{String(candidate.version || 'unknown')} · {candidate.is_seed ? 'direct retrieval' : `graph-expanded (depth ${String(candidate.graph_depth ?? 0)})`}
+              </Text>
+            ))}
+          </div>
+          <TraceChecks trace={savedTrace} />
+          <details>
+            <summary>Saved plan and execution output</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflow: 'auto' }}>{JSON.stringify({ plan: savedTrace.plan, execution: savedTrace.execution }, null, 2)}</pre>
+          </details>
+        </Card>
+      )}
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
@@ -290,6 +385,34 @@ export default function AgentExecution() {
               </Card>
             )}
 
+            {result.retrieval_trace && (
+              <Card
+                title="Retrieval Evidence"
+                variant="borderless"
+                size="small"
+                style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}
+              >
+                {result.retrieval_trace.blocked.length > 0 && (
+                  <Alert type="warning" showIcon title="Retrieval blocked or degraded" description={result.retrieval_trace.blocked.join('; ')} style={{ marginBottom: 12 }} />
+                )}
+                <Space wrap size={[8, 8]} style={{ marginBottom: 12 }}>
+                  <Tag color="blue">{result.retrieval_trace.adapter}</Tag>
+                  {result.retrieval_trace.source_commit && <Tag>Fabric {result.retrieval_trace.source_commit.slice(0, 12)}</Tag>}
+                  {result.retrieval_trace.embedding_model && <Tag>{result.retrieval_trace.embedding_model}</Tag>}
+                  {result.retrieval_trace.embedding_mode && <Tag>{result.retrieval_trace.embedding_mode}</Tag>}
+                </Space>
+                {retrieved.length > 0 && (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {retrieved.map(skill => (
+                      <Text key={skill.skill_id} type="secondary" style={{ fontSize: 12 }}>
+                        {skill.name} · v{skill.version || 'unknown'} · {skill.is_seed ? 'direct retrieval' : `graph-expanded (depth ${skill.graph_depth ?? 0})`} · {skill.match_reason}
+                      </Text>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
             {/* Execution summary */}
             <Card
               variant="borderless"
@@ -318,6 +441,7 @@ export default function AgentExecution() {
                   />
                 </Col>
               </Row>
+              <TraceChecks trace={result.retrieval_trace} verifierPassed={result.verifier_passed} verifierSummary={result.verifier_summary} />
             </Card>
 
             {/* Execution steps */}

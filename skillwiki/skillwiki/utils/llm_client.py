@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import time
+from decimal import Decimal
 from typing import Any, Dict, Generator, Iterator, List, Optional
 
 import httpx
 
 from ..config.llm_config import LLMConfig
+from .llm_budget import BudgetError, PersistentLLMBudget
+from .cumulative_budget import BudgetError as CumulativeBudgetError, CumulativeBudgetGuard
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +34,10 @@ class LLMTimeoutError(LLMError):
 
 class LLMServerError(LLMError):
     """服务端错误（5xx）"""
+
+
+class LLMBudgetError(LLMError):
+    """A persistent cost budget rejected an unsafe or unaffordable request."""
 
 
 class Message:
@@ -105,12 +112,31 @@ class LLMClient:
 
     def __init__(self, config: LLMConfig) -> None:
         self._cfg = config
+        self.last_budget_receipt: Optional[Dict[str, Any]] = None
         self._base_url = config.api_url.rstrip("/")
         self._chat_url = _resolve_chat_completions_url(self._base_url)
         self._headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
+        try:
+            self._budget = (PersistentLLMBudget(config)
+                            if config.budget_limit_cny is not None and config.cumulative_budget_ledger_path is None else None)
+        except BudgetError as exc:
+            raise LLMBudgetError(str(exc)) from exc
+        try:
+            if config.cumulative_budget_ledger_path:
+                PersistentLLMBudget.validate_route(config)
+            self._cumulative_budget = (
+                CumulativeBudgetGuard(
+                    config.cumulative_budget_ledger_path,
+                    total_limit_cny=config.cumulative_budget_total_limit_cny,
+                    per_kind_limits_cny={"model": config.cumulative_budget_total_limit_cny},
+                )
+                if config.cumulative_budget_ledger_path else None
+            )
+        except (CumulativeBudgetError, BudgetError) as exc:
+            raise LLMBudgetError(str(exc)) from exc
 
     # ------------------------------------------------------------------
     # 公开接口
@@ -165,11 +191,27 @@ class LLMClient:
         Yields:
             str: 文本片段
         """
+        if self._budget is not None or self._cumulative_budget is not None:
+            raise LLMBudgetError("Streaming is not supported under the budget guard")
         payload = self._build_payload(
             messages, model=model, temperature=temperature,
             max_tokens=max_tokens, stream=True, extra=extra,
         )
         yield from self._stream_request(payload)
+
+    def budget_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Read persistent estimated accounting without making an API call."""
+        if self._cumulative_budget is not None:
+            try:
+                return self._cumulative_budget.snapshot()
+            except CumulativeBudgetError as exc:
+                raise LLMBudgetError(str(exc)) from exc
+        if self._budget is None:
+            return None
+        try:
+            return self._budget.snapshot()
+        except BudgetError as exc:
+            raise LLMBudgetError(str(exc)) from exc
 
     def ping(self) -> bool:
         """
@@ -209,28 +251,47 @@ class LLMClient:
             "model": model or self._cfg.model,
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature if temperature is not None else self._cfg.temperature,
-            "max_tokens": max_tokens or self._cfg.max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self._cfg.max_tokens,
             "stream": stream,
         }
         if extra:
             payload.update(extra)
+        if self._budget is not None:
+            try:
+                payload = self._budget.prepare_payload(payload)
+            except BudgetError as exc:
+                raise LLMBudgetError(str(exc)) from exc
+        if self._cumulative_budget is not None:
+            try:
+                payload = PersistentLLMBudget.prepare_bounded_payload(
+                    payload, self._cfg.budget_max_output_tokens or self._cfg.max_tokens)
+            except BudgetError as exc:
+                raise LLMBudgetError(str(exc)) from exc
         return payload
 
     def _request_with_retry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """带指数退避重试的 HTTP 请求。"""
+        if self._cumulative_budget is not None:
+            return self._request_with_cumulative_budget(payload)
         last_exc: Optional[Exception] = None
         delay = self._cfg.retry_delay
 
         for attempt in range(self._cfg.retry_count + 1):
             try:
-                return self._do_request(payload)
+                if self._budget is None:
+                    return self._do_request(payload)
+                try:
+                    return self._budget.request(payload, lambda: self._do_request(payload))
+                except BudgetError as exc:
+                    raise LLMBudgetError(str(exc)) from exc
             except LLMAuthError:
                 raise  # 认证错误不重试
             except LLMRateLimitError as e:
                 last_exc = e
-                wait = delay * (2 ** attempt)
-                logger.warning("触发限速，%.1f 秒后重试（第 %d 次）", wait, attempt + 1)
-                time.sleep(wait)
+                if attempt < self._cfg.retry_count:
+                    wait = delay * (2 ** attempt)
+                    logger.warning("触发限速，%.1f 秒后重试（第 %d 次）", wait, attempt + 1)
+                    time.sleep(wait)
             except (LLMTimeoutError, LLMServerError) as e:
                 last_exc = e
                 if attempt < self._cfg.retry_count:
@@ -245,6 +306,47 @@ class LLMClient:
 
         raise last_exc or LLMError("所有重试均失败")
 
+    def _request_with_cumulative_budget(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Dispatch one bounded request through the shared model/embedding ledger."""
+        self.last_budget_receipt = None
+        try:
+            # Revalidate here as well: direct internal callers cannot bypass the
+            # final-payload policy. No cumulative request is retried automatically.
+            PersistentLLMBudget.validate_route(self._cfg)
+            payload = PersistentLLMBudget.prepare_bounded_payload(
+                payload, self._cfg.budget_max_output_tokens or self._cfg.max_tokens)
+            input_bound = PersistentLLMBudget.input_bound(payload)
+            estimate = input_bound * Decimal("0.000002") + payload["max_tokens"] * Decimal("0.000008")
+            request_id = self._cumulative_budget.reserve(
+                "model",
+                estimate,
+                metadata={"requested_model": payload["model"], "endpoint": self._chat_url,
+                          "input_token_bound": input_bound, "output_token_cap": payload["max_tokens"],
+                          "input_cny_per_million": "2", "output_cny_per_million": "8",
+                          "attempt": 1, "retry_count": 0},
+            )
+        except (CumulativeBudgetError, BudgetError, KeyError, TypeError, ValueError) as exc:
+            raise LLMBudgetError(str(exc)) from exc
+        try:
+            raw = self._do_request(payload)
+        except BaseException:
+            try:
+                self.last_budget_receipt = self._cumulative_budget.settle(
+                    request_id, metadata={"requested_model": payload["model"], "outcome": "dispatch_unknown"})
+            except CumulativeBudgetError as exc:
+                raise LLMBudgetError(str(exc)) from exc
+            raise
+        actual, anomaly, metadata = _cumulative_usage_receipt(raw, input_bound, payload["max_tokens"])
+        metadata["requested_model"] = payload["model"]
+        try:
+            self.last_budget_receipt = self._cumulative_budget.settle(
+                request_id, None if anomaly else actual, metadata=metadata, blocked=anomaly)
+        except CumulativeBudgetError as exc:
+            raise LLMBudgetError(str(exc)) from exc
+        if anomaly:
+            raise LLMBudgetError("Unpriced response model or usage exceeds reserved bounds; ledger blocked")
+        return {**raw, "budget_receipt": self.last_budget_receipt}
+
     def _do_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
@@ -258,6 +360,8 @@ class LLMClient:
         return resp.json()
 
     def _stream_request(self, payload: Dict[str, Any]) -> Iterator[str]:
+        if self._budget is not None or self._cumulative_budget is not None:
+            raise LLMBudgetError("Streaming is not supported under the budget guard")
         try:
             with httpx.Client(timeout=self._cfg.timeout) as client:
                 with client.stream("POST", self._chat_url, json=payload, headers=self._headers) as resp:
@@ -316,6 +420,45 @@ class LLMClient:
 def create_client(config: LLMConfig) -> LLMClient:
     """工厂函数：根据 LLMConfig 创建 LLMClient。"""
     return LLMClient(config)
+
+
+def _cumulative_usage_receipt(raw: Any, input_bound: int, output_cap: int):
+    """Price only verified model/usage; unknown or anomalous usage retains funds."""
+    model = raw.get("model") if isinstance(raw, dict) else None
+    usage = raw.get("usage") if isinstance(raw, dict) else None
+    usage = usage if isinstance(usage, dict) else {}
+    count = lambda value: type(value) is int and value >= 0
+    prompt, completion = usage.get("prompt_tokens"), usage.get("completion_tokens")
+    known = count(prompt) and prompt > 0 and count(completion)
+    anomaly = model != "deepseek-flash"
+    for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        if field in usage and not count(usage[field]):
+            anomaly = True
+    if known:
+        anomaly = anomaly or prompt > input_bound or completion > output_cap
+    details = usage.get("prompt_tokens_details")
+    cached = usage.get("prompt_cache_hit_tokens", details.get("cached_tokens") if isinstance(details, dict) else None)
+    uncached = usage.get("prompt_cache_miss_tokens")
+    for value in (cached, uncached):
+        if value is not None:
+            anomaly = anomaly or not count(value) or (known and value > prompt)
+    if count(cached) and count(uncached) and known:
+        anomaly = anomaly or cached + uncached != prompt
+    if "total_tokens" in usage:
+        anomaly = anomaly or (known and usage["total_tokens"] != prompt + completion)
+    actual = (prompt * Decimal("0.000002") + completion * Decimal("0.000008")) if known and not anomaly else None
+    metadata = {
+        "actual_model": model if isinstance(model, str) else None,
+        "provider_response_id": raw.get("id") if isinstance(raw, dict) and isinstance(raw.get("id"), str) else None,
+        "usage": {key: value for key, value in (
+            ("prompt_tokens", prompt), ("completion_tokens", completion),
+            ("total_tokens", usage.get("total_tokens")), ("prompt_cache_hit_tokens", cached),
+            ("prompt_cache_miss_tokens", uncached)) if count(value)},
+        "input_token_bound": input_bound, "output_token_cap": output_cap,
+        "usage_estimated_cny": str(actual) if actual is not None else None,
+        "accounting": "conservative_estimate_cny_not_invoice",
+    }
+    return actual, bool(anomaly), metadata
 
 
 def _resolve_chat_completions_url(api_url: str) -> str:

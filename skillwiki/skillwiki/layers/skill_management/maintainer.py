@@ -23,6 +23,7 @@ from ...models.skill_model import (
 )
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from .gepa_adapter import GepaCandidateRecord, run_gepa_candidate_search
 
 logger = get_logger(__name__)
 
@@ -201,6 +202,29 @@ class SkillMaintainerAgent:
             requires_human_review=True,
             source="skill_maintainer",
             metadata={"skill_name": skill.name},
+        )
+
+    def propose_repair_with_gepa(
+        self,
+        skill: Skill,
+        *,
+        seed_text: str,
+        proposed_text: str,
+        failure_trace: List[Dict[str, Any]],
+        budget: Dict[str, Any],
+        lineage: Dict[str, Any],
+        task_contract: Dict[str, Any],
+        environment_identity: Dict[str, Any],
+    ) -> GepaCandidateRecord:
+        """Search at the proposal boundary while preserving review and release gates."""
+        return run_gepa_candidate_search(
+            seed_text=seed_text,
+            proposed_text=proposed_text,
+            failure_trace=failure_trace,
+            budget=budget,
+            lineage={"skill_id": skill.skill_id, **lineage},
+            task_contract=task_contract,
+            environment_identity=environment_identity,
         )
 
     def repair(
@@ -446,6 +470,8 @@ class SkillMaintainerAgent:
 
 
 def _child_skill_from_split(parent: Skill, data: Dict[str, Any], index: int) -> Skill:
+    from ..skill_governance.implementation_handoff import rebuild_implementation
+    from ..skill_governance.version_evidence import reset_version_evidence
     sub_name = _safe_skill_name(data.get("name"), fallback=f"{parent.name}_part_{index}")
     sub_description = _safe_text(
         data.get("description"),
@@ -455,7 +481,7 @@ def _child_skill_from_split(parent: Skill, data: Dict[str, Any], index: int) -> 
         data.get("prompt_template"),
         fallback=f"Execute the {sub_name.replace('_', ' ')} step.",
     )
-    return Skill(
+    result = Skill(
         name=sub_name,
         description=sub_description,
         skill_type=SkillType.ATOMIC,
@@ -464,16 +490,21 @@ def _child_skill_from_split(parent: Skill, data: Dict[str, Any], index: int) -> 
             input_schema=_safe_schema(data.get("input_schema") or parent.interface.input_schema),
             output_schema=_safe_schema(data.get("output_schema") or parent.interface.output_schema),
         ),
-        implementation=SkillImplementation(prompt_template=sub_prompt),
+        implementation=rebuild_implementation({**(data.get('implementation') or {}),
+            'prompt_template': sub_prompt,
+            **{key: data[key] for key in ('prompt_format', 'request_body_validation') if key in data}}, [parent]),
         provenance=SkillProvenance(
             source_type="split",
             created_by_agent="skill_maintainer",
             parent_skill_ids=[parent.skill_id],
         ),
     )
+    return reset_version_evidence(result, source_skill=parent, reason='split')
 
 
 def _merged_skill_from_data(skill_a: Skill, skill_b: Skill, data: Dict[str, Any]) -> Optional[Skill]:
+    from ..skill_governance.implementation_handoff import rebuild_implementation
+    from ..skill_governance.version_evidence import reset_version_evidence
     implementation_data = data.get("merged_implementation") or data.get("implementation") or {}
     if not isinstance(implementation_data, dict):
         implementation_data = {}
@@ -492,7 +523,7 @@ def _merged_skill_from_data(skill_a: Skill, skill_b: Skill, data: Dict[str, Any]
     if not isinstance(interface_data, dict):
         interface_data = {}
     meta_category = MetaSkillCategory.MAINTENANCE if skill_type == SkillType.STRATEGIC else None
-    return Skill(
+    result = Skill(
         name=_safe_skill_name(data.get("merged_name") or data.get("name"), fallback=f"{skill_a.name}_{skill_b.name}"),
         description=_safe_text(
             data.get("merged_description") or data.get("description"),
@@ -510,13 +541,11 @@ def _merged_skill_from_data(skill_a: Skill, skill_b: Skill, data: Dict[str, Any]
             postconditions=_safe_string_list(interface_data.get("postconditions")),
             side_effects=_safe_string_list(interface_data.get("side_effects")),
         ),
-        implementation=SkillImplementation(
-            language=str(implementation_data.get("language") or "python"),
-            code=code or None,
-            prompt_template=prompt_template or None,
-            tool_calls=_safe_string_list(implementation_data.get("tool_calls")),
-            sub_skill_ids=_safe_string_list(sub_skill_ids),
-        ),
+        implementation=rebuild_implementation({**implementation_data,
+            'language': str(implementation_data.get('language') or 'python'),
+            'code': code or None, 'prompt_template': prompt_template or None,
+            'tool_calls': _safe_string_list(implementation_data.get('tool_calls')),
+            'sub_skill_ids': _safe_string_list(sub_skill_ids)}, [skill_a, skill_b]),
         provenance=SkillProvenance(
             source_type="merge",
             created_by_agent="skill_maintainer",
@@ -527,6 +556,7 @@ def _merged_skill_from_data(skill_a: Skill, skill_b: Skill, data: Dict[str, Any]
             },
         ),
     )
+    return reset_version_evidence(result, source_skill=skill_a, reason='merge')
 
 
 def _implementation_summary(skill: Skill) -> str:

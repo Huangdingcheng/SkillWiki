@@ -284,15 +284,20 @@ class SkillFormalizer:
         implementation = None
         if impl_data:
             try:
-                implementation = SkillImplementation(
+                from ..skill_governance.implementation_handoff import validate_implementation_binding
+                implementation = validate_implementation_binding(SkillImplementation(
                     language=impl_data.get("language", "python"),
                     code=impl_data.get("code"),
                     prompt_template=impl_data.get("prompt_template"),
+                    prompt_format=impl_data.get("prompt_format"),
+                    request_body_validation=impl_data.get("request_body_validation"),
                     tool_calls=impl_data.get("tool_calls", []),
                     sub_skill_ids=impl_data.get("sub_skill_ids", []),
                     execution_order=impl_data.get("execution_order"),
-                )
+                ))
             except Exception as e:
+                if impl_data.get('request_body_validation') is not None or impl_data.get('prompt_format') is not None:
+                    raise
                 logger.warning(f"实现构建失败，使用 prompt 模板: {e}")
                 implementation = SkillImplementation(
                     prompt_template=proposal.proposed_description

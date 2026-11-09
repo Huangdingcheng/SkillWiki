@@ -1,5 +1,6 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import {
+  Alert,
   Badge,
   Button,
   Descriptions,
@@ -28,7 +29,8 @@ import {
   StopOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
 import { skillsApi, lifecycleApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
 import type { SkillFull, SkillParameter, SkillState, SkillSummary, SkillType } from '@/api/types'
@@ -135,7 +137,7 @@ function buildSkillTimeline(skill: SkillFull) {
       dot: <SafetyCertificateOutlined />,
       children: (
         <div>
-          <Text strong>Audited / verifier attached</Text>
+          <Text strong>Evaluation contract attached</Text>
           <div style={{ fontSize: 12, color: '#666' }}>
             {evaluation.validation_summary || `${evaluation.verifier_specs.length} verifier spec(s)`}
           </div>
@@ -228,9 +230,8 @@ function buildSkillTimeline(skill: SkillFull) {
 }
 
 export default function SkillWiki() {
-  const location = useLocation()
   const navigate = useNavigate()
-  const openedFromQuery = useRef<string | null>(null)
+  const { skillId, setSkillId } = useSkillContext()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -238,6 +239,9 @@ export default function SkillWiki() {
   const [typeFilter, setTypeFilter] = useState<SkillType | undefined>()
   const [selected, setSelected] = useState<SkillFull | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailRevision, setDetailRevision] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -265,18 +269,37 @@ export default function SkillWiki() {
     )
   })
 
-  const openDetail = async (id: string) => {
-    const full = await skillsApi.getFull(id)
-    setSelected(full)
+  const openDetail = (id: string) => {
+    if (id === skillId) {
+      setDetailLoading(true)
+      setDetailError(null)
+      setDrawerOpen(true)
+      setDetailRevision(previous => previous + 1)
+      return
+    }
+    setSelected(null)
+    setDetailError(null)
+    setDetailLoading(true)
     setDrawerOpen(true)
+    setSkillId(id)
   }
 
   useEffect(() => {
-    const id = new URLSearchParams(location.search).get('skill_id')
-    if (!id || openedFromQuery.current === id) return
-    openedFromQuery.current = id
-    openDetail(id).catch(err => message.error(getApiErrorMessage(err, 'Skill does not exist or is temporarily unavailable')))
-  }, [location.search])
+    if (!skillId) return
+    let cancelled = false
+    skillsApi.getFull(skillId).then(full => {
+      if (cancelled) return
+      setSelected(full)
+      setDetailError(null)
+      setDrawerOpen(true)
+    }).catch(err => {
+      if (cancelled) return
+      setSelected(null)
+      setDetailError(getApiErrorMessage(err, 'Skill does not exist or is temporarily unavailable'))
+      setDrawerOpen(true)
+    }).finally(() => { if (!cancelled) setDetailLoading(false) })
+    return () => { cancelled = true }
+  }, [skillId, detailRevision])
 
   const handleRelease = async (id: string) => {
     try {
@@ -344,7 +367,7 @@ export default function SkillWiki() {
           <Tooltip title="View details">
             <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(record.skill_id)} />
           </Tooltip>
-          {record.state === 'S2' && (
+          {record.state === 'S3' && (
             <Tooltip title="Release">
               <Button size="small" icon={<CheckOutlined />} type="primary" onClick={() => handleRelease(record.skill_id)} />
             </Tooltip>
@@ -421,21 +444,25 @@ export default function SkillWiki() {
       </motion.div>
 
       <Drawer
-        title={selected?.name}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        title={selected?.skill_id === skillId ? selected.name : 'Skill details'}
+        open={drawerOpen && Boolean(skillId)}
+        onClose={() => { setDrawerOpen(false); setSelected(null); setSkillId(null) }}
         size="large"
-        extra={selected && (
+        extra={selected && selected.skill_id === skillId && (
           <Space>
             <Button size="small" onClick={() => navigate(`/graph?skill_id=${encodeURIComponent(selected.skill_id)}`)}>
               View Graph
             </Button>
+            <Link to={skillContextPath('/lifecycle', selected.skill_id)}>Lifecycle</Link>
+            <Link to={skillContextPath('/versions', selected.skill_id)}>Versions</Link>
             <Tag color={TYPE_COLOR[selected.skill_type]}>{selected.skill_type.toUpperCase()}</Tag>
             <Badge color={STATE_COLOR[selected.state]} text={STATE_LABEL[selected.state] || selected.state} />
           </Space>
         )}
       >
-        {selected && (
+        {detailError && <Alert type="error" showIcon message={detailError} action={<Button size="small" onClick={() => skillId && openDetail(skillId)}>Retry</Button>} />}
+        {detailLoading && <Text type="secondary">Loading selected Skill…</Text>}
+        {selected && selected.skill_id === skillId && (
           <Tabs
             items={[
               {
@@ -528,6 +555,7 @@ export default function SkillWiki() {
                 label: 'Evidence',
                 children: (
                   <div>
+                    <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Static review is not a task run" description="Evaluation contracts, placeholders, candidate audits, and lifecycle state do not by themselves establish execution or verifier success." />
                     <h4>Provenance</h4>
                     {selectedProvenance ? (
                       <Descriptions column={1} bordered size="small">

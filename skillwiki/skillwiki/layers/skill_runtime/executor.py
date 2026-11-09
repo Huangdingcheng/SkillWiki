@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import re
+from string import Formatter
 import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Union
@@ -14,6 +16,7 @@ from ...models.experience_model import ExecutionStatus, SkillExecutionRecord
 from ...models.skill_model import Skill
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from .input_contract import InputContractError, validate_skill_input
 from .planner import ExecutionPlan, PlanStep, StepStatus
 from .state_tracker import StateTracker
 
@@ -21,6 +24,66 @@ logger = get_logger(__name__)
 
 # 执行事件类型（用于 WebSocket 实时推送）
 ExecutionEventCallback = Callable[[str, Dict[str, Any]], Union[None, Awaitable[None]]]
+
+
+class _RuntimeOutput(dict):
+    """Business output with execution metadata kept outside the JSON object.
+
+    A dict subclass lets the existing execution flow consume outputs without
+    adding reserved runtime keys to a Skill's declared business payload.
+    """
+
+    def __init__(self, business: Optional[Dict[str, Any]] = None,
+                 *, state_changes: Optional[Dict[str, Any]] = None,
+                 execution_evidence: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(business or {})
+        self.runtime_state_changes = copy.deepcopy(state_changes or {})
+        self.execution_evidence = copy.deepcopy(execution_evidence or {})
+
+
+def _output_state_changes(output: Dict[str, Any]) -> Dict[str, Any]:
+    """Return internal state changes without treating business keys as metadata."""
+    changes = getattr(output, "runtime_state_changes", None)
+    if isinstance(changes, dict):
+        return copy.deepcopy(changes)
+    # Compatibility for callers that provide an internal legacy dict.
+    legacy = output.get("_state_changes", {})
+    return copy.deepcopy(legacy) if isinstance(legacy, dict) else {}
+
+
+def escape_literal_prompt(text: str) -> str:
+    """Escape a text fragment before embedding it into a format template."""
+    return str(text).replace("{", "{{").replace("}", "}}")
+
+
+def prompt_template_fields(template: str) -> set[str]:
+    """Extract real format fields while ignoring raw JSON and escaped braces."""
+    protected = _protect_literal_json(str(template or ""))
+    def collect(value: str) -> set[str]:
+        fields: set[str] = set()
+        for _, field_name, format_spec, _ in Formatter().parse(value):
+            if field_name is not None:
+                fields.add(field_name)
+                if format_spec:
+                    fields.update(collect(format_spec))
+        return fields
+    return collect(protected)
+
+
+def is_literal_instruction_skill(skill: Skill) -> bool:
+    """Resolve explicit prompt semantics before the legacy component heuristic."""
+    prompt_format = getattr(skill.implementation, "prompt_format", None)
+    if prompt_format is not None:
+        return prompt_format == "literal"
+    context = getattr(getattr(skill, "provenance", None), "creation_context", {}) or {}
+    return bool(context.get("demo_components") or context.get("component_run_id"))
+
+
+def render_prompt_template(template: str, input_data: Dict[str, Any]) -> tuple[str, bool]:
+    """Render a named template using the same semantics as native execution."""
+    protected = _protect_literal_json(str(template or ""))
+    fields = prompt_template_fields(template)
+    return protected.format(**input_data), bool(fields)
 
 
 class SkillExecutor:
@@ -89,6 +152,38 @@ class SkillExecutor:
             "task": plan.task_description,
             "total_steps": plan.total_steps,
         })
+
+        # Input mappings are already concrete in ExecutionPlan. Validate every
+        # pending step (including descendants) before spending on any step.
+        invalid_inputs = False
+        for step in plan.steps:
+            if step.status != StepStatus.PENDING:
+                continue
+            skill = skill_map.get(step.skill_id)
+            if skill is None:
+                continue  # Retain the existing missing-Skill execution path.
+            try:
+                await asyncio.wait_for(
+                    self._validate_skill_tree_inputs(skill, step.input_mapping),
+                    timeout=self._step_timeout,
+                )
+            except Exception as exc:
+                invalid_inputs = True
+                step.status = StepStatus.FAILED
+                step.error = str(exc) or f"Input validation timed out ({self._step_timeout}s)"
+                step.started_at = step.completed_at = datetime.utcnow()
+                self._emit_step_failed(plan.plan_id, step, step.error)
+        if invalid_inputs:
+            for step in plan.steps:
+                if step.status == StepStatus.PENDING:
+                    step.status = StepStatus.SKIPPED
+                    step.error = "Skipped because plan input validation failed"
+                    step.started_at = step.completed_at = datetime.utcnow()
+                    self._emit("step_skipped", {
+                        "plan_id": plan.plan_id, "step_id": step.step_id,
+                        "step_index": step.step_index, "skill_id": step.skill_id,
+                        "skill_name": step.skill_name or step.skill_id, "reason": step.error,
+                    })
 
         while _has_pending_steps(plan):
             skipped = self._skip_blocked_steps(plan)
@@ -230,15 +325,21 @@ class SkillExecutor:
                     timeout=self._step_timeout,
                 )
                 # 执行成功
-                state_changes = output.get("_state_changes", {})
+                state_changes = _output_state_changes(output)
                 tracker.update(state_changes)
                 tracker.snapshot_after(skill.skill_id, skill.name)
 
                 step.status = StepStatus.SUCCESS
-                step.result = output
+                step.result = dict(output)
+                step.execution_evidence = copy.deepcopy(
+                    getattr(output, "execution_evidence", {})
+                )
                 step.completed_at = datetime.utcnow()
 
-                record.complete(output, tracker.current)
+                record.complete(dict(output), tracker.current)
+                record.execution_evidence = copy.deepcopy(
+                    getattr(output, "execution_evidence", {})
+                )
                 self._emit("step_completed", {
                     "plan_id": tracker._task_id,
                     "step_id": step.step_id,
@@ -261,6 +362,19 @@ class SkillExecutor:
                 step.completed_at = datetime.utcnow()
                 record.fail(error, "TimeoutError")
                 self._emit_step_failed(tracker._task_id, step, error)
+                return record
+
+            except InputContractError as e:
+                # Contract failures are deterministic and cannot be repaired by
+                # retrying model/code dispatch with the same input.
+                tracker.rollback()
+                step.status = StepStatus.FAILED
+                step.error = str(e)
+                step.completed_at = datetime.utcnow()
+                record.fail(str(e), type(e).__name__)
+                record.execution_evidence = copy.deepcopy(getattr(e, "execution_evidence", {}))
+                step.execution_evidence = copy.deepcopy(record.execution_evidence)
+                self._emit_step_failed(tracker._task_id, step, str(e))
                 return record
 
             except Exception as e:
@@ -286,10 +400,14 @@ class SkillExecutor:
         current_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         """执行 Skill：prompt→LLM / code→exec / composite→递归。"""
+        validate_skill_input(skill, input_data)
         if not skill.implementation:
             raise RuntimeError(f"Skill {skill.name} 没有实现")
 
         impl = skill.implementation
+        if impl.request_body_validation is not None and not impl.prompt_template:
+            from .request_body_validation import RequestBodyValidationError
+            raise RequestBodyValidationError("request_body_validation_requires_prompt")
 
         # 1. prompt_template → LLM 调用
         if impl.prompt_template:
@@ -303,40 +421,58 @@ class SkillExecutor:
         if impl.sub_skill_ids:
             return await self._run_composite_skill(skill, impl, input_data, current_state)
 
+        if impl.tool_calls:
+            raise RuntimeError(f"Skill {skill.name}: tool-only implementation is unsupported by SkillExecutor")
         raise RuntimeError(f"Skill {skill.name} 没有可执行的实现（无 prompt/code/sub_skills）")
 
     async def _run_prompt_skill(self, skill: Skill, impl: Any, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """调用 LLM 执行 prompt 类型 Skill。"""
         if not self._llm:
-            # 无 LLM 客户端时返回模拟结果（测试/离线模式）
-            return {
-                "result": f"[mock] {skill.name} executed",
-                "skill_name": skill.name,
-                "_state_changes": {f"{skill.name}_executed": True},
-            }
-        try:
-            prompt = impl.prompt_template.format(**input_data)
-        except KeyError as e:
-            raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
+            raise RuntimeError(f"Skill {skill.name} requires an LLM client; use an explicit fixed-response client for offline tests.")
+        from .request_body_validation import prepare_request_body_validation
+        body_evidence = prepare_request_body_validation(skill, input_data)
+        context = getattr(getattr(skill, "provenance", None), "creation_context", {})
+        instruction_demo = impl.prompt_format is None and is_literal_instruction_skill(skill)
+        if instruction_demo:
+            # Optimizers return literal instruction text (often containing JSON
+            # braces), not Python format strings. Preserve it and pass the task
+            # separately, matching the candidate replay protocol.
+            from ...api.component_demo import DIALOGUE_TASK_INSTRUCTION
+            task = (context.get("demo_components") or {}).get("task_instruction") or DIALOGUE_TASK_INSTRUCTION
+            dialogue = str(input_data.get("dialogue", json.dumps(input_data, ensure_ascii=False)))
+            messages = [Message.system(impl.prompt_template),
+                        Message.user(task + "\nDialogue:\n" + dialogue)]
+        else:
+            if impl.prompt_format == "literal":
+                prompt, has_fields = impl.prompt_template, False
+            else:
+                try:
+                    prompt, has_fields = render_prompt_template(impl.prompt_template, input_data)
+                except KeyError as e:
+                    raise RuntimeError(f"Skill {skill.name} prompt 模板缺少参数: {e}") from e
+            messages = [Message.system(f"你是 SkillWiki 中的 {skill.name} Skill，请严格按照任务要求执行。"), Message.user(prompt)]
+            if not has_fields:
+                # Generated instructions may have no Python placeholders. Keep
+                # their wording and bind the complete input as separate data.
+                # Named templates retain their established message contract.
+                messages.append(Message.user(
+                    "Input data (JSON):" + chr(10)
+                    + json.dumps(input_data, ensure_ascii=False, allow_nan=False)
+                ))
 
         response = await asyncio.to_thread(
             self._llm.chat,
-            [Message.system(f"你是 SkillWiki 中的 {skill.name} Skill，请严格按照任务要求执行。"),
-             Message.user(prompt)],
+            messages,
         )
         result_text = response.content
+        if body_evidence is not None:
+            from .request_body_validation import finalize_request_body_validation
+            final_result, evidence = finalize_request_body_validation(skill, input_data, result_text, body_evidence)
+            return _RuntimeOutput(final_result, state_changes={f"{skill.name}_result": final_result}, execution_evidence=evidence)
         parsed_result = _extract_json_object(result_text)
         if parsed_result is not None:
-            return {
-                **parsed_result,
-                "skill_name": skill.name,
-                "_state_changes": {f"{skill.name}_result": parsed_result},
-            }
-        return {
-            "result": result_text,
-            "skill_name": skill.name,
-            "_state_changes": {f"{skill.name}_result": result_text},
-        }
+            return _RuntimeOutput(parsed_result, state_changes={f"{skill.name}_result": parsed_result})
+        return _RuntimeOutput({"result": result_text}, state_changes={f"{skill.name}_result": result_text})
 
     async def _run_code_skill(
         self, skill: Skill, impl: Any, input_data: Dict[str, Any], current_state: Dict[str, Any]
@@ -363,11 +499,9 @@ class SkillExecutor:
             raise RuntimeError(f"Skill {skill.name} 代码执行失败: {e}") from e
 
         output = namespace.get("output", {})
-        return {
-            **output,
-            "skill_name": skill.name,
-            "_state_changes": {f"{skill.name}_executed": True, **output},
-        }
+        if not isinstance(output, dict):
+            raise RuntimeError(f"Skill {skill.name} code must produce a dict output")
+        return _RuntimeOutput(output, state_changes={f"{skill.name}_executed": True, **output})
 
     async def _run_composite_skill(
         self, skill: Skill, impl: Any, input_data: Dict[str, Any], current_state: Dict[str, Any]
@@ -377,31 +511,70 @@ class SkillExecutor:
             raise RuntimeError(f"Skill {skill.name} 是 composite 类型但执行器未配置 registry")
 
         sub_results: Dict[str, Any] = {}
-        merged_state = dict(current_state)
+        sub_evidence: Dict[str, Any] = {}
+        merged_state = copy.deepcopy(current_state)
 
-        for sub_id in impl.sub_skill_ids:
+        resolved = await self._resolve_subskills(skill)
+        for _, sub_skill in resolved:
+            await self._validate_skill_tree_inputs(sub_skill, input_data, {skill.skill_id})
+
+        for sub_id, sub_skill in resolved:
+            sub_result = await self._run_skill(sub_skill, input_data, merged_state)
+            sub_results[sub_id] = dict(sub_result)
+            if getattr(sub_result, "execution_evidence", None):
+                sub_evidence[sub_id] = copy.deepcopy(sub_result.execution_evidence)
+            # 将子 Skill 的状态变更合并到当前状态
+            merged_state.update(_output_state_changes(sub_result))
+
+        return _RuntimeOutput({
+            "sub_results": sub_results,
+        }, state_changes={"composite_executed": True, **merged_state},
+           execution_evidence={"sub_skills": sub_evidence} if sub_evidence else {})
+
+    async def _resolve_subskills(self, skill: Skill) -> List[tuple[str, Skill]]:
+        if not self._registry:
+            raise RuntimeError(f"Skill {skill.name} 是 composite 类型但执行器未配置 registry")
+        resolved: List[tuple[str, Skill]] = []
+        sub_ids = skill.implementation.sub_skill_ids
+        order = skill.implementation.execution_order
+        if order is not None:
+            from collections import Counter
+            if Counter(order) != Counter(sub_ids):
+                raise InputContractError("execution_order must be a sequential permutation of sub_skill_ids; parallel markers are unsupported")
+            sub_ids = order
+        for sub_id in sub_ids:
             sub_skill = await self._registry.get(sub_id)
             if not sub_skill and hasattr(self._registry, "get_by_name"):
                 sub_skill = await self._registry.get_by_name(sub_id)
             if not sub_skill:
-                logger.warning(f"子 Skill 不存在，跳过: {sub_id}")
-                continue
-            sub_result = await self._run_skill(sub_skill, input_data, merged_state)
-            sub_results[sub_id] = sub_result
-            # 将子 Skill 的状态变更合并到当前状态
-            merged_state.update(sub_result.get("_state_changes", {}))
+                raise RuntimeError(f"Required sub-skill not found: {sub_id}")
+            resolved.append((sub_id, sub_skill))
 
-        return {
-            "sub_results": sub_results,
-            "skill_name": skill.name,
-            "_state_changes": {"composite_executed": True, **merged_state},
-        }
+        return resolved
+
+    async def _validate_skill_tree_inputs(
+        self, skill: Skill, input_data: Dict[str, Any], ancestors: Optional[set[str]] = None,
+    ) -> None:
+        """Check all concrete child inputs before any sibling dispatch occurs."""
+        validate_skill_input(skill, input_data)
+        ancestors = ancestors or set()
+        if skill.skill_id in ancestors:
+            raise InputContractError(f"Cyclic composite input validation at Skill {skill.name}")
+        impl = skill.implementation
+        if impl and impl.request_body_validation is not None:
+            from .request_body_validation import prepare_request_body_validation
+            prepare_request_body_validation(skill, input_data)
+        # Match native dispatch precedence; inactive child metadata is not run.
+        if impl and not impl.prompt_template and not impl.code and impl.sub_skill_ids:
+            for _, child in await self._resolve_subskills(skill):
+                await self._validate_skill_tree_inputs(child, input_data, ancestors | {skill.skill_id})
 
     async def execute_single(
         self,
         skill: Skill,
         input_data: Dict[str, Any],
         task_id: Optional[str] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
     ) -> SkillExecutionRecord:
         """执行单个 Skill（不需要完整计划）。"""
         record = SkillExecutionRecord(
@@ -409,40 +582,79 @@ class SkillExecutor:
             skill_version=skill.version,
             task_id=task_id or str(uuid.uuid4()),
             input_data=input_data,
+            state_before=copy.deepcopy(initial_state or {}),
         )
         record.start()
         try:
             output = await asyncio.wait_for(
-                self._run_skill(skill, input_data, {}),
+                self._run_skill(skill, input_data, copy.deepcopy(initial_state or {})),
                 timeout=self._step_timeout,
             )
-            record.complete(output, output.get("_state_changes", {}))
+            tracker = StateTracker(record.task_id, initial_state)
+            tracker.update(_output_state_changes(output))
+            record.complete(dict(output), tracker.current)
+            record.execution_evidence = copy.deepcopy(
+                getattr(output, "execution_evidence", {})
+            )
         except Exception as e:
+            record.state_after = copy.deepcopy(record.state_before)
             record.fail(str(e), type(e).__name__)
+            record.execution_evidence = copy.deepcopy(getattr(e, "execution_evidence", {}))
         return record
 
 
+def _protect_literal_json(template: str) -> str:
+    """Escape valid literal JSON objects without swallowing format fields.
+
+    Existing doubled braces keep Python format semantics. A raw JSON object
+    is data, including strings such as "{name}" inside it; a neighboring
+    {name} remains a named field and missing arguments still raise KeyError.
+    """
+    decoder = json.JSONDecoder()
+    parts: List[str] = []
+    index = 0
+    while index < len(template):
+        pair = template[index:index + 2]
+        if pair in ("{{", "}}"):
+            parts.append(pair)
+            index += 2
+            continue
+        if template[index] == "{":
+            try:
+                value, end = decoder.raw_decode(template, index)
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(value, dict):
+                    literal = template[index:end]
+                    parts.append(literal.replace("{", "{{").replace("}", "}}"))
+                    index = end
+                    continue
+        parts.append(template[index])
+        index += 1
+    return "".join(parts)
+
+
 def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
-    """Parse a prompt Skill response when the model returns machine-readable JSON."""
+    """Parse only a complete JSON answer, never an example inside prose."""
     stripped = str(text or "").strip()
     if not stripped:
         return None
-    candidates = [stripped]
-    fenced = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", stripped)
-    if fenced:
-        candidates.insert(0, fenced.group(1).strip())
-    object_match = re.search(r"\{[\s\S]+\}", stripped)
-    if object_match:
-        candidates.append(object_match.group(0))
-
-    for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
+    candidate = stripped
+    if stripped.startswith("```") and stripped.endswith("```"):
+        # A single complete fence is an answer; surrounding explanations or
+        # multiple fences must remain intact so validation errors are not lost.
+        if stripped.count("```") != 2:
+            return None
+        inner = stripped[3:-3].strip()
+        if inner.startswith("json"):
+            inner = inner[4:].lstrip()
+        candidate = inner
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _plan_status(plan: ExecutionPlan) -> str:

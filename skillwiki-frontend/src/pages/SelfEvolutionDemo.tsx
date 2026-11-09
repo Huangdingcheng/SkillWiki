@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -9,8 +9,8 @@ import {
   Input,
   Progress,
   Row,
+  Select,
   Space,
-  Spin,
   Steps,
   Tag,
   Timeline,
@@ -34,10 +34,12 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import { executionApi } from '@/api/client'
+import { Link, useNavigate } from 'react-router-dom'
+import { evolutionApi, executionApi } from '@/api/client'
+import { useSkillContext } from '@/hooks/useSkillContext'
 import { getApiErrorMessage } from '@/api/errors'
-import type { ExecutionResult, RetrievedSkill } from '@/api/types'
+import { executionEvidence } from '@/utils/executionEvidence'
+import type { ComponentRun, EvolutionComponent, ExecutionResult, RetrievedSkill } from '@/api/types'
 
 const { TextArea } = Input
 const { Text, Paragraph } = Typography
@@ -55,15 +57,6 @@ const DEMO_TASKS = [
   'Compose existing Skills to complete a new automation task',
 ]
 
-type Phase =
-  | 'idle'
-  | 'searching'
-  | 'planning'
-  | 'executing'
-  | 'recording'
-  | 'learning'
-  | 'done'
-
 const PHASE_STEPS = [
   { title: 'Skill Retrieval', description: 'Recall relevant capabilities from the Skill Wiki', icon: <SearchOutlined /> },
   { title: 'Plan Generation', description: 'Decompose the goal into executable steps', icon: <BulbOutlined /> },
@@ -72,25 +65,121 @@ const PHASE_STEPS = [
   { title: 'Evolution Learning', description: 'Update quality signals and prepare for reuse', icon: <StarOutlined /> },
 ]
 
-const phaseIndex: Record<Phase, number> = {
-  idle: -1,
-  searching: 0,
-  planning: 1,
-  executing: 2,
-  recording: 3,
-  learning: 4,
-  done: 4,
-}
-
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 function getStatusColor(status: string) {
   if (status === 'success') return 'green'
   if (status === 'failed' || status === 'error') return 'red'
   if (status === 'partial') return 'gold'
+  if (status === 'blocked') return 'gold'
   return 'blue'
+}
+
+function ComponentRunsPanel() {
+  const { skillId, setSkillId } = useSkillContext()
+  const [runs, setRuns] = useState<ComponentRun[]>([])
+  const [selectedRunId, setSelectedRunId] = useState<string>()
+  const [loading, setLoading] = useState(false)
+  const [running, setRunning] = useState<EvolutionComponent | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  const generation = useRef(0)
+
+  useEffect(() => {
+    const request = ++generation.current
+    const timeoutId = window.setTimeout(() => {
+      setRuns([])
+      setError(null)
+      if (!skillId) {
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      void evolutionApi.componentRuns(skillId).then(response => {
+        if (generation.current !== request) return
+        setRuns(response.runs)
+        setSelectedRunId(previous => response.runs.some(run => run.run_id === previous) ? previous : response.runs[0]?.run_id)
+      }).catch(err => {
+        if (generation.current === request) setError(getApiErrorMessage(err, 'Could not load component runs'))
+      }).finally(() => {
+        if (generation.current === request) setLoading(false)
+      })
+    }, 0)
+    return () => {
+      window.clearTimeout(timeoutId)
+      generation.current = request + 1
+    }
+  }, [skillId, reload])
+
+  const runComponent = async (component: EvolutionComponent, refresh = false) => {
+    if (!skillId || running) return
+    const request = generation.current
+    setRunning(component)
+    setError(null)
+    try {
+      const run = await evolutionApi.runComponent(component, skillId, refresh)
+      if (generation.current !== request) return
+      setRuns(previous => [run, ...previous.filter(item => item.run_id !== run.run_id)])
+      setSelectedRunId(run.run_id)
+    } catch (err) {
+      if (generation.current === request) setError(getApiErrorMessage(err, 'Component request failed'))
+    } finally {
+      setRunning(null)
+    }
+  }
+
+  const selected = runs.find(run => run.run_id === selectedRunId)
+  const sourceRefreshRequired = runs.find(run => run.component === 'arex')?.result.refresh_required === true
+  return (
+    <Card title="Skill Component Runs" size="small" style={{ marginBottom: 16 }}
+      extra={<Button size="small" icon={<ReloadOutlined />} disabled={!skillId || !!running} loading={loading} onClick={() => setReload(value => value + 1)}>Reload saved runs</Button>}>
+      <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+        <Text type="secondary">Select a Skill, then explicitly run a component. Saved results are loaded on page refresh. Candidate creation does not confirm verification or release.</Text>
+        <Input.Search key={skillId || 'empty'} defaultValue={skillId || ''} aria-label="Component Skill ID" placeholder="Enter Skill ID" enterButton="Load Skill" disabled={!!running} onSearch={value => setSkillId(value.trim() || null)} />
+        <Text>Selected Skill: <Text code>{skillId || 'None'}</Text></Text>
+        <Space wrap>
+          {(['gepa', 'skillopt', 'arex', 'skillguard'] as const).map(component => (
+            <Button key={component} disabled={!skillId || loading || !!running} loading={running === component} onClick={() => void runComponent(component)}>
+              Run {component === 'skillguard' ? 'SkillGuard' : component === 'skillopt' ? 'SkillOpt' : component.toUpperCase()}
+            </Button>
+          ))}
+        </Space>
+        <Space orientation="vertical" size={4}>
+          <Button disabled={!skillId || loading || !!running || !sourceRefreshRequired} onClick={() => void runComponent('arex', true)}>
+            生成来源刷新草稿
+          </Button>
+          <Text type="secondary">会使用模型。请先运行 AREX 来源检查，检测到需要刷新的来源变化后才能生成草稿；草稿仍需审核和验证。</Text>
+        </Space>
+        {running && <Alert type="info" showIcon title="Waiting for component response" description="The backend has not confirmed a completed run yet." />}
+        {error && <Alert type="error" showIcon title={error} />}
+        {runs.length > 0 ? (
+          <Select aria-label="Saved component run" style={{ width: '100%' }} value={selectedRunId} onChange={setSelectedRunId}
+            options={runs.map(run => ({ value: run.run_id, label: `${run.component} · ${run.status} · ${run.created_at} · ${run.run_id}` }))} />
+        ) : !loading && <Text type="secondary">No saved component runs for this Skill.</Text>}
+        {selected && (
+          <div>
+            <Space wrap>
+              <Tag color={getStatusColor(selected.status)}>{selected.status}</Tag>
+              <Text code>{selected.run_id}</Text>
+              <Text>Parent v{selected.parent_version}</Text>
+            </Space>
+            <Paragraph style={{ marginTop: 8, overflowWrap: 'anywhere' }}>Parent hash: <Text code copyable>{selected.parent_hash}</Text></Paragraph>
+            {selected.error && <Alert type="error" showIcon title={selected.error} style={{ marginBottom: 8 }} />}
+            {selected.candidate && (
+              <Space wrap style={{ marginBottom: 8 }}>
+                <Tag>Candidate v{selected.candidate.version}</Tag>
+                <Tag>Validation: {selected.candidate.validation_status}</Tag>
+                <Link to={`/wiki?skill_id=${encodeURIComponent(selected.candidate.draft_skill_id)}`}>Open draft Skill</Link>
+                <Link to={`/versions?skill_id=${encodeURIComponent(selected.candidate.draft_skill_id)}&compare_to=${encodeURIComponent(selected.skill_id)}`}>View candidate version / parent diff</Link>
+              </Space>
+            )}
+            <details open>
+              <summary>Full saved run, result and candidate diff</summary>
+              <pre style={{ maxHeight: 400, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 12 }}>{JSON.stringify(selected, null, 2)}</pre>
+            </details>
+          </div>
+        )}
+      </Space>
+    </Card>
+  )
 }
 
 function SuggestedSkill({ suggested }: { suggested: Record<string, unknown> }) {
@@ -120,10 +209,9 @@ function SuggestedSkill({ suggested }: { suggested: Record<string, unknown> }) {
 export default function SelfEvolutionDemo() {
   const navigate = useNavigate()
   const [task, setTask] = useState('')
-  const [phase, setPhase] = useState<Phase>('idle')
+  const [isRunning, setIsRunning] = useState(false)
   const [result, setResult] = useState<ExecutionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [visibleSteps, setVisibleSteps] = useState(0)
 
   const runDemo = async () => {
     const goal = task.trim()
@@ -131,39 +219,21 @@ export default function SelfEvolutionDemo() {
 
     setError(null)
     setResult(null)
-    setVisibleSteps(0)
+    setIsRunning(true)
 
     try {
-      setPhase('searching')
-      await sleep(450)
-      setPhase('planning')
-      await sleep(400)
-      setPhase('executing')
-
       const res = await executionApi.executePlan(goal)
       setResult(res)
-
-      for (let index = 1; index <= res.steps.length; index += 1) {
-        await sleep(260)
-        setVisibleSteps(index)
-      }
-
-      setPhase('recording')
-      await sleep(550)
-      setPhase('learning')
-      await sleep(450)
-      setPhase('done')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Self-evolution demo failed'))
-      setPhase('idle')
+    } finally {
+      setIsRunning(false)
     }
   }
 
   const reset = () => {
-    setPhase('idle')
     setResult(null)
     setError(null)
-    setVisibleSteps(0)
     setTask('')
   }
 
@@ -175,12 +245,11 @@ export default function SelfEvolutionDemo() {
     navigate(`/graph?skill_id=${encodeURIComponent(skillId)}`)
   }
 
-  const isRunning = phase !== 'idle' && phase !== 'done'
   const retrieved = result?.retrieved_skills || []
   const successCount = result?.steps.filter(step => step.status === 'success').length || 0
   const stepCount = result?.steps.length || 0
-  const currentStep = phaseIndex[phase]
-  const experienceRecorded = result?.experience_recorded === true
+  const evidence = result ? executionEvidence(result) : null
+  const experienceRecorded = evidence?.experienceRecorded === true
 
   return (
     <div style={{ padding: 24, maxWidth: 1120, margin: '0 auto' }}>
@@ -190,10 +259,12 @@ export default function SelfEvolutionDemo() {
             Self-Evolution Loop Demo
           </h2>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            Enter a task goal and watch SkillWiki retrieve Skills, generate a plan, execute it, record experience, and update evolution signals.
+            Submit a task and inspect the backend response. Execution, experience recording, and verification are reported separately; learning is not inferred.
           </Paragraph>
         </div>
       </motion.div>
+
+      <ComponentRunsPanel />
 
       <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 16 }}>
         <TextArea
@@ -218,7 +289,7 @@ export default function SelfEvolutionDemo() {
             ))}
           </Space>
           <Space>
-            {phase === 'done' && (
+            {(result || error) && !isRunning && (
               <Button icon={<ReloadOutlined />} onClick={reset}>
                 Reset
               </Button>
@@ -228,31 +299,22 @@ export default function SelfEvolutionDemo() {
               icon={isRunning ? <LoadingOutlined /> : <RocketOutlined />}
               onClick={runDemo}
               loading={isRunning}
-              disabled={!task.trim() || phase === 'done'}
+              disabled={!task.trim() || isRunning}
               size="large"
             >
-              {phase === 'done' ? 'Completed' : 'Start Evolution Loop'}
+              {isRunning ? 'Waiting for backend' : 'Run task'}
             </Button>
           </Space>
         </div>
       </Card>
 
-      {phase !== 'idle' && (
+      {isRunning && <Alert type="info" showIcon icon={<LoadingOutlined />} title="Request in progress" description="Waiting for the execution API. No retrieval, planning, recording, or learning phase has been confirmed yet." style={{ marginBottom: 16 }} />}
+      {evidence && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
           <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
             <Steps
-              current={currentStep}
-              status={phase === 'done' ? 'finish' : 'process'}
               size="small"
-              items={PHASE_STEPS.map((step, index) => ({
-                title: step.title,
-                description: step.description,
-                icon: currentStep > index
-                  ? <CheckCircleFilled style={{ color: '#52c41a' }} />
-                  : currentStep === index
-                    ? <LoadingOutlined style={{ color: '#1677ff' }} />
-                    : <ClockCircleOutlined style={{ color: '#d9d9d9' }} />,
-              }))}
+              items={evidence.steps}
             />
           </Card>
         </motion.div>
@@ -340,7 +402,7 @@ export default function SelfEvolutionDemo() {
                     {result.steps.length === 0 ? (
                       <Alert type="warning" showIcon title="No executable Skill was found. Try a more specific task description." />
                     ) : (
-                      result.steps.slice(0, visibleSteps).map((step, index) => (
+                      result.steps.map((step, index) => (
                         <motion.div
                           key={step.step_id}
                           initial={{ opacity: 0, y: 8 }}
@@ -373,11 +435,6 @@ export default function SelfEvolutionDemo() {
                         </motion.div>
                       ))
                     )}
-                    {visibleSteps < result.steps.length && (
-                      <div style={{ textAlign: 'center', padding: 8 }}>
-                        <Spin size="small" />
-                      </div>
-                    )}
                   </Card>
                 </motion.div>
               </Col>
@@ -407,14 +464,15 @@ export default function SelfEvolutionDemo() {
                       {experienceRecorded ? (
                         <Tag color="green">Experience recorded</Tag>
                       ) : (
-                        <Tag>Experience recording pending</Tag>
+                        <Tag>Experience recording not confirmed</Tag>
                       )}
+                      <Tag color={evidence?.verificationColor}>{evidence?.verificationLabel}</Tag>
                     </Space>
                   </Card>
                 </motion.div>
 
                 <AnimatePresence>
-                  {(phase === 'recording' || phase === 'learning' || phase === 'done') && (
+                  {result && (
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
                       <Card
                         title={<span><DatabaseOutlined style={{ color: '#52c41a', marginRight: 6 }} />Experience Recording</span>}
@@ -426,11 +484,11 @@ export default function SelfEvolutionDemo() {
                           items={[
                             {
                               color: 'green',
-                              children: <Text style={{ fontSize: 12 }}>Execution trace summarized: {result.steps.length} steps</Text>,
+                              children: <Text style={{ fontSize: 12 }}>Backend returned {result.steps.length} execution step records</Text>,
                             },
                             {
                               color: experienceRecorded ? 'green' : 'gray',
-                              children: <Text style={{ fontSize: 12 }}>{experienceRecorded ? 'Experience unit written to the Experience Store' : 'Backend has not confirmed experience recording yet'}</Text>,
+                              children: <Text style={{ fontSize: 12 }}>{experienceRecorded ? `Backend confirmed experience recording${result.experience_unit?.unit_id ? `: ${result.experience_unit.unit_id}` : ''}` : 'Backend has not confirmed experience recording'}</Text>,
                             },
                             {
                               color: 'blue',
@@ -444,30 +502,18 @@ export default function SelfEvolutionDemo() {
                 </AnimatePresence>
 
                 <AnimatePresence>
-                  {(phase === 'learning' || phase === 'done') && (
+                  {result && (
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
                       <Card
-                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />Evolution Learning</span>}
+                        title={<span><StarOutlined style={{ color: '#faad14', marginRight: 6 }} />Evolution Evidence</span>}
                         variant="borderless"
                         size="small"
                         style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12, borderLeft: '3px solid #faad14' }}
                       >
-                        {retrieved.length > 0 ? (
-                          <div style={{ marginBottom: 8 }}>
-                            {retrieved.slice(0, 3).map(skill => (
-                              <div key={skill.skill_id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                                <ArrowRightOutlined style={{ color: '#52c41a', fontSize: 10 }} />
-                                <Text style={{ fontSize: 12 }}>Reuse signals updated for <strong>{skill.name}</strong></Text>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <Text type="secondary" style={{ fontSize: 12 }}>No reusable Skill was retrieved this time. Future experience retention can fill this capability gap.</Text>
-                        )}
-                        <Divider style={{ margin: '8px 0' }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          This execution result can be used for health assessment, version evolution, and future reuse on similar tasks.
+                          This API response does not confirm learning or reuse-signal updates. A suggested Skill is a candidate, not a verified or released capability.
                         </Text>
+                        {result.verifier_summary && <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', overflow: 'auto' }}>{JSON.stringify(result.verifier_summary, null, 2)}</pre>}
                       </Card>
                     </motion.div>
                   )}
@@ -478,16 +524,15 @@ export default function SelfEvolutionDemo() {
                 )}
 
                 <AnimatePresence>
-                  {phase === 'done' && (
+                  {evidence && (
                     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                       <Alert
-                        type="success"
-                        icon={<CheckCircleFilled />}
-                        title="Self-Evolution Loop Completed"
+                        type={evidence.alertType}
+                        title={`Backend result: ${result.status}`}
                         description={(
                           <Space orientation="vertical" size={8}>
                             <Text style={{ fontSize: 12 }}>
-                              SkillWiki completed the full loop for this task: retrieval, planning, execution, recording, and learning.
+                              {evidence.verificationLabel}. Experience recording is {experienceRecorded ? 'confirmed' : 'not confirmed'}. This response does not establish a completed self-evolution loop.
                             </Text>
                             <Button size="small" icon={<HistoryOutlined />} onClick={() => navigate('/execution')}>
                               View Execution History
@@ -505,16 +550,16 @@ export default function SelfEvolutionDemo() {
         )}
       </AnimatePresence>
 
-      {phase === 'idle' && !result && (
+      {!isRunning && !result && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
           <Card variant="borderless" style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center', padding: '32px 0' }}>
             <Empty
               image={<RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />}
               description={(
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Self-Evolution Loop</div>
+                  <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>Self-Evolution Workflow</div>
                   <Paragraph type="secondary" style={{ maxWidth: 520, margin: '0 auto', fontSize: 13 }}>
-                    Through the loop of retrieving Skills, executing tasks, recording experience, and feeding evolution signals back, SkillWiki turns each task result into reusable capability evidence.
+                    The stages below describe the intended workflow. A stage is only confirmed when the backend provides its evidence; static review does not establish task execution or learning.
                   </Paragraph>
                 </div>
               )}

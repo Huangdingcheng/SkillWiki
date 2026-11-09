@@ -280,7 +280,8 @@ class TestSkillReviewer:
         reviewer = SkillReviewer(mock_llm, auto_approve_threshold=8.0)
         updated_skill, result = await reviewer.review_and_release(skill)
         assert result.is_approved
-        assert updated_skill.state == SkillState.RELEASED
+        # The reviewer only recommends; the explicit lifecycle route owns release.
+        assert updated_skill.state == SkillState.VERIFIED
 
 
 # ===========================================================================
@@ -542,30 +543,38 @@ class TestExecutionPlan:
 class TestSkillExecutor:
 
     @pytest.mark.asyncio
-    async def test_execute_single_success(self, released_skill):
-        executor = SkillExecutor()
+    async def test_execute_single_success(self, released_skill, mock_llm):
+        mock_llm.chat.return_value.content = '{"filled_count": 1}'
+        executor = SkillExecutor(llm_client=mock_llm, max_retries=0)
         record = await executor.execute_single(
             released_skill,
             {"fields": {"username": "test"}},
         )
         assert record.status.value == "success"
         assert record.latency_ms is not None
+        assert record.output_data == {"filled_count": 1}
+        mock_llm.chat.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_plan_simple(self, released_skill):
+    async def test_execute_plan_simple(self, released_skill, mock_llm):
+        mock_llm.chat.return_value.content = '{"filled_count": 1}'
         plan = ExecutionPlan(task_id="t1", task_description="测试")
         step = PlanStep(
             step_index=0,
             skill_id=released_skill.skill_id,
             skill_name=released_skill.name,
+            input_mapping={"fields": {"username": "test"}},
         )
         plan.steps = [step]
         skill_map = {released_skill.skill_id: released_skill}
 
-        executor = SkillExecutor()
+        executor = SkillExecutor(llm_client=mock_llm, max_retries=0)
         final_state = await executor.execute_plan(plan, skill_map)
         assert step.status == StepStatus.SUCCESS
         assert plan.is_complete
+        assert step.result == {"filled_count": 1}
+        assert final_state["fill_form_result"] == {"filled_count": 1}
+        mock_llm.chat.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_plan_missing_skill(self):
@@ -677,6 +686,10 @@ class TestSkillRepair:
         assert result.repaired_skill is not None
         assert result.repaired_skill.state == SkillState.DRAFT
         assert result.repaired_skill.version != degraded_skill.version
+        assert result.repaired_skill.implementation.prompt_format == degraded_skill.implementation.prompt_format
+        assert result.repaired_skill.implementation.request_body_validation == degraded_skill.implementation.request_body_validation
+        assert result.repaired_skill.evaluation.harness_validation == {}
+        assert result.repaired_skill.evaluation.validation_summary is None
 
     @pytest.mark.asyncio
     async def test_repair_recommends_deprecate(self, mock_llm, degraded_skill):

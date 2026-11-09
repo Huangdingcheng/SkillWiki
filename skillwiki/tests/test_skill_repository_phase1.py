@@ -6,12 +6,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillos.api.deps import app_state
-from skillos.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
-from skillos.api.routes import graph, skills
-from skillos.layers.skill_repository.indexing import SearchQuery
-from skillos.models.graph_model import SkillEdge
-from skillos.models.skill_model import (
+from skillwiki.api.deps import app_state
+from skillwiki.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
+from skillwiki.api.routes import graph, skills
+from skillwiki.layers.skill_repository.indexing import SearchQuery
+from skillwiki.models.graph_model import SkillEdge
+from skillwiki.models.skill_model import (
     EdgeType,
     Skill,
     SkillImplementation,
@@ -88,6 +88,22 @@ def api_app(wiki: MemoryWikiManager, graph_mgr: MemoryGraphManager) -> FastAPI:
     app.include_router(skills.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     return app
+
+
+@pytest.mark.asyncio
+async def test_memory_new_version_records_parent_provenance(wiki: MemoryWikiManager):
+    source = await wiki.create(make_skill("source_skill"))
+
+    updated = await wiki.create_new_version(
+        source.skill_id,
+        bump="patch",
+        description="updated source skill",
+    )
+
+    assert updated.provenance is not None
+    assert updated.provenance.source_type == "adapt"
+    assert updated.provenance.parent_skill_ids == [source.skill_id]
+    assert updated.provenance.creation_context["source_version"] == source.version
 
 
 @pytest.mark.asyncio

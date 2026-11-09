@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from skillos.layers.skill_governance import (
+from skillwiki.layers.skill_governance import (
     GitVersionStore,
     GitVersionStoreError,
     read_skill_snapshot_at_ref,
@@ -15,7 +15,7 @@ from skillos.layers.skill_governance import (
     skill_snapshot_path,
     write_skill_snapshot,
 )
-from skillos.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
+from skillwiki.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 
 
 def _run_git(repo: Path, args: list[str]) -> None:

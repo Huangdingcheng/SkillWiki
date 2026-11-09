@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillos.config import LLMConfig
-from skillos.utils.llm_client import (
+from skillwiki.config import LLMConfig
+from skillwiki.utils.llm_client import (
     LLMAuthError,
     LLMClient,
     LLMError,

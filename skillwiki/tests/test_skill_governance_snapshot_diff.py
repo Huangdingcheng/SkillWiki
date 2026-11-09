@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from skillos.layers.skill_governance import (
+from skillwiki.layers.skill_governance import (
     GitVersionStore,
     commit_skill_snapshot,
     diff_skill_snapshots,
@@ -12,7 +12,7 @@ from skillos.layers.skill_governance import (
     skill_to_snapshot,
     skill_to_snapshot_json,
 )
-from skillos.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
+from skillwiki.models import Skill, SkillImplementation, SkillInterface, SkillState, SkillType
 
 
 def _run_git(repo: Path, args: list[str]) -> None:

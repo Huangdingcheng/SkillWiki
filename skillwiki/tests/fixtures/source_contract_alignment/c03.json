@@ -1,0 +1,252 @@
+{
+  "context_pack": {
+    "summary": "OpenAPI 3.0 spec for a sample Petstore API. It defines a POST /pet operation to add a new pet, OAuth2 implicit security with petstore_auth scopes, and schemas for Pet, Category, and Tag. The Pet request body is required and can be JSON or XML.",
+    "facts": [
+      "Server base URL is http://petstore.swagger.io/v2.",
+      "API title is OpenAPI Petstore, version 1.0.0, licensed Apache-2.0.",
+      "POST /pet operationId is addPet and summary is 'Add a new pet to the store'.",
+      "addPet returns 200 with a Pet schema in application/xml or application/json, and 405 for invalid input.",
+      "addPet security uses petstore_auth OAuth2 implicit flow with scopes write:pets and read:pets.",
+      "The Pet request body is required and supports application/json and application/xml.",
+      "Pet schema requires name and photoUrls.",
+      "Pet optional properties are id (int64), category (Category), tags (array of Tag), and status (enum available, pending, sold; deprecated).",
+      "Category name has pattern ^[a-zA-Z0-9]+[a-zA-Z0-9\\.\\-_]*[a-zA-Z0-9]+$.",
+      "OAuth2 authorizationUrl is http://petstore.swagger.io/api/oauth/dialog."
+    ],
+    "procedures": [
+      "Send POST request to /pet with a Pet object in JSON or XML.",
+      "Include OAuth2 bearer token authorized for write:pets or read:pets scope.",
+      "Ensure required fields name and photoUrls are present in the request body.",
+      "Optionally include id, category, tags, and status.",
+      "Handle 200 success response containing the created Pet, and 405 invalid input response."
+    ],
+    "constraints": [
+      "Request body is required.",
+      "Pet.name and Pet.photoUrls are required.",
+      "Pet.status is deprecated but still accepts available, pending, or sold.",
+      "Category.name must match the given regex pattern.",
+      "Security scopes must include write:pets or read:pets.",
+      "Content type must be application/json or application/xml."
+    ],
+    "examples": [
+      "POST /pet with JSON body {\"name\":\"doggie\",\"photoUrls\":[\"http://example.com/photo.jpg\"],\"status\":\"available\"}.",
+      "OAuth2 implicit flow authorization URL: http://petstore.swagger.io/api/oauth/dialog."
+    ],
+    "apis_tools": [
+      "POST /pet",
+      "petstore_auth OAuth2 implicit flow",
+      "components/requestBodies/Pet",
+      "components/schemas/Pet",
+      "components/schemas/Category",
+      "components/schemas/Tag"
+    ]
+  },
+  "challenges": [
+    {
+      "task_id": "challenge_1",
+      "task": "Construct a valid JSON request to add a new pet named 'doggie' with one photo URL and status 'available', including the required OAuth2 authorization header.",
+      "rubric": [
+        "Uses POST /pet endpoint.",
+        "Sets Content-Type to application/json.",
+        "Includes Authorization header with OAuth2 token.",
+        "Body includes required name and photoUrls.",
+        "Body includes status 'available'.",
+        "Body is valid against Pet schema."
+      ],
+      "expected_evidence": "A complete HTTP request with method, URL, headers, and JSON body that validates against the Pet schema and includes required auth.",
+      "failure_signal": "Missing required fields, wrong endpoint, missing auth header, or invalid status value."
+    },
+    {
+      "task_id": "challenge_2",
+      "task": "Explain how to authenticate the addPet request using the petstore_auth OAuth2 implicit flow and which scopes are acceptable.",
+      "rubric": [
+        "Identifies petstore_auth as OAuth2 implicit flow.",
+        "States authorizationUrl is http://petstore.swagger.io/api/oauth/dialog.",
+        "Lists acceptable scopes write:pets and read:pets.",
+        "Explains that the access token must be sent in the Authorization header."
+      ],
+      "expected_evidence": "A clear explanation referencing the security scheme, flow, authorization URL, scopes, and token usage.",
+      "failure_signal": "Wrong flow type, missing scopes, or incorrect authorization URL."
+    },
+    {
+      "task_id": "challenge_3",
+      "task": "Given a Pet JSON payload, validate whether it satisfies the Pet schema requirements and identify any errors.",
+      "rubric": [
+        "Checks presence of required name and photoUrls.",
+        "Validates photoUrls is an array of strings.",
+        "Validates status is one of available, pending, sold if present.",
+        "Validates category.name against the regex pattern if category is present.",
+        "Validates id is integer if present.",
+        "Validates tags is an array of Tag objects if present."
+      ],
+      "expected_evidence": "A validation report listing pass/fail for each schema constraint and specific error messages for violations.",
+      "failure_signal": "Misses required field checks, accepts invalid enum or regex values, or fails to report type mismatches."
+    }
+  ],
+  "candidates": [
+    {
+      "name": "petstore_add_pet_request_builder",
+      "description": "Builds and validates an authenticated POST /pet request for the Petstore API, including OAuth2 header and Pet schema validation.",
+      "skill_type": "atomic",
+      "tags": [
+        "ctx2skill",
+        "openapi",
+        "petstore",
+        "http",
+        "oauth2"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pet": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "photoUrls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "category": {
+                "type": "object"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "photoUrls"
+            ]
+          },
+          "access_token": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "application/json",
+              "application/xml"
+            ]
+          }
+        },
+        "required": [
+          "pet",
+          "access_token"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object"
+          },
+          "body": {
+            "type": "string"
+          },
+          "validation_errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "preconditions": [
+        "A Pet object is provided.",
+        "An OAuth2 access token with write:pets or read:pets scope is available."
+      ],
+      "postconditions": [
+        "A valid HTTP request is produced if the Pet object passes schema validation.",
+        "Validation errors are reported if the Pet object is invalid."
+      ],
+      "prompt_template": "Given a Pet object and OAuth2 access token, validate the Pet against the Petstore Pet schema (required name and photoUrls; optional id, category, tags, status enum). Then construct a POST request to http://petstore.swagger.io/v2/pet with Content-Type application/json or application/xml, Authorization Bearer token, and the serialized Pet body. Return the request details and any validation errors.",
+      "dependencies": [],
+      "components": [],
+      "parents": [],
+      "tool_calls": [],
+      "score": 0.86
+    },
+    {
+      "name": "petstore_oauth2_auth_explainer",
+      "description": "Explains and applies the petstore_auth OAuth2 implicit flow for Petstore API operations.",
+      "skill_type": "atomic",
+      "tags": [
+        "ctx2skill",
+        "openapi",
+        "oauth2",
+        "petstore"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "required_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "flow": {
+            "type": "string"
+          },
+          "authorization_url": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "header_format": {
+            "type": "string"
+          }
+        }
+      },
+      "preconditions": [
+        "The operation requires petstore_auth security."
+      ],
+      "postconditions": [
+        "Returns the OAuth2 flow, authorization URL, acceptable scopes, and header format."
+      ],
+      "prompt_template": "For the given Petstore operation, identify the petstore_auth OAuth2 implicit flow details: authorizationUrl http://petstore.swagger.io/api/oauth/dialog, acceptable scopes write:pets and read:pets, and that the access token is sent as an Authorization Bearer header.",
+      "dependencies": [],
+      "components": [],
+      "parents": [],
+      "tool_calls": [],
+      "score": 0.72
+    }
+  ],
+  "selected_reason": "petstore_add_pet_request_builder directly solves the core challenge of constructing and validating an authenticated POST /pet request, covering endpoint, headers, OAuth2 token usage, required fields, and schema constraints. It has a higher cross-time replay lite score because it produces concrete request artifacts and validation evidence, while the OAuth2 explainer only covers authentication and is better treated as a supporting capability."
+}

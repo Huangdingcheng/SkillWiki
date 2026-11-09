@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from skillos.layers.skill_runtime.reflection import ReflectionAgent, _REFLECT_PROMPT
-from skillos.layers.skill_runtime.verifier import (
+from skillwiki.layers.skill_runtime.reflection import ReflectionAgent, _REFLECT_PROMPT
+from skillwiki.layers.skill_runtime.verifier import (
     VerificationResult,
     VerifierAgent,
     _VERIFY_PROMPT,
 )
-from skillos.models.maintenance_model import (
+from skillwiki.models.maintenance_model import (
     MaintenanceRecommendedAction,
     MaintenanceTrigger,
 )
