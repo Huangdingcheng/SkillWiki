@@ -81,7 +81,7 @@ export const skillsApi = {
 
 export const lifecycleApi = {
   release: (id: string) =>
-    http.post<SkillSummary>(`/lifecycle/${id}/release`).then(r => r.data),
+    http.post<SkillSummary>(`/lifecycle/${id}/release`, {}).then(r => r.data),
 
   deprecate: (id: string, reason: string) =>
     http.post<SkillSummary>(`/lifecycle/${id}/deprecate`, { reason }).then(r => r.data),

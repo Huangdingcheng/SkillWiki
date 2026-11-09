@@ -150,3 +150,139 @@ async def test_repair_loop_projects_runs_for_distinct_child_identity(tmp_path, m
     result = await get_skill_only_projection(app=app)
     assert result.validation_evidence[old.skill_id][0]['outcome']=='failed'
     assert result.validation_evidence[child.skill_id][0]['outcome']=='passed'
+
+
+def _runtime_step(skill, step_id):
+    from skillwiki.layers.skill_governance.artifact_identity import canonical_skill_artifact_hash
+    return {'step_id': step_id, 'skill_id': skill.skill_id, 'status': 'success',
+            'execution_evidence': {'artifact_identity': {
+                'skill_id': skill.skill_id, 'skill_version': skill.version,
+                'artifact_hash': canonical_skill_artifact_hash(skill)}}}
+
+
+def _runtime_row(ident, skills, steps, summary=None):
+    return {'execution_id': ident, 'created_at': '2026-11-09T00:00:00',
+            'steps': steps, 'verifier_passed': True, 'verifier_summary': summary,
+            'experience_unit': {'metadata': {
+                'retrieved_skill_versions': {s.skill_id: s.version for s in skills}}}}
+
+
+@pytest.mark.asyncio
+async def test_runtime_projects_persisted_explicit_step_verdicts(tmp_path, monkeypatch):
+    from skillwiki.api.execution_history import history_directory, load
+    from skillwiki.api.routes.execution import (
+        _build_execution_experience_unit, _store_execution_history, _verify_plan_steps)
+    from skillwiki.api.schemas import ExecutionStepResult
+    from skillwiki.models.skill_model import SkillEvaluation
+    monkeypatch.setattr(workspace, 'default_harness_root', lambda: tmp_path/'harness')
+    wiki = MemoryWikiManager()
+    skills = [await wiki.create(Skill(name=name, description=name, evaluation=SkillEvaluation(
+        verifier_specs=[{'type': 'json_exists', 'path': path}])))
+        for name, path in [('explicit_pass', 'output.ok'), ('explicit_fail', 'output.missing')]]
+    app = SimpleNamespace(wiki=wiki, graph=MemoryGraphManager(), verifier=None,
+                          execution_trace_path=tmp_path/'traces/log.jsonl')
+    steps = [ExecutionStepResult(**_runtime_step(s, f'step-{i}'), step_index=i, skill_name=s.name,
+                                 outputs={'ok': True}, result={'ok': True})
+             for i, s in enumerate(skills)]
+    summary = _verify_plan_steps('check steps', steps, {s.skill_id: s for s in skills}, {}, app)
+    unit = _build_execution_experience_unit(
+        execution_id='explicit-verdicts', goal='check steps', status='failed', steps=steps,
+        final_state={}, retrieved_skills=[s.skill_id for s in skills],
+        retrieved_skill_versions={s.skill_id: s.version for s in skills},
+        verifier_passed=summary['passed'], verifier_summary=summary, total_latency_ms=0)
+    _store_execution_history(app=app, execution_id='explicit-verdicts', goal='check steps',
+        status='failed', steps=steps, success_count=2, total_latency_ms=0,
+        retrieved_skill_count=2, experience_unit=unit)
+    assert [r['passed'] for r in load(history_directory(app))[0]['verifier_summary']['results']] == [True, False]
+    data = await get_heterogeneous_graph(app=app)
+    verdicts = {n.metadata['skill_id']: n.metadata for n in data.nodes if n.kind == 'validation'}
+    assert [verdicts[s.skill_id]['outcome'] for s in skills] == ['passed', 'failed']
+    assert all(v['validation_scope'] == 'step' and v['qualification_proof'] is False for v in verdicts.values())
+    await wiki.update(skills[0].skill_id, description='changed artifact')
+    child = await wiki.create_new_version(skills[1].skill_id)
+    projection = await get_skill_only_projection(app=app)
+    assert projection.validation_evidence[skills[0].skill_id][0]['outcome'] == 'stale'
+    assert child.skill_id not in projection.validation_evidence
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('ambiguity', ['duplicate_result', 'wrong_skill', 'wrong_step', 'duplicate_step', 'non_boolean'])
+@pytest.mark.parametrize('single_step', [False, True])
+async def test_runtime_rejects_ambiguous_step_verdicts(tmp_path, monkeypatch, ambiguity, single_step):
+    from skillwiki.api.execution_history import save, history_directory
+    monkeypatch.setattr(workspace, 'default_harness_root', lambda: tmp_path/'harness')
+    wiki = MemoryWikiManager()
+    skill = await wiki.create(Skill(name='ambiguous', description='ambiguous'))
+    app = SimpleNamespace(wiki=wiki, graph=MemoryGraphManager(), execution_trace_path=tmp_path/'traces/log.jsonl')
+    step = _runtime_step(skill, 'step-a')
+    steps = [step, _runtime_step(skill, 'step-b')]
+    result = {'step_id': 'step-a', 'skill_id': skill.skill_id, 'passed': True}
+    results = [result]
+    if ambiguity == 'duplicate_result':
+        results.append(dict(result))
+    elif ambiguity == 'wrong_skill':
+        result['skill_id'] = 'another-skill'
+    elif ambiguity == 'wrong_step':
+        result['step_id'] = 'another-step'
+    elif ambiguity == 'duplicate_step':
+        steps[1] = dict(step)
+    else:
+        result['passed'] = 'true'
+    if single_step and ambiguity != 'duplicate_step':
+        steps = steps[:1]
+    save(history_directory(app), _runtime_row('ambiguous', [skill], steps, {'results': results}))
+    data = await get_heterogeneous_graph(app=app)
+    verdicts = [n.metadata for n in data.nodes if n.kind == 'validation']
+    assert len(verdicts) == len(steps)
+    expected_scope = 'single_step' if len(steps) == 1 else 'task_only'
+    assert all(v['outcome'] == 'not_evaluated' and v['validation_scope'] == expected_scope for v in verdicts)
+
+
+@pytest.mark.asyncio
+async def test_runtime_step_verdicts_do_not_mix_repeated_skill_steps(tmp_path, monkeypatch):
+    from skillwiki.api.execution_history import save, history_directory
+    monkeypatch.setattr(workspace, 'default_harness_root', lambda: tmp_path/'harness')
+    wiki = MemoryWikiManager()
+    skill = await wiki.create(Skill(name='repeated', description='repeated'))
+    app = SimpleNamespace(wiki=wiki, graph=MemoryGraphManager(), execution_trace_path=tmp_path/'traces/log.jsonl')
+    steps = [_runtime_step(skill, step_id) for step_id in ('first', 'second')]
+    results = [{'step_id': step_id, 'skill_id': skill.skill_id, 'passed': passed}
+               for step_id, passed in [('second', False), ('first', True)]]
+    save(history_directory(app), _runtime_row('repeated', [skill], steps, {'results': results}))
+    data = await get_heterogeneous_graph(app=app)
+    verdicts = {n.metadata['step_index']: n.metadata['outcome'] for n in data.nodes if n.kind == 'validation'}
+    assert verdicts == {0: 'passed', 1: 'failed'}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('invalid', ['skill_id', 'status', 'step_shape', 'row_shape', 'json', 'filename'])
+async def test_invalid_history_preserves_valid_events(tmp_path, monkeypatch, invalid):
+    from skillwiki.api.execution_history import save, history_directory
+    monkeypatch.setattr(workspace, 'default_harness_root', lambda: tmp_path/'harness')
+    wiki = MemoryWikiManager()
+    skill = await wiki.create(Skill(name='valid_survivor', description='valid survivor'))
+    app = SimpleNamespace(wiki=wiki, graph=MemoryGraphManager(), execution_trace_path=tmp_path/'traces/log.jsonl')
+    directory = history_directory(app)
+    save(directory, _runtime_row('valid', [skill], [_runtime_step(skill, 'valid-step')]))
+    bad_step = _runtime_step(skill, 'bad-step')
+    bad_row = _runtime_row('bad', [skill], [bad_step, _runtime_step(skill, 'survivor-step')])
+    if invalid == 'skill_id':
+        bad_step['skill_id'] = []
+    elif invalid == 'status':
+        bad_step['status'] = None
+    elif invalid == 'step_shape':
+        bad_row['steps'][0] = 42
+    elif invalid == 'row_shape':
+        bad_row['experience_unit'] = None
+    if invalid == 'json':
+        (directory/'broken.json').write_text('{', encoding='utf-8')
+    elif invalid == 'filename':
+        (directory/'wrong.json').write_text(json.dumps(bad_row), encoding='utf-8')
+    else:
+        save(directory, bad_row)
+    data = await get_heterogeneous_graph(app=app)
+    verdicts = [n.metadata for n in data.nodes if n.kind == 'validation']
+    expected = 2 if invalid in {'skill_id', 'status', 'step_shape'} else 1
+    assert len(verdicts) == expected
+    assert any(v['execution_id'] == 'valid' and v['outcome'] == 'passed' for v in verdicts)
+    assert data.stats['evidence_sync']['issues']

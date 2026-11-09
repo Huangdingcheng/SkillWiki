@@ -1,14 +1,57 @@
 """Project saved events for navigation; graph verdicts never grant release rights."""
 from __future__ import annotations
 
+import hashlib
 import json
 from urllib.parse import quote
 
-from .execution_history import history_directory, load as load_history
+from .execution_history import history_directory
+from ..utils.filesystem_paths import filesystem_path
 from ..layers.skill_runtime.harness.workspace import HarnessEvidenceStore
 from ..layers.skill_governance.artifact_identity import canonical_skill_artifact_hash
 from ..models.graph_model import (ExecutionGraphNode, ValidationGraphNode,
                                  HeteroGraphEdge, HeteroEdgeType)
+
+
+def _load_projection_history(directory, diagnostics):
+    """Read independently so one corrupt receipt cannot hide valid graph events."""
+    directory = filesystem_path(directory)
+    rows = []
+    if not directory.exists():
+        return rows
+    for path in sorted(directory.glob('*.json')):
+        try:
+            row = json.loads(path.read_bytes())
+            ident = row.get('execution_id') if isinstance(row, dict) else None
+            if not isinstance(ident, str) or not ident:
+                raise ValueError('invalid execution receipt identity')
+            # Keep the immutable execution-history filename contract.
+            expected = hashlib.sha256(ident.encode('utf-8')).hexdigest() + '.json'
+            if path.name != expected or not isinstance(row.get('created_at'), str):
+                raise ValueError('invalid execution receipt identity or timestamp')
+            rows.append(row)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            diagnostics['issues'].append({'receipt': path.name, 'reason': type(exc).__name__})
+    return sorted(rows, key=lambda row: (row['created_at'], row['execution_id']))
+
+
+def _step_verdict(row, steps, step):
+    """Only a unique explicit step and Skill match can supply a step verdict."""
+    scope = 'single_step' if len(steps) == 1 else 'task_only'
+    summary = row.get('verifier_summary')
+    if not isinstance(summary, dict) or 'results' not in summary:
+        return (row.get('verifier_passed') if len(steps) == 1 else None), scope
+    results = summary['results']
+    step_id, skill_id = step.get('step_id'), step.get('skill_id')
+    if not isinstance(results, list) or not isinstance(step_id, str) or not step_id:
+        return None, scope
+    matches = [result for result in results if isinstance(result, dict)
+               and result.get('step_id') == step_id and result.get('skill_id') == skill_id]
+    occurrences = sum(isinstance(item, dict) and item.get('step_id') == step_id
+                      and item.get('skill_id') == skill_id for item in steps)
+    if occurrences == 1 and len(matches) == 1 and isinstance(matches[0].get('passed'), bool):
+        return matches[0]['passed'], 'step'
+    return None, scope
 
 
 def receipt_projection(app, skills):
@@ -104,7 +147,7 @@ def receipt_projection(app, skills):
     directory = history_directory(app)
     if directory is not None:
         try:
-            rows = load_history(directory)
+            rows = _load_projection_history(directory, diagnostics)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             rows = []
             diagnostics['issues'].append({'receipt': 'execution-history', 'reason': type(exc).__name__})
@@ -117,25 +160,31 @@ def receipt_projection(app, skills):
                 diagnostics['issues'].append({'receipt': row['execution_id'], 'reason': 'invalid execution receipt shape'})
                 continue
             for index, step in enumerate(steps):
-                if not isinstance(step, dict):
-                    diagnostics['issues'].append({'receipt': row['execution_id'], 'reason': 'invalid step'})
-                    continue
-                evidence = step.get('execution_evidence') or {}
-                identity = evidence.get('artifact_identity') or {} if isinstance(evidence, dict) else {}
-                if not isinstance(identity, dict):
-                    identity = {}
-                bound_hash = identity.get('artifact_hash') if (identity.get('skill_id') == step.get('skill_id')
-                             and identity.get('skill_version') == versions.get(step.get('skill_id'))) else None
-                # A multi-step task verdict is not a per-Skill verdict.
-                passed = row.get('verifier_passed') if len(steps) == 1 else None
-                outcome = 'passed' if passed is True else 'failed' if passed is False else 'not_evaluated'
-                event(ident=f'runtime:{row["execution_id"]}:{index}',
-                      skill_id=step.get('skill_id'), version=versions.get(step.get('skill_id')),
-                      artifact_hash=bound_hash,
-                      status=step.get('status', 'unknown'), outcome=outcome,
-                      kind='task_execution', validator='runtime_verifier',
-                      reference=f'/api/v1/execution/history/{quote(row["execution_id"], safe="")}',
-                      extra={'execution_id': row['execution_id'], 'step_index': index,
-                             'validation_scope': 'single_step' if len(steps) == 1 else 'task_only',
-                             'task_verifier_passed': row.get('verifier_passed'), 'artifact_hash_verified': False})
+                try:
+                    if not isinstance(step, dict):
+                        raise ValueError('invalid step')
+                    skill_id = step.get('skill_id')
+                    status = step.get('status', 'unknown')
+                    if not isinstance(skill_id, str) or not skill_id or not isinstance(status, str):
+                        raise ValueError('invalid step identity or status')
+                    evidence = step.get('execution_evidence') or {}
+                    identity = evidence.get('artifact_identity') or {} if isinstance(evidence, dict) else {}
+                    if not isinstance(identity, dict):
+                        identity = {}
+                    bound_hash = identity.get('artifact_hash') if (identity.get('skill_id') == skill_id
+                                 and identity.get('skill_version') == versions.get(skill_id)) else None
+                    # A task verdict cannot replace a missing or ambiguous step verdict.
+                    passed, scope = _step_verdict(row, steps, step)
+                    outcome = 'passed' if passed is True else 'failed' if passed is False else 'not_evaluated'
+                    event(ident=f'runtime:{row["execution_id"]}:{index}',
+                          skill_id=skill_id, version=versions.get(skill_id),
+                          artifact_hash=bound_hash, status=status, outcome=outcome,
+                          kind='task_execution', validator='runtime_verifier',
+                          reference=f'/api/v1/execution/history/{quote(row["execution_id"], safe="")}',
+                          extra={'execution_id': row['execution_id'], 'step_index': index,
+                                 'validation_scope': scope, 'task_verifier_passed': row.get('verifier_passed'),
+                                 'artifact_hash_verified': False})
+                except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                    diagnostics['issues'].append({'receipt': row['execution_id'], 'step_index': index,
+                                                  'reason': type(exc).__name__})
     return nodes, edges, diagnostics

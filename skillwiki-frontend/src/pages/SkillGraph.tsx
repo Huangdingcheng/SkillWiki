@@ -350,7 +350,7 @@ function weightedEdgeStrength(edge: ForceEdgeDatum | undefined, baseAttraction: 
 
 function formatEdgeLabel(edge: GraphViewEdgeData) {
   const score = edge.confidence ?? edge.weight
-  return `${formatEdgeType(edge.edge_type)} / ${score.toFixed(2)}`
+  return `${formatEdgeType(edge.edge_type)} / score ${score.toFixed(2)}`
 }
 
 function shouldShowNodeLabel(
@@ -403,10 +403,27 @@ function formatMetadataValue(value: unknown) {
 }
 
 function metadataEntries(metadata?: Record<string, unknown>) {
-  const INTERNAL_KEYS = new Set(['synthetic', 'mock', 'depth', 'domain'])
+  const INTERNAL_KEYS = new Set(['depth', 'domain'])
+  // Keep provenance and verdict limitations visible in the existing eight rows.
+  const priority = [
+    'synthetic', 'mock', 'event_type', 'outcome', 'recorded_outcome',
+    'artifact_binding', 'skill_id', 'skill_version', 'receipt_ref',
+    'execution_id', 'validation_id', 'qualification_proof',
+  ]
+  const rank = (key: string) => {
+    const index = priority.indexOf(key)
+    return index < 0 ? priority.length : index
+  }
   return Object.entries(metadata ?? {}).filter(
     ([key, value]) => !INTERNAL_KEYS.has(key) && value !== undefined && value !== null && value !== '',
-  )
+  ).sort(([left], [right]) => rank(left) - rank(right))
+}
+
+function canonicalSkillId(node: GraphViewNodeData | null) {
+  if (!node || node.kind !== 'skill') return null
+  const skillId = node.metadata?.skill_id
+  if (typeof skillId === 'string' && skillId.trim()) return skillId.trim()
+  return node.id.startsWith('skill:') ? node.id.slice('skill:'.length) : node.id
 }
 
 function graphDataToView(data: GraphData): GraphViewData {
@@ -508,6 +525,9 @@ export default function SkillGraph() {
   const containerRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<GraphInstance | null>(null)
   const openedFromQuery = useRef<string | null>(null)
+  const graphRequestId = useRef(0)
+  const graphMounted = useRef(true)
+  const initialLoadStarted = useRef(false)
 
   const [viewMode, setViewMode] = useState<GraphViewMode>('skill_only')
   const [mode, setMode] = useState<GraphMode>('full')
@@ -521,6 +541,7 @@ export default function SkillGraph() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [centerSkillId, setCenterSkillId] = useState<string | null>(null)
   const [depth, setDepth] = useState(2)
+  const [subgraphDepth, setSubgraphDepth] = useState(2)
   const [layoutSettings, setLayoutSettings] = useState<GraphLayoutSettings>(loadLayoutSettings)
   const [layoutDraft, setLayoutDraft] = useState<GraphLayoutSettings>(loadLayoutSettings)
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false)
@@ -583,43 +604,66 @@ export default function SkillGraph() {
   }, [])
 
   const loadGraphForView = useCallback(async (nextView: GraphViewMode) => {
+    const requestId = ++graphRequestId.current
+    initialLoadStarted.current = true
     setLoading(true)
+    setSubgraphLoading(false)
     setError(null)
+    // Empty the previous graph before changing its label, including on failure.
+    setGraphData(null)
+    setViewMode(nextView)
+    setMode('full')
     resetSelection()
     try {
       const data = await graphApi.view(nextView, 300)
+      if (!graphMounted.current || requestId !== graphRequestId.current) return
       setGraphData(data)
-      setMode('full')
     } catch (err) {
+      if (!graphMounted.current || requestId !== graphRequestId.current) return
       setError(getApiErrorMessage(err, 'Failed to load graph data'))
     } finally {
-      setLoading(false)
+      if (graphMounted.current && requestId === graphRequestId.current) setLoading(false)
     }
   }, [resetSelection])
 
   const loadSubgraph = useCallback(async (skillId: string, nextDepth = depth) => {
     if (!skillId) return
+    const requestId = ++graphRequestId.current
+    initialLoadStarted.current = true
+    setLoading(true)
     setSubgraphLoading(true)
     setError(null)
-    setViewMode('skill_only')
     try {
       const data = await graphApi.subgraph(skillId, nextDepth)
+      if (!graphMounted.current || requestId !== graphRequestId.current) return
       setGraphData(graphDataToView(data))
+      setViewMode('skill_only')
       setMode('subgraph')
       setCenterSkillId(skillId)
+      setSubgraphDepth(nextDepth)
       setSelectedNodeId(skillId)
       setSelectedEdgeId(null)
       setEdgeFilter([])
     } catch (err) {
+      if (!graphMounted.current || requestId !== graphRequestId.current) return
       setError(getApiErrorMessage(err, 'Failed to load subgraph; current view is preserved'))
     } finally {
-      setSubgraphLoading(false)
-      setLoading(false)
+      if (graphMounted.current && requestId === graphRequestId.current) {
+        setSubgraphLoading(false)
+        setLoading(false)
+      }
     }
   }, [depth])
 
   useEffect(() => {
-    if (viewMode !== 'skill_only') return
+    graphMounted.current = true
+    return () => {
+      graphMounted.current = false
+      graphRequestId.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
     const querySkillId = new URLSearchParams(location.search).get('skill_id')
     const timeoutId = window.setTimeout(() => {
       if (querySkillId && openedFromQuery.current !== querySkillId) {
@@ -627,12 +671,12 @@ export default function SkillGraph() {
         void loadSubgraph(querySkillId, depth)
         return
       }
-      if (!querySkillId && !graphData) {
+      if (!querySkillId && !initialLoadStarted.current) {
         void loadGraphForView('skill_only')
       }
     }, 0)
     return () => window.clearTimeout(timeoutId)
-  }, [depth, graphData, loadGraphForView, loadSubgraph, location.search, viewMode])
+  }, [depth, loadGraphForView, loadSubgraph, location.search])
 
   useEffect(() => {
     if (!graphData?.nodes.length || !graphShellRef.current) return
@@ -923,7 +967,6 @@ export default function SkillGraph() {
   }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, nebulaMode, selectedEdgeId, selectedNodeId])
 
   const handleViewChange = (nextView: GraphViewMode) => {
-    setViewMode(nextView)
     openedFromQuery.current = null
     navigate('/graph', { replace: true })
     void loadGraphForView(nextView)
@@ -940,18 +983,19 @@ export default function SkillGraph() {
   const returnToFullGraph = () => {
     openedFromQuery.current = null
     navigate('/graph', { replace: true })
-    setViewMode('skill_only')
     void loadGraphForView('skill_only')
   }
 
   const openWiki = () => {
-    if (!selectedNode || selectedNode.kind !== 'skill') return
-    navigate(`/wiki?skill_id=${encodeURIComponent(selectedNode.id)}`)
+    const skillId = canonicalSkillId(selectedNode)
+    if (!skillId) return
+    navigate(`/wiki?skill_id=${encodeURIComponent(skillId)}`)
   }
 
   const expandSelectedSkill = () => {
-    if (!selectedNode || selectedNode.kind !== 'skill') return
-    void loadSubgraph(selectedNode.id, depth)
+    const skillId = canonicalSkillId(selectedNode)
+    if (!skillId) return
+    void loadSubgraph(skillId, depth)
   }
 
   const hasNodes = Boolean(graphData?.nodes.length)
@@ -1129,7 +1173,7 @@ export default function SkillGraph() {
           type="info"
           showIcon
           title={`Subgraph center: ${centerNode.name}`}
-          description={`depth=${depth}, ${graphData?.nodes.length || 0} nodes, ${graphData?.edges.length || 0} edges.`}
+          description={`depth=${subgraphDepth}, ${graphData?.nodes.length || 0} nodes, ${graphData?.edges.length || 0} edges.`}
           action={(
             <Button size="small" icon={<RollbackOutlined />} onClick={returnToFullGraph}>
               Back to full graph
@@ -1228,11 +1272,11 @@ export default function SkillGraph() {
                 <Descriptions.Item label="Target">
                   {nodeById.get(selectedEdge.target)?.name || selectedEdge.target}
                 </Descriptions.Item>
-                <Descriptions.Item label="Weight">
+                <Descriptions.Item label="Relation weight">
                   {selectedEdge.weight.toFixed(2)}
                 </Descriptions.Item>
                 {selectedEdge.confidence !== undefined && selectedEdge.confidence !== null && (
-                  <Descriptions.Item label="Confidence">
+                  <Descriptions.Item label="Relation score (not probability)">
                     {selectedEdge.confidence.toFixed(2)}
                   </Descriptions.Item>
                 )}
