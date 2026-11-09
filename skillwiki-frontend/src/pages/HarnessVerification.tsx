@@ -298,20 +298,30 @@ function CurrentBenchFlowEvidence() {
   const [matrix, setMatrix] = useState<FormalBenchFlowCondition[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await harnessApi.currentBenchflowRuns()
+  const loadRequest = useRef(0)
+  const load = useCallback(() => {
+    const request = ++loadRequest.current
+    return harnessApi.currentBenchflowRuns().then(response => {
+      if (request !== loadRequest.current) return
       setRuns(response.runs)
       setMatrix(response.formal_matrix || [])
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Load current BenchFlow evidence failed'))
-    } finally {
-      setLoading(false)
-    }
+    }).catch(err => {
+      if (request === loadRequest.current) {
+        setError(getApiErrorMessage(err, 'Load current BenchFlow evidence failed'))
+      }
+    }).finally(() => {
+      if (request === loadRequest.current) setLoading(false)
+    })
   }, [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    return () => { loadRequest.current += 1 }
+  }, [load])
+  const refresh = () => {
+    setLoading(true)
+    setError(null)
+    void load()
+  }
   const columns: TableColumnsType<CurrentBenchFlowRun> = [
     { title: 'Condition', render: (_, run) => <Space direction="vertical" size={0}><Text strong>{run.condition}</Text><Text code>{run.run_id}</Text></Space> },
     { title: 'Status', render: (_, run) => <Tag color={run.status === 'completed' ? 'green' : 'volcano'}>{run.status}</Tag> },
@@ -328,7 +338,7 @@ function CurrentBenchFlowEvidence() {
     { title: 'Attempts', dataIndex: 'attempt_count' },
     { title: 'Latest attempt', render: (_, row) => row.run_id || 'Not started' },
   ]
-  return <Card title="Current M2 BenchFlow runs" variant="borderless" style={{ borderRadius: 8, marginBottom: 20 }} extra={<Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>Refresh current runs</Button>}>
+  return <Card title="Current M2 BenchFlow runs" variant="borderless" style={{ borderRadius: 8, marginBottom: 20 }} extra={<Button icon={<ReloadOutlined />} loading={loading} onClick={refresh}>Refresh current runs</Button>}>
     {error && <Alert type="error" showIcon message={error} />}
     <Alert type="info" showIcon message="Fresh runs only" description="These rows are receipt-bound to the current M2/M5 evidence directory. Historical pilots and fixtures are shown separately; a row never grants promotion." style={{ marginBottom: 12 }} />
     <Text strong>Formal comparison: six conditions</Text>

@@ -160,6 +160,7 @@ type GraphInstance = {
   fitView: (options?: unknown, animation?: unknown) => void | Promise<void>
   getZoom: () => number
   on: (eventName: string, handler: (event: GraphEvent) => void) => void
+  off: (eventName: string, handler: (event: GraphEvent) => void) => void
   render: () => void | Promise<void>
   updateEdgeData: (edges: Array<{ id: string; style: { badgeText: string } }>) => void
   updateNodeData: (nodes: Array<{ id: string; style: Record<string, unknown> }>) => void
@@ -401,24 +402,6 @@ function formatMetadataValue(value: unknown) {
   }
 }
 
-function relationStrengthSummary(metadata?: Record<string, unknown>) {
-  const relationStrength = metadata?.relation_strength
-  if (!relationStrength || typeof relationStrength !== 'object' || Array.isArray(relationStrength)) return ''
-  const relation = relationStrength as Record<string, unknown>
-  const strong = relation.strong && typeof relation.strong === 'object' && !Array.isArray(relation.strong)
-    ? Object.keys(relation.strong as Record<string, unknown>).map(formatEdgeType).join(', ')
-    : ''
-  const weak = relation.weak && typeof relation.weak === 'object' && !Array.isArray(relation.weak)
-    ? Object.keys(relation.weak as Record<string, unknown>).map(formatEdgeType).join(', ')
-    : ''
-  const claimBoundary = typeof relation.claim_boundary === 'string' ? relation.claim_boundary : ''
-  return [
-    strong ? `Strong relations: ${strong}.` : '',
-    weak ? `Weak projected relations: ${weak}.` : '',
-    claimBoundary,
-  ].filter(Boolean).join(' ')
-}
-
 function metadataEntries(metadata?: Record<string, unknown>) {
   const INTERNAL_KEYS = new Set(['synthetic', 'mock', 'depth', 'domain'])
   return Object.entries(metadata ?? {}).filter(
@@ -533,7 +516,8 @@ export default function SkillGraph() {
   const [subgraphLoading, setSubgraphLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [edgeFilter, setEdgeFilter] = useState<string[]>([])
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [nodeSelection, setSelectedNodeId] = useState<string | null | undefined>()
+  const [selectionSearch, setSelectionSearch] = useState(location.search)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [centerSkillId, setCenterSkillId] = useState<string | null>(null)
   const [depth, setDepth] = useState(2)
@@ -542,6 +526,16 @@ export default function SkillGraph() {
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false)
   const [canvasSize, setCanvasSize] = useState<GraphCanvasSize>({ width: 800, height: 560 })
   const [nebulaMode, setNebulaMode] = useState(true)
+
+  // URL preselection is derived until the user makes an explicit selection.
+  // Reset it on navigation without a second render triggered by an effect.
+  if (selectionSearch !== location.search) {
+    setSelectionSearch(location.search)
+    setSelectedNodeId(undefined)
+  }
+  const selectedNodeId = nodeSelection === undefined
+    ? new URLSearchParams(location.search).get('preselect')
+    : nodeSelection
 
   const selectedNode = useMemo(
     () => graphData?.nodes.find(node => node.id === selectedNodeId) || null,
@@ -582,7 +576,7 @@ export default function SkillGraph() {
   }, [graphData, viewMode])
 
   const resetSelection = useCallback(() => {
-    setSelectedNodeId(null)
+    setSelectedNodeId(undefined)
     setSelectedEdgeId(null)
     setCenterSkillId(null)
     setEdgeFilter([])
@@ -640,15 +634,6 @@ export default function SkillGraph() {
     return () => window.clearTimeout(timeoutId)
   }, [depth, graphData, loadGraphForView, loadSubgraph, location.search, viewMode])
 
-  // Auto-select a node when ?preselect=<id> is in the URL and graph is loaded
-  useEffect(() => {
-    if (!graphData?.nodes.length) return
-    const preselectId = new URLSearchParams(location.search).get('preselect')
-    if (preselectId && graphData.nodes.some(n => n.id === preselectId)) {
-      setSelectedNodeId(preselectId)
-    }
-  }, [graphData, location.search])
-
   useEffect(() => {
     if (!graphData?.nodes.length || !graphShellRef.current) return
 
@@ -683,14 +668,10 @@ export default function SkillGraph() {
     if (!graphData || !containerRef.current || graphData.nodes.length === 0) return
 
     let disposed = false
+    let cleanupGraph: (() => void) | undefined
 
     import('@antv/g6').then((G6) => {
       if (disposed || !containerRef.current) return
-
-      if (graphRef.current) {
-        graphRef.current.destroy()
-        graphRef.current = null
-      }
 
       const filteredEdges = edgeFilter.length > 0
         ? graphData.edges.filter(edge => edgeFilter.includes(edge.edge_type))
@@ -862,7 +843,7 @@ export default function SkillGraph() {
       }
 
       const updateHoveredNodeLabel = (id: string | undefined, visible: boolean) => {
-        if (!id || layoutSettings.labelMode !== 'hover') return
+        if (disposed || !graphReady || !id || layoutSettings.labelMode !== 'hover') return
         const node = graphData.nodes.find(item => item.id === id)
         if (!node) return
         const selected = id === selectedNodeId
@@ -907,21 +888,29 @@ export default function SkillGraph() {
       })
 
       // Zoom → nebula mode transition
-      g.on('aftertransform', () => {
-        if (disposed) return
+      const handleTransform = () => {
+        if (disposed || !graphReady) return
         const zoom = g.getZoom()
         setNebulaMode(zoom < NEBULA_ZOOM_THRESHOLD)
         syncEdgeLabelVisibility()
-      })
+      }
 
-      graphRef.current = g
+      cleanupGraph = () => {
+        graphReady = false
+        g.off('aftertransform', handleTransform)
+        if (graphRef.current === g) graphRef.current = null
+        g.destroy()
+      }
       void Promise.resolve(g.render()).then(() => {
         if (!disposed) {
           graphReady = true
+          graphRef.current = g
+          // G6 emits a transform while constructing its viewport, before
+          // context.viewport is assigned. Subscribe only after render.
+          g.on('aftertransform', handleTransform)
           syncEdgeLabelVisibility()
           void Promise.resolve(g.fitView({ when: 'always' }, { duration: 160 })).then(() => {
             syncEdgeLabelVisibility()
-            g.on('aftertransform', syncEdgeLabelVisibility)
           })
         }
       })
@@ -929,10 +918,7 @@ export default function SkillGraph() {
 
     return () => {
       disposed = true
-      if (graphRef.current) {
-        graphRef.current.destroy()
-        graphRef.current = null
-      }
+      cleanupGraph?.()
     }
   }, [canvasSize, centerSkillId, edgeFilter, graphData, layoutSettings, nebulaMode, selectedEdgeId, selectedNodeId])
 
@@ -974,7 +960,6 @@ export default function SkillGraph() {
   const selectedEdgeMetadata = metadataEntries(selectedEdge?.metadata)
   const viewCopy = GRAPH_VIEW_COPY[viewMode]
   const detailTitle = selectedEdge ? 'Edge Details' : 'Node Details'
-  const relationStrengthText = relationStrengthSummary(graphData?.metadata)
 
   const zoomGraph = (ratio: number) => {
     void graphRef.current?.zoomBy(ratio, { duration: 180 })
