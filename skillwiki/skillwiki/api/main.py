@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _default_skill_storage_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "storage" / "skill_repo" / "SkillStorage"
+    return Path(os.environ.get("SKILLWIKI_STORAGE_DIR", "skillwiki-data")).expanduser().resolve()
 
 
 @asynccontextmanager

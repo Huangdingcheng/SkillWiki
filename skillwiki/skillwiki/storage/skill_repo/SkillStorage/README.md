@@ -1,8 +1,10 @@
-# SkillStorage
+# Historical demonstration fixtures
 
-Git-backed Skill storage repository for SkillWiki.
+This directory preserves the original demonstration skill payloads, metrics and
+lifecycle events. They are sample records, not results of the paper evaluation.
+The server starts with a separate `skillwiki-data` directory by default and does
+not automatically load these fixtures. Copy this directory to a separate writable
+location and select it with `--storage-dir` only when exploring these samples.
 
-- `skills/{skill_name}/{version}.json`: immutable skill version payload
-- `skills/{skill_name}/versions.json`: per-skill version manifest
-- `metadata/skills_index.json`: query index
-- `metadata/events.jsonl`: append-only lifecycle event log
+Layout: `skills/` contains version payloads; `metadata/` contains indexes and events.
+Keep your own runtime store outside this source directory.

@@ -25,11 +25,6 @@ _DIMENSION = 128
 _WORKSPACES: dict[str, Path] = {}
 _BUDGET_LOCKS: dict[str, threading.Lock] = {}
 _BUDGET_LOCKS_GUARD = threading.Lock()
-_DEFAULT_PAPERQA_ENV = Path(
-    r"C:\Users\m1516\Documents\New project 3\hermes-paperqa-unified-materials"
-    r"\third_party\paper-qa-upstream\.env.paperqa.local"
-)
-
 
 @dataclass(frozen=True)
 class FabricRetrievalResult:
@@ -42,11 +37,13 @@ class FabricRetrievalResult:
 
 def _paperqa_env_path() -> Path:
     configured = os.environ.get("SKILLWIKI_PAPERQA_ENV_FILE")
-    return Path(configured).expanduser() if configured else _DEFAULT_PAPERQA_ENV
+    if not configured:
+        raise RuntimeError("Set SKILLWIKI_PAPERQA_ENV_FILE for remote embeddings")
+    return Path(configured).expanduser()
 
 
 def _remote_embedding_provider() -> tuple[Any, str]:
-    """Load Hermes/PaperQA embedding settings without copying secrets.
+    """Load explicitly configured PaperQA-compatible embedding settings without copying secrets.
 
     Remote use is deliberately fail-closed: an explicit mode and an explicit
     budget ledger are required before any provider call can happen. This lets
@@ -85,7 +82,7 @@ def _remote_embedding_provider() -> tuple[Any, str]:
     )
     if not env_path.is_file() or not model or not api_key or not api_base:
         raise RuntimeError(
-            "Hermes/PaperQA embedding configuration is incomplete; "
+            "Remote embedding configuration is incomplete; "
             "endpoint and credentials were not loaded"
         )
     dimension_raw = (

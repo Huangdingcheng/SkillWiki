@@ -8,6 +8,7 @@
 
 <br/>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/Node.js-20.19%2B%20%7C%2022.12%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=social)](https://github.com/Huangdingcheng/SkillWiki)
@@ -83,6 +84,9 @@ See [materials, methods and results](EXPERIMENTS.md), [中文实验说明](EXPER
 ---
 
 ## Quick Start
+
+[Docker deployment](DEPLOYMENT.md) · [Validation guide](TESTING.md) · [Agent CLI package](skillwiki-skill/README.md)
+
 
 ### Requirements
 

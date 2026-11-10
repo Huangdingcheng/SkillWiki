@@ -1,0 +1,56 @@
+name: Product checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e "./skillwiki[api,dev]"
+      - run: python -m pytest skillwiki/tests/test_cli_contract.py skillwiki/tests/test_report_skillsbench_mapping.py skillwiki/tests/test_portable_configuration.py -o addopts= -q
+      - run: python public-experiments/verify.py
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skillwiki-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: skillwiki-frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+  containers:
+    runs-on: ubuntu-latest
+    env:
+      LLM_API_KEY: offline-container-check
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - run: docker compose build
+      - name: Start isolated deployment and check persistence
+        run: |
+          docker compose up -d --wait --wait-timeout 180
+          curl --fail http://localhost:8000/health
+          curl --fail http://localhost:8080/wiki
+          curl --fail http://localhost:8080/api/v1/skills?limit=1
+          docker compose exec -T api sh -c 'echo retained > /data/persistence-check'
+          docker compose up -d --force-recreate --wait --wait-timeout 180
+          docker compose exec -T api sh -c 'test "$(cat /data/persistence-check)" = retained'
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail 100
+      - name: Clean isolated deployment
+        if: always()
+        run: docker compose down --volumes

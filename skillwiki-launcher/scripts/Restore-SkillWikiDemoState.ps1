@@ -48,7 +48,7 @@ function Resolve-SkillWikiPython {
         }
     }
 
-    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-one-click-launcher\config.local.ps1."
+    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-launcher\config.local.ps1."
 }
 
 function Get-LauncherState {

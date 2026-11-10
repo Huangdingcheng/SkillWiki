@@ -1,53 +1,20 @@
-# SkillWiki Skill Package
+# SkillWiki agent package
 
-This package provides three skills for Claude Code and Codex agents to interact with a SkillWiki knowledge base via the `skillwiki` CLI.
+Three focused agent instructions expose the native SkillWiki CLI workflow:
 
-## Skills
+| Skill | Capability |
+|---|---|
+| `skillwiki-ingest` | Import sources and review candidates |
+| `skillwiki-verify` | Native local verification and identity-bound evidence |
+| `skillwiki-manage` | Asset inspection, provenance, execution and governed versions |
 
-| Skill | Trigger | What it does |
-|---|---|---|
-| `skillwiki-ingest` | "ingest a document", "import skills from file" | Guides the full ingest → audit → promote pipeline |
-| `skillwiki-verify` | "verify a skill", "run the verify loop" | Runs execute-verify-repair loop until postconditions pass |
-| `skillwiki-manage` | "list skills", "run a task", "find a skill" | General skill management, query, and execution |
+Install the backend CLI with `pip install -e "./skillwiki[api]"`, start the server,
+and follow the [user guide](../USER_GUIDE.md). For Claude Code, install this plugin
+folder using your client's plugin mechanism; for Codex, place or link the three
+`skills/*` directories into your configured project skill directory. These are
+CLI instruction assets; the main execution harness remains `local_skillwiki`.
 
-## Installation
-
-### Claude Code
-
-Copy this folder into your project's `.claude/plugins/` directory:
-
-```bash
-cp -r skillwiki-skill /your-project/.claude/plugins/skillwiki
-```
-
-Or install globally:
-
-```bash
-cp -r skillwiki-skill ~/.claude/plugins/skillwiki
-```
-
-### Codex
-
-Place the folder anywhere accessible and point Codex to it via your agent config.
-
-## Requirements
-
-- SkillWiki backend running (`skillwiki serve`)
-- `skillwiki` CLI installed (`pip install -e ./skillwiki`)
-- Python 3.10+
-
-## Structure
-
-```
-skillwiki-skill/
-├── .claude-plugin/
-│   └── plugin.json          # plugin metadata
-├── skills/
-│   ├── skillwiki-ingest/
-│   │   └── SKILL.md         # ingest pipeline skill
-│   ├── skillwiki-verify/
-│   │   └── SKILL.md         # verify loop skill
-│   └── skillwiki-manage/
-│       └── SKILL.md         # management & query skill
-└── README.md
-```
+Verification defaults to one attempt with repair and promotion disabled. Release
+uses its own current-identity evidence workflow. Model-backed operations use your
+configured provider and can incur charges. Request examples are available in
+[user-guide-examples](../user-guide-examples/README.md).

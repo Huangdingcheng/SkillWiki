@@ -27,13 +27,7 @@ $StopScript = Join-Path $ScriptDir "Stop-SkillWikiDemo.ps1"
 
 New-Item -ItemType Directory -Force $LogDir | Out-Null
 
-# Read the existing Hermes/PaperQA configuration at runtime when the file is
-# present. The path is safe to pass around; the file contents and credentials
-# never enter this launcher config, logs, or Git.
-$HermesPaperQaEnv = "C:\Users\m1516\Documents\New project 3\hermes-paperqa-unified-materials\third_party\paper-qa-upstream\.env.paperqa.local"
-if (Test-Path $HermesPaperQaEnv) {
-    $env:SKILLWIKI_PAPERQA_ENV_FILE = $HermesPaperQaEnv
-}
+# Optional integrations use explicit environment variables or config.local.ps1.
 
 if (Test-Path $ConfigFile) {
     Write-Host "Loading local config: $ConfigFile"
@@ -189,7 +183,7 @@ function Resolve-SkillWikiPython {
         }
     }
 
-    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-one-click-launcher\config.local.ps1."
+    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-launcher\config.local.ps1."
 }
 
 function Get-FreePort([int]$PreferredPort) {

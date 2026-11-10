@@ -1,36 +1,28 @@
-version: '3.9'
-
 services:
   api:
-    build:
-      context: ./skillwiki
-      dockerfile: Dockerfile
+    build: ./skillwiki
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_API_URL=${LLM_API_URL:-https://api.deepseek.com}
-      - LLM_MODEL=${LLM_MODEL:-deepseek-flash}
-    command: >
-      python -m skillwiki.api.main
-      --api-key ${LLM_API_KEY}
-      --host 0.0.0.0
-      --port 8000
+      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY in your shell or local .env}
+      LLM_API_URL: ${LLM_API_URL:-https://api.deepseek.com}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-flash}
+    volumes:
+      - skillwiki-data:/data
+      - skillwiki-receipts:/artifacts
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 20s
   frontend:
-    build:
-      context: ./skillwiki-frontend
-      dockerfile: Dockerfile
+    build: ./skillwiki-frontend
     ports:
-      - "80:80"
+      - "127.0.0.1:8080:80"
     depends_on:
-      - api
-
-networks:
-  default:
-    name: skillwiki-network
+      api:
+        condition: service_healthy
+volumes:
+  skillwiki-data:
+  skillwiki-receipts:

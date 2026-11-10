@@ -120,3 +120,7 @@ skillwiki/quickstart.bat
 
 # Local immutable image archive; its SHA and construction evidence are versioned.
 artifacts/m3-p26-image-restore/task-image.tar
+
+# Portable server and report output defaults
+skillwiki-data/
+artifacts/skillsbench-mapping/

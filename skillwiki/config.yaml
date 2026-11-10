@@ -1,11 +1,13 @@
 # SkillWiki 配置文件示例
-# 注意：API key 必须通过命令行参数 --api-key 提供
+# Optional per-agent configuration for clients that explicitly load this file.
+# Standard server startup uses LLM_API_KEY / LLM_API_URL / LLM_MODEL and CLI flags.
+# Database examples are optional integrations, not CLI storage backend choices.
 
 # ========== 全局 LLM 配置 ==========
 llm:
   api_url: "https://yunwu.ai"
   model: "gpt-5.4-nano"
-  # api_key: 通过命令行参数 --api-key 提供
+  # api_key: use the environment; never commit credentials
   temperature: 0.7
   max_tokens: 2000
   timeout: 30
