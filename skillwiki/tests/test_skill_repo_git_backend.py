@@ -57,6 +57,37 @@ def commit_count(path) -> int:
     return int(result.stdout.strip())
 
 
+@pytest.mark.asyncio
+async def test_catalog_reads_skip_git_preparation_without_caching_payloads(tmp_path, monkeypatch):
+    wiki = SkillWikiManager(storage_dir=tmp_path / 'SkillStorage', auto_commit=False)
+    original = await wiki.create(make_skill(description='before'))
+    other = GitSkillStore(wiki.store.base_dir, auto_commit=False)
+    changed = original.model_copy(deep=True)
+    changed.description = 'written by another session'
+    other.update_skill_version(changed)
+
+    def unexpected_git(*args, **kwargs):
+        pytest.fail('A prepared catalog read must not spawn Git processes')
+
+    monkeypatch.setattr(subprocess, 'run', unexpected_git)
+    assert (await wiki.list())[0].description == 'written by another session'
+    assert (await wiki.list_all_versions())[0].skill_id == original.skill_id
+    assert (await wiki.get(original.skill_id)).description == changed.description
+
+
+def test_prepared_store_repairs_missing_layout_and_handles_explicit_reinit(tmp_path):
+    store = GitSkillStore(tmp_path / 'SkillStorage', auto_commit=False)
+    store.init_repo(initial_commit=False)
+    store.readme_file.unlink()
+    store.init_repo(initial_commit=False)
+    assert store.readme_file.is_file()
+    store.init_repo(initial_commit=False, remote_url='https://example.invalid/skills.git')
+    assert store._run_git(['remote', 'get-url', 'origin'], capture=True).stdout.strip() == 'https://example.invalid/skills.git'
+    store.add_skill(make_skill())
+    store.init_repo(initial_commit=False, reset=True)
+    assert store.list_skills() == []
+
+
 def test_git_store_create_writes_version_manifest_index_and_event(tmp_path):
     store = GitSkillStore(tmp_path / "SkillStorage", auto_commit=True)
     store.init_repo(initial_commit=True)

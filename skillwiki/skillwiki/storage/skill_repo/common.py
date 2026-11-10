@@ -64,6 +64,7 @@ class GitSkillStore:
         self.readme_file = self.base_dir / "README.md"
         self.auto_commit = auto_commit
         self._lock = threading.RLock()
+        self._initialized = False
 
     # ------------------------------------------------------------------
     # Init / status
@@ -79,6 +80,17 @@ class GitSkillStore:
     ) -> None:
         """Initialize the local SkillStorage repo."""
         with self._lock:
+            # Reads call this boundary too. Reconfiguring Git for every JSON
+            # payload starts hundreds of processes on a catalog/graph request.
+            # Cache preparation only, never Skill data; missing layout, reset,
+            # remote changes and explicit initial commits still take the full path.
+            if (self._initialized and not reset and not remote_url and not initial_commit
+                    and self._is_git_repo()
+                    and self.skills_dir.is_dir() and self.metadata_dir.is_dir()
+                    and all(path.is_file() for path in (
+                        self.index_file, self.events_file, self.config_file, self.readme_file))):
+                return
+            self._initialized = False
             if reset and self.base_dir.exists():
                 shutil.rmtree(self.base_dir)
 
@@ -131,6 +143,7 @@ class GitSkillStore:
             if initial_commit:
                 self._append_event({"action": "init_repo", "reset": reset})
                 self._git_commit("Initialize SkillStorage repository")
+            self._initialized = True
 
     def repo_status(self) -> Dict[str, Any]:
         self.init_repo(initial_commit=False)
