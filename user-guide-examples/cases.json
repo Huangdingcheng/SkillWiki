@@ -1,0 +1,14 @@
+[
+  {
+    "test_id": "guide-case-1",
+    "name": "result field present",
+    "goal": "Return a JSON object with result",
+    "input_data": {},
+    "verifier_specs": [
+      {
+        "type": "json_exists",
+        "path": "output.result"
+      }
+    ]
+  }
+]

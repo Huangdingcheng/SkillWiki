@@ -4,6 +4,12 @@ This launcher asks for a local DeepSeek/OpenAI-compatible model configuration wh
 
 ## Quick Start
 
+First install Git, Python 3.10+ and Node.js 20.19+ or 22.12+, then install
+backend and frontend dependencies using the [root quick start](../README.md#quick-start).
+The launcher does not install dependencies. It prefers `skillwiki/.venv` when
+available; set `SKILLOS_PYTHON` in local config to choose another environment.
+[User guide](../USER_GUIDE.md) · [中文指南](../USER_GUIDE.zh-CN.md).
+
 From the repository root, double-click:
 
 ```text
@@ -26,12 +32,17 @@ To stop the demo, double-click:
 STOP_SKILLWIKI_DEMO.bat
 ```
 
-Skills and their real dependency graph survive restarts in the default Git backend. To explicitly import public demo fixtures, double-click:
+Skills and their real dependency graph survive restarts in the default Git backend. Normal persistence does not require a restore script. To explicitly import public demo fixtures, double-click:
 
 ```text
 RESTORE_SKILLWIKI_DEMO_STATE.bat
 ```
 
+This explicit restore can also run verification/model-backed steps. It adds
+product demonstration data; it does not restore the paper experiment dataset.
+
+The launcher prints the actual URLs and records them in
+`runtime/skillwiki-demo.pids.json`; busy ports can result in different URLs.
 Default local URLs:
 
 ```text
@@ -72,7 +83,7 @@ For non-interactive offline smoke checks only, advanced users may pass `-AllowPl
 - Repository backend: `git`, stored in `runtime/skill-storage-git`
 - Governance snapshots: `runtime/governance-git` unless `SKILLOS_GOVERNANCE_REPO` is set
 - Synthetic demo fixtures: disabled; use `-SeedDemo` to add them explicitly
-- LLM model: `deepseek-flash`; retries: `0`
+- Suggested LLM model identifier: `deepseek-flash`; configure a model your account supports; retries: `0`
 - WebSocket: disabled by default for a more stable Windows local demo
 - Open page: `/wiki`
 
@@ -105,3 +116,16 @@ Demo-state restore reports are also written under:
 ```text
 skillwiki-launcher\runtime\demo-state-runs
 ```
+
+## Data and troubleshooting
+
+Configuration, PID records, logs and copied/demo stores under `runtime/` stay
+local. Preserve `skill-storage-git`, `governance-git`, execution receipts and
+`../artifacts/harness-runs` when backing up a complete experience. Do not upload
+credentials or private source materials.
+
+For a page that keeps loading, check the printed backend URL plus `/health`,
+then the printed frontend URL plus `/api/v1/skills?limit=1`. The launcher sets
+the frontend proxy to the selected backend port. For manual startup, use the
+explicit proxy settings in the root quick start. A new empty store is expected
+to show an empty library/graph until content is created.

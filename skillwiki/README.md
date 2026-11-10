@@ -4,42 +4,22 @@ SkillWiki is a research system that models Skills as versioned, auditable, graph
 
 ## Quick Start
 
-### Requirements
-
-- Python 3.10+
-- Node.js 18+ (frontend only)
-
-### Install
+Follow the repository [installation and startup instructions](../README.md#quick-start)
+for the Python environment, persistent Git backend and correctly configured
+frontend proxy. Use Python 3.10+; the locked frontend toolchain needs Node.js
+20.19+ or 22.12+.
 
 ```bash
-git clone https://github.com/Huangdingcheng/SkillWiki.git
-cd SkillWiki/skillwiki
-
-python -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
-
-pip install -r requirements.txt
-pip install -e ".[api]"
+# From this directory, with your virtual environment active:
+python -m pip install -e ".[api]"
+# Set LLM_API_KEY, LLM_API_URL and LLM_MODEL in this terminal first.
+git init ./governance
+skillwiki serve --host 127.0.0.1 --port 8001 --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
 ```
 
-### Start the backend
-
-```bash
-skillwiki serve --port 8001 --api-key YOUR_LLM_API_KEY
-# or
-python -m skillwiki.api.main --port 8001 --api-key YOUR_LLM_API_KEY
-```
-
-### Start the frontend (optional)
-
-```bash
-cd ../skillwiki-frontend
-npm install
-npm run dev        # http://localhost:3000
-```
-
----
+Keep the server running. API health: <http://127.0.0.1:8001/health>;
+request schemas: <http://127.0.0.1:8001/docs>.
+The [user guide](../USER_GUIDE.md) covers the CLI request files and the web workflow.
 
 ## CLI Reference
 
@@ -146,6 +126,12 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 
 ### Utilities
 
+`init` and `ping` are provider-configuration/connectivity utilities. Their local
+`--api-url` refers to the model provider, unlike the root CLI option that points
+to SkillWiki. They are not required to start the server with environment values;
+`ping` can make a provider request. Prefer the environment-based startup in the
+user guide for normal use.
+
 ```bash
 skillwiki init --api-key KEY [--api-url URL] [--model MODEL]
 skillwiki ping --api-key KEY
@@ -218,9 +204,9 @@ skillwiki/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_API_KEY` | — | LLM API key (required) |
-| `LLM_API_URL` | `https://yunwu.ai` | LLM base URL |
-| `LLM_MODEL` | `claude-sonnet-4-6` | Model name |
-| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
+| `LLM_API_URL` | `https://api.deepseek.com` (API server) | Provider base URL; set explicitly |
+| `LLM_MODEL` | `deepseek-flash` (API server) | Model available to your provider account; set explicitly |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8000` (bare Vite) | Set to the actual backend URL; quick start uses port 8001 |
 
 ---
 
@@ -229,68 +215,9 @@ skillwiki/
 MIT
 
 
-## Native CLI workflow
+## Detailed native CLI workflow
 
-The CLI calls the same API as the web UI. Install the API extra with
-`pip install -e ".[api]"` from the `skillwiki` backend directory. Use
-`skillwiki --help` and `skillwiki <command> --help` for the full command tree.
-
-```bash
-# Persistent Git storage, no synthetic seed data, zero LLM transport retries.
-# Set LLM_API_KEY in the environment; avoid putting credentials in shell history.
-skillwiki serve --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
-# Optional: --model MODEL --llm-api-url URL. memory is an ephemeral alternative.
-
-# Global --api-url is the SkillWiki server, not the LLM provider endpoint.
-skillwiki --api-url http://127.0.0.1:8001 skill list --tag nlp
-skillwiki skill search "extract structured records" --mode lexical
-skillwiki ingest run document ./source.md
-# Edit the parsed draft into the native candidate-review request JSON.
-skillwiki ingest audit-candidate --file candidate.json
-skillwiki ingest create-candidate --file candidate.json
-skillwiki audit SKILL_ID --json
-
-# Calls the native runtime. Ingestion, auditing and verification may incur model costs.
-# Default: one total attempt, no repair, no promotion. No automatic fallback.
-skillwiki verify SKILL_ID --test-cases cases.json --json
-# Explicit opt-ins: --allow-repair --max-attempts 3 --promote
-skillwiki skill exec SKILL_ID --input '{"text":"example"}'
-skillwiki execution history
-skillwiki execution get EXECUTION_ID
-skillwiki execution trace EXECUTION_ID
-skillwiki execution experience EXECUTION_ID
-
-# Lifecycle commands pass the native API request object unchanged.
-skillwiki lifecycle new-version SKILL_ID --file version.json
-skillwiki skill versions SKILL_ID
-skillwiki lifecycle snapshot SKILL_ID --file snapshot.json
-skillwiki lifecycle history SKILL_ID
-skillwiki lifecycle diff SKILL_ID --from-ref COMMIT --to-ref HEAD
-skillwiki lifecycle release SKILL_ID --file release-evidence.json
-skillwiki lifecycle rollback SKILL_ID --file recovery.json
-```
-
-Request file examples (UTF-8 JSON):
-
-- `candidate.json`: `{"source_type":"document","unit_id":"source-1","raw_content":"Return a structured result.","name":"structured_result","description":"Return a structured result.","prompt_template":"Return {\"result\":true}","prompt_format":"literal"}`.
-- `cases.json`: an array of native harness cases, e.g. `[{"test_id":"case-1","name":"result present","goal":"Return the result","input_data":{},"verifier_specs":[{"type":"json_exists","path":"output.result"}]}]`.
-- `version.json`: `{"bump":"patch","description":"Updated documented behavior"}`; include `interface` or `implementation` objects when changing behavior.
-- `snapshot.json`: `{"author":"reviewer","message":"Review candidate snapshot"}`.
-- `recovery.json`: `{"source_ref":"COMMIT","source_version":"1.0.0","reason":"Review recovery draft"}`.
-- `release-evidence.json`: the complete native `EvidenceReleaseRequest` (`schema_version`, `manifest`, `traces`, `evaluation`, optional `author`); use actual identity-bound run evidence, not a copied success flag. The running server's `/docs` describes the schema.
-
-`audit` is a non-persisting draft contract check that may use the server-configured model; it does not grant validation or
-release evidence to the stored identity. `new-version` and `rollback` create
-separate drafts; verify and release their new identities afresh. `promote` remains
-a manual transition command, subject to server gates. Evidence-bound release uses
-`lifecycle release`.
-
-`verify` returns exit code 1 for any non-passing outcome and prints the native score
-object and evidence path. Audits, skill/task execution and file-based governance
-commands also return failure exits when the server reports failure. JSON output
-is available on audit, verify and lifecycle/readback commands. The CLI never retries
-HTTP calls; after a timeout, inspect server execution history before resubmitting.
-The global `--http-timeout` controls the HTTP deadline (default 600 seconds).
-`--max-retries` is retained only as an alias for **total** `--max-attempts`.
-External `claude_code` and `codex_cli` adapters are explicit selections with their
-own environment requirements; they are never used as native execution fallbacks.
+See the [shared user guide](../USER_GUIDE.md#cli-workflow) for candidate review,
+verification cases, execution receipts, new versions, snapshots, evidence-bound
+release and recovery. Both interfaces use the native API; no external agent is
+automatically substituted when a local run fails.

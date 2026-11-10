@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import ts from 'typescript'
+import vm from 'node:vm'
 
 async function loadTs(path) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -55,7 +56,69 @@ assert.equal(executionEvidence({ ...base, experience_recorded: 'true' }).experie
 assert.equal(executionEvidence({ ...base, verifier_passed: 'true' }).verificationLabel, 'Verification not confirmed')
 
 const demo = await readFile(new URL('../src/pages/SelfEvolutionDemo.tsx', import.meta.url), 'utf8')
-assert.doesNotMatch(demo, /setTimeout|setInterval|setPhase|setPhase|Self-Evolution Loop Completed|Reuse signals updated/)
+assert.doesNotMatch(demo, /setInterval|setPhase|Self-Evolution Loop Completed|Reuse signals updated/)
+// A deferred backend read is valid. Execute the actual timer-owning effect and
+// check that only the backend can populate its result, including failure and
+// unmount/stale-response paths. A timer alone must never fabricate completion.
+const demoAst = ts.createSourceFile('SelfEvolutionDemo.tsx', demo, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const timerEffects = []
+function visit(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(demoAst) === 'useEffect'
+      && node.arguments[0]?.getText(demoAst).includes('window.setTimeout')) {
+    timerEffects.push(node.arguments[0])
+  }
+  ts.forEachChild(node, visit)
+}
+visit(demoAst)
+assert.equal(timerEffects.length, 1)
+const effectJs = ts.transpileModule('var effect = ' + timerEffects[0].getText(demoAst), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+}).outputText
+function deferredRead() {
+  let resolve, reject, timer, cleanup, selected, error
+  const runs = [], calls = [], generation = { current: 0 }
+  const pending = new Promise((yes, no) => { resolve = yes; reject = no })
+  const context = vm.createContext({
+    skillId: 'actual-skill', generation,
+    window: { setTimeout: (fn, delay) => { assert.equal(delay, 0); timer = fn; return 1 }, clearTimeout: () => { timer = undefined } },
+    setRuns: value => runs.push(value), setError: value => { error = value },
+    setLoading: () => {}, setSelectedRunId: value => { selected = value },
+    evolutionApi: { componentRuns: id => { calls.push(id); return pending } },
+    getApiErrorMessage: err => err.message,
+  })
+  vm.runInContext(effectJs, context)
+  cleanup = context.effect()
+  return { calls, runs, resolve, reject, start: () => timer(), cleanup,
+    selected: () => selected, error: () => error }
+}
+async function flushRead() { for (let i = 0; i < 6; i += 1) await Promise.resolve() }
+const saved = [{ run_id: 'real-backend-run', status: 'failed' }]
+const loadingRead = deferredRead()
+assert.equal(loadingRead.calls.length, 0)
+assert.equal(loadingRead.runs.length, 0)
+loadingRead.start()
+assert.deepEqual(loadingRead.calls, ['actual-skill'])
+assert.equal(loadingRead.runs.length, 1)
+assert.equal(loadingRead.runs[0].length, 0)
+assert.equal(loadingRead.selected(), undefined)
+loadingRead.resolve({ runs: saved })
+await flushRead()
+assert.equal(loadingRead.runs[1], saved)
+assert.equal(loadingRead.selected()(undefined), 'real-backend-run')
+const failedRead = deferredRead()
+failedRead.start()
+failedRead.reject(new Error('backend unavailable'))
+await flushRead()
+assert.equal(failedRead.runs.length, 1)
+assert.equal(failedRead.selected(), undefined)
+assert.equal(failedRead.error(), 'backend unavailable')
+const staleRead = deferredRead()
+staleRead.start()
+staleRead.cleanup()
+staleRead.resolve({ runs: saved })
+await flushRead()
+assert.equal(staleRead.runs.length, 1)
+assert.equal(staleRead.selected(), undefined)
 const versions = await readFile(new URL('../src/pages/VersionControl.tsx', import.meta.url), 'utf8')
 assert.equal(versions.split('handleSelect(newSkill.skill_id, { loadCurrentDiff: true })').length - 1, 2)
 assert.equal(versions.includes('skills.some(skill => skill.skill_id === querySkillId)'), false)

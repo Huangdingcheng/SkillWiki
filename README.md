@@ -10,7 +10,7 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node.js-20.19%2B%20%7C%2022.12%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=social)](https://github.com/Huangdingcheng/SkillWiki)
 
 
@@ -73,63 +73,96 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 
 ### Requirements
 
-- Python 3.10+
-- Node.js 18+ *(frontend only)*
+- Git and Python 3.10+.
+- Node.js 20.19+ or 22.12+ (frontend; required by the locked Vite toolchain).
+- Your own OpenAI-compatible model endpoint, model name and API key for model-backed operations.
 
 ### Install
 
 ```bash
 git clone https://github.com/Huangdingcheng/SkillWiki.git
 cd SkillWiki/skillwiki
+python -m venv .venv
+```
 
-python -m venv venv
-source venv/bin/activate      # Linux / Mac
-venv\Scripts\activate         # Windows
+Activate the environment, then install the backend:
 
-pip install -r requirements.txt
-pip install -e ".[api]"
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+```
+
+```bash
+python -m pip install -e ".[api]"
 ```
 
 ### Start the backend
 
-```bash
-skillwiki serve --port 8001 --api-key YOUR_LLM_API_KEY
-```
-
-### Start the frontend *(optional)*
+Set `LLM_API_KEY`, `LLM_API_URL` and `LLM_MODEL` in this terminal using your own
+provider configuration. See the [user guide](USER_GUIDE.md#model-configuration)
+for shell examples. Keep this terminal running:
 
 ```bash
-cd ../skillwiki-frontend
-npm install
-npm run dev    # → http://localhost:3000
+git init ./governance
+skillwiki serve --host 127.0.0.1 --port 8001 --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
 ```
+
+Backend health: <http://127.0.0.1:8001/health>. API schemas: <http://127.0.0.1:8001/docs>.
+
+### Start the frontend (optional)
+
+In a second terminal, enter `SkillWiki/skillwiki-frontend`, install the locked
+dependencies and explicitly point the development proxy at the backend:
+
+```bash
+npm ci
+```
+
+```powershell
+# Windows PowerShell
+$env:SKILLOS_API_TARGET = "http://127.0.0.1:8001"
+$env:VITE_SKILLOS_DISABLE_WS = "1"
+npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+```bash
+# Linux / macOS
+SKILLOS_API_TARGET=http://127.0.0.1:8001 VITE_SKILLOS_DISABLE_WS=1 npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+Open <http://127.0.0.1:5174/wiki>. Run only the command block for your shell.
 
 ### One-click launcher (Windows)
 
-Double-click **`START_SKILLWIKI_DEMO.bat`** in the repository root. On first run you will be prompted for your LLM endpoint and API key (saved to `skillwiki-launcher\config.local.ps1`, which is Git-ignored — never commit it).
+After installing the backend and frontend dependencies above, double-click
+**`START_SKILLWIKI_DEMO.bat`** in the repository root. The launcher starts both
+services and prompts for missing model configuration. Its local configuration
+and runtime data are Git-ignored. See the [launcher guide](skillwiki-launcher/README.md).
+The launcher may choose another free port; use the URL printed at startup.
 
-```
-Backend:  http://127.0.0.1:8001
-Frontend: http://127.0.0.1:5174/wiki
-```
-
-Restore the public demo fixtures after a restart:
-
-```
-RESTORE_SKILLWIKI_DEMO_STATE.bat
-```
+New stores are empty by default. Skills persist across restarts with the Git
+backend. `RESTORE_SKILLWIKI_DEMO_STATE.bat` explicitly adds public demonstration
+fixtures and can run verification/model-backed operations; it is not needed to
+recover an ordinary persisted store and does not reproduce paper results.
 
 ---
 
 ## Demo Walkthrough
 
+Step-by-step instructions: [User guide](USER_GUIDE.md) · [中文使用指南](USER_GUIDE.zh-CN.md) · [Frontend setup](skillwiki-frontend/README.md).
+
 | Step | Page | What to explore |
 |:---:|---|---|
 | 1 | [`/wiki`](http://127.0.0.1:5174/wiki) | Skill library — browse, filter by state / tag, inspect schemas |
 | 2 | [`/ingest`](http://127.0.0.1:5174/ingest) | Paste an API doc or upload a file; watch candidates extracted live |
-| 3 | [`/graph`](http://127.0.0.1:5174/graph) | Provenance knowledge graph — Nebula, Readable, and Debug view presets |
-| 4 | [`/harness`](http://127.0.0.1:5174/harness) | Execute-verify loop; observe automated repair attempts |
-| 5 | [`/evaluation`](http://127.0.0.1:5174/evaluation) | SkillsBench P0 sparse-subset analysis |
+| 3 | [`/graph`](http://127.0.0.1:5174/graph) | Skill-only, Provenance and Version impact views; inspect persisted identities and receipts |
+| 4 | [`/harness`](http://127.0.0.1:5174/harness) | Select Local; inspect attempts and verdicts; repair and promotion are explicit options |
+| 5 | [`/evaluation`](http://127.0.0.1:5174/evaluation) | Inspect the available evaluation records; imported historical results remain historical |
 | 6 | [`/versions`](http://127.0.0.1:5174/versions) | Business-readable diffs and re-verification after changes |
 
 ---
@@ -227,79 +260,26 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 | Variable | Default | Description |
 |---|---|---|
 | `LLM_API_KEY` | — | LLM API key *(required)* |
-| `LLM_API_URL` | `https://api.deepseek.com` | LLM base URL |
-| `LLM_MODEL` | `deepseek-flash` | DeepSeek V4.1 Flash API model name |
-| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
+| `LLM_API_URL` | `https://api.deepseek.com` (API server) | OpenAI-compatible provider base URL; set explicitly |
+| `LLM_MODEL` | `deepseek-flash` (API server) | Provider model identifier; set one available to your account |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8000` (bare Vite) | Set to `http://127.0.0.1:8001` for the commands above; launcher sets its actual port |
+| `VITE_SKILLOS_DISABLE_WS` | unset | Set `1` for the local polling experience; launcher does this by default |
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 SkillWiki Authors
+MIT © 2026 SkillWiki Authors
 
 
-## Native CLI workflow
+## User documentation and experiment scope
 
-The CLI calls the same API as the web UI. Install the API extra with
-`pip install -e ".[api]"` from the `skillwiki` backend directory. Use
-`skillwiki --help` and `skillwiki <command> --help` for the full command tree.
+- [User guide](USER_GUIDE.md): model configuration, CLI request files, lifecycle, graph evidence and troubleshooting.
+- [中文使用指南](USER_GUIDE.zh-CN.md): 本地启动、主要操作、CLI 与前端对应关系。
+- [Frontend developer guide](skillwiki-frontend/README.md): routes, proxy configuration and checks.
+- [Source provenance](integration-provenance/README.md): experiment snapshot versus subsequent product integration.
 
-```bash
-# Persistent Git storage, no synthetic seed data, zero LLM transport retries.
-# Set LLM_API_KEY in the environment; avoid putting credentials in shell history.
-skillwiki serve --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
-# Optional: --model MODEL --llm-api-url URL. memory is an ephemeral alternative.
-
-# Global --api-url is the SkillWiki server, not the LLM provider endpoint.
-skillwiki --api-url http://127.0.0.1:8001 skill list --tag nlp
-skillwiki skill search "extract structured records" --mode lexical
-skillwiki ingest run document ./source.md
-# Edit the parsed draft into the native candidate-review request JSON.
-skillwiki ingest audit-candidate --file candidate.json
-skillwiki ingest create-candidate --file candidate.json
-skillwiki audit SKILL_ID --json
-
-# Calls the native runtime. Ingestion, auditing and verification may incur model costs.
-# Default: one total attempt, no repair, no promotion. No automatic fallback.
-skillwiki verify SKILL_ID --test-cases cases.json --json
-# Explicit opt-ins: --allow-repair --max-attempts 3 --promote
-skillwiki skill exec SKILL_ID --input '{"text":"example"}'
-skillwiki execution history
-skillwiki execution get EXECUTION_ID
-skillwiki execution trace EXECUTION_ID
-skillwiki execution experience EXECUTION_ID
-
-# Lifecycle commands pass the native API request object unchanged.
-skillwiki lifecycle new-version SKILL_ID --file version.json
-skillwiki skill versions SKILL_ID
-skillwiki lifecycle snapshot SKILL_ID --file snapshot.json
-skillwiki lifecycle history SKILL_ID
-skillwiki lifecycle diff SKILL_ID --from-ref COMMIT --to-ref HEAD
-skillwiki lifecycle release SKILL_ID --file release-evidence.json
-skillwiki lifecycle rollback SKILL_ID --file recovery.json
-```
-
-Request file examples (UTF-8 JSON):
-
-- `candidate.json`: `{"source_type":"document","unit_id":"source-1","raw_content":"Return a structured result.","name":"structured_result","description":"Return a structured result.","prompt_template":"Return {\"result\":true}","prompt_format":"literal"}`.
-- `cases.json`: an array of native harness cases, e.g. `[{"test_id":"case-1","name":"result present","goal":"Return the result","input_data":{},"verifier_specs":[{"type":"json_exists","path":"output.result"}]}]`.
-- `version.json`: `{"bump":"patch","description":"Updated documented behavior"}`; include `interface` or `implementation` objects when changing behavior.
-- `snapshot.json`: `{"author":"reviewer","message":"Review candidate snapshot"}`.
-- `recovery.json`: `{"source_ref":"COMMIT","source_version":"1.0.0","reason":"Review recovery draft"}`.
-- `release-evidence.json`: the complete native `EvidenceReleaseRequest` (`schema_version`, `manifest`, `traces`, `evaluation`, optional `author`); use actual identity-bound run evidence, not a copied success flag. The running server's `/docs` describes the schema.
-
-`audit` is a non-persisting draft contract check that may use the server-configured model; it does not grant validation or
-release evidence to the stored identity. `new-version` and `rollback` create
-separate drafts; verify and release their new identities afresh. `promote` remains
-a manual transition command, subject to server gates. Evidence-bound release uses
-`lifecycle release`.
-
-`verify` returns exit code 1 for any non-passing outcome and prints the native score
-object and evidence path. Audits, skill/task execution and file-based governance
-commands also return failure exits when the server reports failure. JSON output
-is available on audit, verify and lifecycle/readback commands. The CLI never retries
-HTTP calls; after a timeout, inspect server execution history before resubmitting.
-The global `--http-timeout` controls the HTTP deadline (default 600 seconds).
-`--max-retries` is retained only as an alias for **total** `--max-attempts`.
-External `claude_code` and `codex_cli` adapters are explicit selections with their
-own environment requirements; they are never used as native execution fallbacks.
+These instructions run the product. The paper's frozen inputs, candidates, raw
+receipts and analysis package are not included in this product PR. A fresh model
+run creates new evidence and may differ from the reported answers; the UI's
+public demo fixtures are not the paper's result dataset.

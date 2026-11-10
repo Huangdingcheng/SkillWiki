@@ -1,0 +1,24 @@
+{
+  "source_type": "document",
+  "unit_id": "guide-source-1",
+  "raw_content": "Return a JSON object containing result: true.",
+  "name": "guide_structured_result",
+  "description": "Return a JSON object containing result: true.",
+  "input_schema": {
+    "type": "object",
+    "properties": {}
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "result": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "result"
+    ]
+  },
+  "prompt_template": "Return {\"result\":true}",
+  "prompt_format": "literal"
+}
