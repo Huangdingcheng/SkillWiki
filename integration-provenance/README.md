@@ -51,9 +51,14 @@ approximately 0.3–0.4 seconds after restart, compared with about 20 seconds
 before the fix. This is a local performance observation, not a scale benchmark.
 The browser/native checks span their recorded integration revisions.
 
+The [public evaluation companion](../public-experiments/README.md) now provides
+task materials, source snapshots, aggregate results and offline consistency checks.
+The [results page](../EXPERIMENTS.md) separates experimental runtime revisions
+from this product integration.
+
 Remaining boundaries: historical research-fixture-dependent tests are not a
 portable full-suite acceptance; dependency findings remain under review; the
-complete paper experiment package is not included here. The [user guide](../USER_GUIDE.md)
+complete historical runtime and raw-receipt rerun package is not included here. The [user guide](../USER_GUIDE.md)
 separates product operations, historical records and paper reproduction.
 
 The documentation follow-up replaces the old blanket timer assertion in

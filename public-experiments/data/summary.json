@@ -1,0 +1,52 @@
+{
+  "model_calls": 4590,
+  "task_answers": 4572,
+  "update_proposals": 18,
+  "q1": [
+    {
+      "condition": "A0",
+      "inputs": 60,
+      "technical_repeats": 2,
+      "answers": 120,
+      "execution_completed": 120,
+      "format_valid": 120,
+      "raw_correct": 84,
+      "final_correct": 84
+    },
+    {
+      "condition": "A1",
+      "inputs": 60,
+      "technical_repeats": 2,
+      "answers": 120,
+      "execution_completed": 120,
+      "format_valid": 120,
+      "raw_correct": 112,
+      "final_correct": 112
+    },
+    {
+      "condition": "A2",
+      "inputs": 60,
+      "technical_repeats": 2,
+      "answers": 120,
+      "execution_completed": 120,
+      "format_valid": 120,
+      "raw_correct": 120,
+      "final_correct": 120
+    }
+  ],
+  "model": {
+    "name": "deepseek-flash",
+    "temperature": 0,
+    "task_max_tokens": 2048,
+    "proposal_max_tokens": 4096,
+    "thinking": "disabled",
+    "retries": 0,
+    "harness": "local_skillwiki"
+  },
+  "independent_units": {
+    "q1_inputs": 60,
+    "governance_states": 60,
+    "update_events": 12
+  },
+  "latest_experiment_product_manifest_sha256": "6bc1ec5741173c8522b07431866645ca0f1e63e717b4a666c6522bd5ac370761"
+}

@@ -1,0 +1,663 @@
+[
+  {
+    "state_id": "G01-A",
+    "pair_id": "G01",
+    "theme": "normal_release",
+    "anchor": "API-P parent",
+    "scenario": "complete valid proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G01-B",
+    "pair_id": "G01",
+    "theme": "normal_release",
+    "anchor": "API-P parent",
+    "scenario": "semantic verification failed",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G02-A",
+    "pair_id": "G02",
+    "theme": "normal_release",
+    "anchor": "API-G parent",
+    "scenario": "complete valid proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G02-B",
+    "pair_id": "G02",
+    "theme": "normal_release",
+    "anchor": "API-G parent",
+    "scenario": "semantic verification failed",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G03-A",
+    "pair_id": "G03",
+    "theme": "normal_release",
+    "anchor": "API-P updated",
+    "scenario": "complete valid proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G03-B",
+    "pair_id": "G03",
+    "theme": "normal_release",
+    "anchor": "API-P updated",
+    "scenario": "evaluation result unknown",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G04-A",
+    "pair_id": "G04",
+    "theme": "normal_release",
+    "anchor": "API-G updated",
+    "scenario": "complete valid proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G04-B",
+    "pair_id": "G04",
+    "theme": "normal_release",
+    "anchor": "API-G updated",
+    "scenario": "explicit warning",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G05-A",
+    "pair_id": "G05",
+    "theme": "normal_release",
+    "anchor": "API-P parent",
+    "scenario": "passed trace with no failure class",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G05-B",
+    "pair_id": "G05",
+    "theme": "normal_release",
+    "anchor": "API-P parent",
+    "scenario": "passed trace carries failure class",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G06-A",
+    "pair_id": "G06",
+    "theme": "identity_content",
+    "anchor": "API-P parent",
+    "scenario": "unchanged content with its proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G06-B",
+    "pair_id": "G06",
+    "theme": "identity_content",
+    "anchor": "API-P parent",
+    "scenario": "changed content with old proof",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G07-A",
+    "pair_id": "G07",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "trace hash matches manifest",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G07-B",
+    "pair_id": "G07",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "trace hash differs from manifest",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G08-A",
+    "pair_id": "G08",
+    "theme": "identity_content",
+    "anchor": "API-P parent",
+    "scenario": "evaluation artifact hash present",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G08-B",
+    "pair_id": "G08",
+    "theme": "identity_content",
+    "anchor": "API-P parent",
+    "scenario": "evaluation artifact hash missing",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G09-A",
+    "pair_id": "G09",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "trace artifact hash present",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G09-B",
+    "pair_id": "G09",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "trace artifact hash missing",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G10-A",
+    "pair_id": "G10",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "proof belongs to current identity",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G10-B",
+    "pair_id": "G10",
+    "theme": "identity_content",
+    "anchor": "API-G parent",
+    "scenario": "proof belongs to another identity",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G11-A",
+    "pair_id": "G11",
+    "theme": "applicability",
+    "anchor": "API-P updated",
+    "scenario": "proof applies to current source",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G11-B",
+    "pair_id": "G11",
+    "theme": "applicability",
+    "anchor": "API-P updated",
+    "scenario": "proof only applies to old source",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G12-A",
+    "pair_id": "G12",
+    "theme": "applicability",
+    "anchor": "API-G parent",
+    "scenario": "contract version matched",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G12-B",
+    "pair_id": "G12",
+    "theme": "applicability",
+    "anchor": "API-G parent",
+    "scenario": "contract version mismatched",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G13-A",
+    "pair_id": "G13",
+    "theme": "applicability",
+    "anchor": "API-P parent",
+    "scenario": "environment fingerprint matched",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G13-B",
+    "pair_id": "G13",
+    "theme": "applicability",
+    "anchor": "API-P parent",
+    "scenario": "environment fingerprint mismatched",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G14-A",
+    "pair_id": "G14",
+    "theme": "applicability",
+    "anchor": "API-G parent",
+    "scenario": "verifier version matched",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G14-B",
+    "pair_id": "G14",
+    "theme": "applicability",
+    "anchor": "API-G parent",
+    "scenario": "verifier version mismatched",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G15-A",
+    "pair_id": "G15",
+    "theme": "applicability",
+    "anchor": "API-P derived",
+    "scenario": "fresh proof for derived identity",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G15-B",
+    "pair_id": "G15",
+    "theme": "applicability",
+    "anchor": "API-P derived",
+    "scenario": "parent proof inherited by derived identity",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G16-A",
+    "pair_id": "G16",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "all referenced traces present",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G16-B",
+    "pair_id": "G16",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "trace removed but reference retained",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G17-A",
+    "pair_id": "G17",
+    "theme": "completeness",
+    "anchor": "API-G parent",
+    "scenario": "complete predeclared U",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G17-B",
+    "pair_id": "G17",
+    "theme": "completeness",
+    "anchor": "API-G parent",
+    "scenario": "task trace and reference both removed",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G18-A",
+    "pair_id": "G18",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "complete traces",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G18-B",
+    "pair_id": "G18",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "all traces withdrawn but pass summary retained",
+    "allowed_primary_decisions": [
+      "defer",
+      "validation_error"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G19-A",
+    "pair_id": "G19",
+    "theme": "completeness",
+    "anchor": "API-G parent",
+    "scenario": "unique trace run IDs",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G19-B",
+    "pair_id": "G19",
+    "theme": "completeness",
+    "anchor": "API-G parent",
+    "scenario": "duplicate trace run ID",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G20-A",
+    "pair_id": "G20",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "evidence spans present",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G20-B",
+    "pair_id": "G20",
+    "theme": "completeness",
+    "anchor": "API-P parent",
+    "scenario": "evidence spans removed",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G21-A",
+    "pair_id": "G21",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "environment unknown",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G21-B",
+    "pair_id": "G21",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "environment confirmed and evidence complete",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G22-A",
+    "pair_id": "G22",
+    "theme": "defer_resolve",
+    "anchor": "API-P parent",
+    "scenario": "timeout evidence only",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G22-B",
+    "pair_id": "G22",
+    "theme": "defer_resolve",
+    "anchor": "API-P parent",
+    "scenario": "new real completed proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G23-A",
+    "pair_id": "G23",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "dependency failure evidence",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G23-B",
+    "pair_id": "G23",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "new valid proof after dependency recovery",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G24-A",
+    "pair_id": "G24",
+    "theme": "defer_resolve",
+    "anchor": "API-P parent",
+    "scenario": "license applicability uncertain",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G24-B",
+    "pair_id": "G24",
+    "theme": "defer_resolve",
+    "anchor": "API-P parent",
+    "scenario": "license applicability established",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G25-A",
+    "pair_id": "G25",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "task or input_ref missing",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G25-B",
+    "pair_id": "G25",
+    "theme": "defer_resolve",
+    "anchor": "API-G parent",
+    "scenario": "complete reference restored from original receipt",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G26-A",
+    "pair_id": "G26",
+    "theme": "recovery_state",
+    "anchor": "API-P recovered",
+    "scenario": "old identity proof on recovered identity",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G26-B",
+    "pair_id": "G26",
+    "theme": "recovery_state",
+    "anchor": "API-P recovered",
+    "scenario": "new proof bound to recovered identity",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G27-A",
+    "pair_id": "G27",
+    "theme": "recovery_state",
+    "anchor": "API-G recovered",
+    "scenario": "rollback target not revalidated",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G27-B",
+    "pair_id": "G27",
+    "theme": "recovery_state",
+    "anchor": "API-G recovered",
+    "scenario": "rollback target revalidated with applicable proof",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G28-A",
+    "pair_id": "G28",
+    "theme": "recovery_state",
+    "anchor": "API-P updated",
+    "scenario": "semantic rejection with unchanged online state",
+    "allowed_primary_decisions": [
+      "reject"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G28-B",
+    "pair_id": "G28",
+    "theme": "recovery_state",
+    "anchor": "API-P updated",
+    "scenario": "new valid proof followed by release",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G29-A",
+    "pair_id": "G29",
+    "theme": "recovery_state",
+    "anchor": "API-G updated",
+    "scenario": "defer with unchanged online state",
+    "allowed_primary_decisions": [
+      "defer"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G29-B",
+    "pair_id": "G29",
+    "theme": "recovery_state",
+    "anchor": "API-G updated",
+    "scenario": "missing evidence resolved followed by release",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "A before B in each route"
+  },
+  {
+    "state_id": "G30-A",
+    "pair_id": "G30",
+    "theme": "recovery_state",
+    "anchor": "API-P eligible snapshot",
+    "scenario": "qualified S3 snapshot direct loading",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  },
+  {
+    "state_id": "G30-B",
+    "pair_id": "G30",
+    "theme": "recovery_state",
+    "anchor": "API-P eligible snapshot",
+    "scenario": "identical qualified snapshot reloaded in fresh process",
+    "allowed_primary_decisions": [
+      "accept"
+    ],
+    "causal_order": "isolated matched states"
+  }
+]

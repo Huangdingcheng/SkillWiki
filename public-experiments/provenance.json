@@ -1,0 +1,139 @@
+{
+  "package": "SkillWiki public evaluation companion",
+  "date": "2026-11-10",
+  "product_snapshot_before_packaging": "c64858ee4e3c2db97b81f1cf355309dc11067681",
+  "result_sources": [
+    {
+      "role": "validated_summary",
+      "source_file": "verified-facts.json",
+      "source_sha256": "f50a862fd148a8a01003c627b0823c3b222f69e1845ffdef9a147da336518e1d"
+    },
+    {
+      "role": "result_table",
+      "source_file": "original-12-core-events.csv",
+      "source_sha256": "8963484cf722b2e817e935b4b0856748fd06da85ba43e09dea932d2c9ce25ae9"
+    },
+    {
+      "role": "result_table",
+      "source_file": "new-qualification-batches.csv",
+      "source_sha256": "87aa6fa7c5caba87e8b7d5ef8175ba2eadb89cbb67301b1dd2e848139fb02c31"
+    },
+    {
+      "role": "result_table",
+      "source_file": "recovery-5-events.csv",
+      "source_sha256": "b0c15f704a6d77edab3dcca7494f7675f40e8b243413cc9525499a9be6138373"
+    },
+    {
+      "role": "result_table",
+      "source_file": "original-120-governance.csv",
+      "source_sha256": "c62810b2ae3264ec6b58ce6274b9114c6aeea81f7d2a32c30093e9091116dbd9"
+    },
+    {
+      "role": "result_table",
+      "source_file": "all-120-tracking.csv",
+      "source_sha256": "be1c3746b63e683e0aa3d0fc7decf0ddb2a5874837046975af308855aa85f8b7"
+    },
+    {
+      "role": "unique_call_index",
+      "source_file": "all-4590-model-calls.csv",
+      "source_sha256": "6b42901f0af9f963193ac22938029048fbd92460b27eb164535b7fc9236114c4"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "D-old.json",
+      "source_sha256": "56ba026bf14d4d18b095939d9963ddfa38a8773cf1b98768679cfb499ccaaa34"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "G-old.json",
+      "source_sha256": "5fbc0a3b770ec83df8f7aef89d5fd48a6e4a7c557ca71a7fa473da7d0a9f06dc"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "P-old.json",
+      "source_sha256": "ca63779cb678f4d562ddbca5a185f38b020cb557bdd92f88990eacfac927d45b"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U01-new.json",
+      "source_sha256": "b435e2ca16beb4dac89ebb0226a3e08fad414528b3a786936cffa14a92f7d64f"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U02-new.json",
+      "source_sha256": "d2d9cb44dfa69091bdb15b58a7709c09d209e38f59124bd34c37d3882871a73a"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U03-new.json",
+      "source_sha256": "d861b4864481b6bb4ed57c41553a565091512f3dcbc762aa829f1c694bfe2acb"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U04-new.json",
+      "source_sha256": "450e77a4db4953a772cd8e4b922265370dd049f122875a965d98d7001dacae57"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U05-new.json",
+      "source_sha256": "fa20c8425ac6c4156ce37cac8dbd8dca484a7f69384779eb8b5bde31a880c19e"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U06-new.json",
+      "source_sha256": "2ce7acffa15654ef632f884c65079dcfcdc03433fe016d6b09c36890e955663e"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U07-new.json",
+      "source_sha256": "e09ca022b65bb29e57f0e5487a772eda7018b6b22593db93a3383b3dac762197"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U08-new.json",
+      "source_sha256": "6a7c889b8663244df6650de562a6b1988196cf699d7d7c6fbfc800d192247df8"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U09-new.json",
+      "source_sha256": "5444ae70218a861161bc9d49bf639806bfca78d9e9d0aea20c4d2e024ea36bac"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U10-new.json",
+      "source_sha256": "04f82e42b14d1c79a50736a51be38dd20ccd4b3d6b7ee5e7cccf61d885e35b89"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U11-new.json",
+      "source_sha256": "5600d824f9d7a5ae205399cddabac0ae336d5fccbe4c5a5552f5d7928184bf75"
+    },
+    {
+      "role": "OpenAPI_source",
+      "source_file": "U12-new.json",
+      "source_sha256": "30896b3d9352a7370dae5103de67753b42334823b1e5a8f464391423c5491823"
+    },
+    {
+      "role": "update_input_roster",
+      "source_file": "event-input-roster.json",
+      "source_sha256": "0ce4dc0b54c40fc0aaa7640d0f013678323962fc7963c59c014601a510fc814d"
+    },
+    {
+      "role": "use_input_roster",
+      "source_file": "main-roster.json",
+      "source_sha256": "0c9c341c6ec447050a914c3d0914f745bbd65f5d80fc1c0e1f89be14f29d65c9"
+    },
+    {
+      "role": "governance_states",
+      "source_file": "governance-state-definitions.json",
+      "source_sha256": "e85b8bd0080e4b28358eb5490824c4c4d0877270bdf9da23aca28a188e6c6875"
+    },
+    {
+      "role": "all_events",
+      "source_file": "all-12-events.csv",
+      "source_sha256": "21c3cce39d864372239675d5f8499c2cd2de4362758166a8dc2d75b0b8877f6a"
+    }
+  ],
+  "scope": "Public materials and result tables; original requests, answers, receipts and complete historical runtime packages remain in the research archive. Product integration is separate from experimental runtime identities.",
+  "privacy": "No machine paths, credentials, personal configuration, provider endpoint or conversation identifiers exported. Simulated authentication strings in task fixtures are synthetic test inputs."
+}

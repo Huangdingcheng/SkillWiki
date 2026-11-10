@@ -1,0 +1,13 @@
+event_id,original_skillwiki_correct,original_ci_plus_correct,qualification_total,original_both_released_and_recovered,subsequent_skillwiki_revision,subsequent_skillwiki_updated_correct,subsequent_skillwiki_recovered_correct,subsequent_skillwiki_released_and_readback,ci_plus_supplement,remaining
+U01,36,36,36,True,not_repeated,,,False,not_repeated,
+U02,36,36,36,True,not_repeated,,,False,not_repeated,
+U03,35,35,36,False,not_repeated,,,False,not_repeated,int64 error category type versus format; unpublished
+U04,33,33,36,False,R1,36,36,True,updated_and_recovered_36/36,
+U05,33,33,36,False,R1,36,36,True,not_repeated,
+U06,33,34,36,False,R2 (R1 failed 35/36),36,36,True,not_repeated,
+U07,36,36,36,True,not_repeated,,,False,not_repeated,
+U08,35,35,36,False,supplement,36,36,True,not_repeated,
+U09,36,36,36,True,not_repeated,,,False,not_repeated,
+U10,34,34,36,False,R1,36,36,True,not_repeated,
+U11,36,36,36,True,not_repeated,,,False,not_repeated,
+U12,34,34,36,False,R1,36,36,True,not_repeated,

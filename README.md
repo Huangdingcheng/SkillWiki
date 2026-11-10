@@ -4,11 +4,10 @@
 
 **A Living Knowledge Infrastructure for Agent Skills**
 
-Just as Wikipedia organizes human knowledge and GitHub governs software, **SkillWiki** provides the missing infrastructure for agent skills. It transforms heterogeneous knowledge sources — trajectories, documents, API specs, and execution experience — into reusable skill assets that are grounded in their originating evidence, version-controlled, and continuously evolved. SkillWiki covers the complete skill lifecycle: from knowledge ingestion and skill production, through provenance-aware graph exploration and human governance, to execution-driven health monitoring and automated evolution. The result is a shared infrastructure where knowledge, skills, and execution experience co-evolve together.
+**SkillWiki** turns trajectories, documents, API specifications and execution experience into reusable skill assets. It connects each asset to its source, version history, verification evidence and release state. A native CLI and bilingual web interface support ingestion, provenance exploration, local verification, human-authorized release, version updates and revalidated recovery.
 
 <br/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/Node.js-20.19%2B%20%7C%2022.12%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=social)](https://github.com/Huangdingcheng/SkillWiki)
@@ -42,9 +41,23 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 | 📥 | **Multi-source ingestion** | Trajectories, documents, API specs, scripts, and existing skill JSON/JSONL files |
 | 🔄 | **Governed lifecycle** | Eight-stage state machine (S0–S7) with automated verification and full audit trail |
 | 🕸️ | **Provenance knowledge graph** | Typed edges — `depends_on`, `composes_with`, `evolved_from`, `replaces`, and more |
-| 🩺 | **Health & evolution engine** | Continuous monitoring detects degraded skills and queues repair proposals automatically |
+| 🩺 | **Health & evolution** | Inspect execution-derived health signals and manage repair proposals and version changes |
 | 🌐 | **Bilingual UI** | English (default) and Chinese — toggle via the language button in the header |
 | ⌨️ | **CLI-first** | Native commands for ingestion, verification, governance, execution and inspection |
+
+---
+
+## Evaluation
+
+The evaluation covers **60 task inputs, 60 paired governance states and 12 source-change events**, with **4,590 recorded model calls** across the reported runs.
+
+| Capability | Observed result |
+|---|---|
+| Skill utility | 120/120 correct with fixed skills, compared with 112/120 using source material |
+| Evidence governance | Decisions agree with an independent Git/CI+ workflow; main and supplementary sets have no false accepts or state inconsistencies |
+| Version evolution | 11 events have successful lifecycle chains at their recorded revisions, including revalidated recovery; one remains unqualified |
+
+See [materials, methods and results](EXPERIMENTS.md), [中文实验说明](EXPERIMENTS.zh-CN.md), and the [public data companion](public-experiments/README.md) for denominators, revision identities and reusable materials.
 
 ---
 
@@ -146,9 +159,10 @@ and runtime data are Git-ignored. See the [launcher guide](skillwiki-launcher/RE
 The launcher may choose another free port; use the URL printed at startup.
 
 New stores are empty by default. Skills persist across restarts with the Git
-backend. `RESTORE_SKILLWIKI_DEMO_STATE.bat` explicitly adds public demonstration
-fixtures and can run verification/model-backed operations; it is not needed to
-recover an ordinary persisted store and does not reproduce paper results.
+backend. The optional `RESTORE_SKILLWIKI_DEMO_STATE.bat` helper requires a separate
+fixture directory that is not included in this checkout. It is not needed to
+recover an ordinary persisted store. Use the [guide examples](user-guide-examples/README.md)
+to exercise the product with material you can inspect.
 
 ---
 
