@@ -204,6 +204,7 @@ class SkillExecutionRecord(BaseModel):
     # 输入输出
     input_data: Dict[str, Any] = Field(default_factory=dict)
     output_data: Optional[Dict[str, Any]] = None
+    execution_evidence: Dict[str, Any] = Field(default_factory=dict)
     state_before: Dict[str, Any] = Field(default_factory=dict)
     state_after: Dict[str, Any] = Field(default_factory=dict)
 

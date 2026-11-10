@@ -23,6 +23,8 @@ from ...models.skill_model import (
 from ...models.graph_model import EdgeType, SkillEdge
 from ...utils.llm_client import LLMClient, Message
 from ...utils.logger import get_logger
+from .implementation_handoff import rebuild_implementation
+from .version_evidence import reset_version_evidence
 
 logger = get_logger(__name__)
 
@@ -181,7 +183,7 @@ class SkillMerger:
             return result
 
         try:
-            merged = self._build_skill_from_data(data, "merged")
+            merged = self._build_skill_from_data(data, "merged", [skill_a, skill_b])
             merged.provenance = SkillProvenance(
                 source_type="merge",
                 parent_skill_ids=[skill_a.skill_id, skill_b.skill_id],
@@ -189,6 +191,7 @@ class SkillMerger:
             )
             # 合并测试用例
             merged.test_cases = skill_a.test_cases + skill_b.test_cases
+            reset_version_evidence(merged, source_skill=skill_a, reason="merge")
             # 合并外部引用
             merged.trajectory_refs = list(set(skill_a.trajectory_refs + skill_b.trajectory_refs))
             merged.tool_refs = list(set(skill_a.tool_refs + skill_b.tool_refs))
@@ -263,12 +266,13 @@ class SkillMerger:
         try:
             sub_skills = []
             for sub_data in data["sub_skills"][:4]:
-                sub = self._build_skill_from_data(sub_data, "split")
+                sub = self._build_skill_from_data(sub_data, "split", [skill])
                 sub.provenance = SkillProvenance(
                     source_type="split",
                     parent_skill_ids=[skill.skill_id],
                     created_by_agent="skill_merger",
                 )
+                reset_version_evidence(sub, source_skill=skill, reason="split")
                 sub_skills.append(sub)
 
             result.sub_skills = sub_skills
@@ -310,7 +314,7 @@ class SkillMerger:
 
         return result
 
-    def _build_skill_from_data(self, data: Dict[str, Any], source: str) -> Skill:
+    def _build_skill_from_data(self, data: Dict[str, Any], source: str, parents=()) -> Skill:
         """从 LLM 数据构建 Skill 对象。"""
         iface_key = "merged_interface" if source == "merged" else "interface"
         impl_key = "merged_implementation" if source == "merged" else "implementation"
@@ -326,19 +330,10 @@ class SkillMerger:
         )
 
         implementation = None
+        if not impl_data and any(p.implementation and p.implementation.request_body_validation is not None for p in parents):
+            raise ValueError('source_policy_rebinding_required: implementation missing')
         if impl_data:
-            try:
-                implementation = SkillImplementation(
-                    language=impl_data.get("language", "python"),
-                    code=impl_data.get("code"),
-                    prompt_template=impl_data.get("prompt_template"),
-                    tool_calls=impl_data.get("tool_calls", []),
-                    sub_skill_ids=impl_data.get("sub_skill_ids", []),
-                )
-            except Exception:
-                implementation = SkillImplementation(
-                    prompt_template=data.get("description", "execute task")
-                )
+            implementation = rebuild_implementation(impl_data, parents)
 
         name_key = f"merged_name" if source == "merged" else "name"
         desc_key = f"merged_description" if source == "merged" else "description"

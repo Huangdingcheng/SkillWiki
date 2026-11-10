@@ -1,0 +1,6 @@
+event_id,cases,model_raw_correct,system_final_correct,response_correct,response_count,program_corrections,version,content_hash,recovered,old_proof_rejected,qualified,republished,final_state
+U04,36,33,36,8,8,3,1.0.2,627a42ae8abf0d851291396599784ed5d6f933e75d7220a24f06e4925a5f6d6a,True,True,True,True,S4
+U05,36,34,36,8,8,2,1.0.2,e8eaf8d47e9f3aff3a236929850d391df3b4950feb3d673b245875f80e73a8c7,True,True,True,True,S4
+U06,36,28,36,8,8,8,1.0.3,c998b125e40619446e9aabb1249fe38a7c3389b525d76f41d541c13053e85f42,True,True,True,True,S4
+U10,36,36,36,8,8,0,1.0.2,5947b73e981274c3ed5b7046ca9064b8febe6d47b4ca6d5f1955174d6f04cb4a,True,True,True,True,S4
+U12,36,36,36,8,8,0,1.0.2,a69c7a588d2f3f05e094c2f9203bd545e40877f9847668f056cb5323fd86b963,True,True,True,True,S4

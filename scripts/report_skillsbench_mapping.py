@@ -10,7 +10,7 @@ from statistics import mean
 from typing import Any
 
 
-DEFAULT_OUTPUT_DIR = Path(r"C:\Users\m1516\Desktop\SKILLOS\Codex-skilos\artifacts\eval-20260527")
+DEFAULT_OUTPUT_DIR = Path("artifacts/skillsbench-mapping")
 
 
 def main(argv: list[str] | None = None) -> int:

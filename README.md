@@ -4,13 +4,13 @@
 
 **A Living Knowledge Infrastructure for Agent Skills**
 
-Just as Wikipedia organizes human knowledge and GitHub governs software, **SkillWiki** provides the missing infrastructure for agent skills. It transforms heterogeneous knowledge sources — trajectories, documents, API specs, and execution experience — into reusable skill assets that are grounded in their originating evidence, version-controlled, and continuously evolved. SkillWiki covers the complete skill lifecycle: from knowledge ingestion and skill production, through provenance-aware graph exploration and human governance, to execution-driven health monitoring and automated evolution. The result is a shared infrastructure where knowledge, skills, and execution experience co-evolve together.
+**SkillWiki** turns trajectories, documents, API specifications and execution experience into reusable skill assets. It connects each asset to its source, version history, verification evidence and release state. A native CLI and bilingual web interface support ingestion, provenance exploration, local verification, human-authorized release, version updates and revalidated recovery.
 
 <br/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node.js-20.19%2B%20%7C%2022.12%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Stars](https://img.shields.io/github/stars/Huangdingcheng/SkillWiki?style=social)](https://github.com/Huangdingcheng/SkillWiki)
 
 
@@ -42,9 +42,23 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 | 📥 | **Multi-source ingestion** | Trajectories, documents, API specs, scripts, and existing skill JSON/JSONL files |
 | 🔄 | **Governed lifecycle** | Eight-stage state machine (S0–S7) with automated verification and full audit trail |
 | 🕸️ | **Provenance knowledge graph** | Typed edges — `depends_on`, `composes_with`, `evolved_from`, `replaces`, and more |
-| 🩺 | **Health & evolution engine** | Continuous monitoring detects degraded skills and queues repair proposals automatically |
+| 🩺 | **Health & evolution** | Inspect execution-derived health signals and manage repair proposals and version changes |
 | 🌐 | **Bilingual UI** | English (default) and Chinese — toggle via the language button in the header |
-| ⌨️ | **CLI-first** | Every operation available as a `skillwiki` command for scripting and agent integration |
+| ⌨️ | **CLI-first** | Native commands for ingestion, verification, governance, execution and inspection |
+
+---
+
+## Evaluation
+
+The evaluation covers **60 task inputs, 60 paired governance states and 12 source-change events**, with **4,590 recorded model calls** across the reported runs.
+
+| Capability | Observed result |
+|---|---|
+| Skill utility | 120/120 correct with fixed skills, compared with 112/120 using source material |
+| Evidence governance | Decisions agree with an independent Git/CI+ workflow; main and supplementary sets have no false accepts or state inconsistencies |
+| Version evolution | 11 events have successful lifecycle chains at their recorded revisions, including revalidated recovery; one remains unqualified |
+
+See [materials, methods and results](EXPERIMENTS.md), [中文实验说明](EXPERIMENTS.zh-CN.md), and the [public data companion](public-experiments/README.md) for denominators, revision identities and reusable materials.
 
 ---
 
@@ -71,65 +85,102 @@ Just as Wikipedia organizes human knowledge and GitHub governs software, **Skill
 
 ## Quick Start
 
+[Docker deployment](DEPLOYMENT.md) · [Validation guide](TESTING.md) · [Agent CLI package](skillwiki-skill/README.md)
+
+
 ### Requirements
 
-- Python 3.10+
-- Node.js 18+ *(frontend only)*
+- Git and Python 3.10+.
+- Node.js 20.19+ or 22.12+ (frontend; required by the locked Vite toolchain).
+- Your own OpenAI-compatible model endpoint, model name and API key for model-backed operations.
 
 ### Install
 
 ```bash
 git clone https://github.com/Huangdingcheng/SkillWiki.git
 cd SkillWiki/skillwiki
+python -m venv .venv
+```
 
-python -m venv venv
-source venv/bin/activate      # Linux / Mac
-venv\Scripts\activate         # Windows
+Activate the environment, then install the backend:
 
-pip install -r requirements.txt
-pip install -e .
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+```
+
+```bash
+python -m pip install -e ".[api]"
 ```
 
 ### Start the backend
 
-```bash
-skillwiki serve --port 8001 --api-key YOUR_LLM_API_KEY
-```
-
-### Start the frontend *(optional)*
+Set `LLM_API_KEY`, `LLM_API_URL` and `LLM_MODEL` in this terminal using your own
+provider configuration. See the [user guide](USER_GUIDE.md#model-configuration)
+for shell examples. Keep this terminal running:
 
 ```bash
-cd ../skillwiki-frontend
-npm install
-npm run dev    # → http://localhost:3000
+git init ./governance
+skillwiki serve --host 127.0.0.1 --port 8001 --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
 ```
+
+Backend health: <http://127.0.0.1:8001/health>. API schemas: <http://127.0.0.1:8001/docs>.
+
+### Start the frontend (optional)
+
+In a second terminal, enter `SkillWiki/skillwiki-frontend`, install the locked
+dependencies and explicitly point the development proxy at the backend:
+
+```bash
+npm ci
+```
+
+```powershell
+# Windows PowerShell
+$env:SKILLOS_API_TARGET = "http://127.0.0.1:8001"
+$env:VITE_SKILLOS_DISABLE_WS = "1"
+npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+```bash
+# Linux / macOS
+SKILLOS_API_TARGET=http://127.0.0.1:8001 VITE_SKILLOS_DISABLE_WS=1 npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+Open <http://127.0.0.1:5174/wiki>. Run only the command block for your shell.
 
 ### One-click launcher (Windows)
 
-Double-click **`START_SKILLWIKI_DEMO.bat`** in the repository root. On first run you will be prompted for your LLM endpoint and API key (saved to `skillwiki-launcher\config.local.ps1`, which is Git-ignored — never commit it).
+After installing the backend and frontend dependencies above, double-click
+**`START_SKILLWIKI_DEMO.bat`** in the repository root. The launcher starts both
+services and prompts for missing model configuration. Its local configuration
+and runtime data are Git-ignored. See the [launcher guide](skillwiki-launcher/README.md).
+The launcher may choose another free port; use the URL printed at startup.
 
-```
-Backend:  http://127.0.0.1:8001
-Frontend: http://127.0.0.1:5174/wiki
-```
-
-Restore the public demo fixtures after a restart:
-
-```
-RESTORE_SKILLWIKI_DEMO_STATE.bat
-```
+New stores are empty by default. Skills persist across restarts with the Git
+backend. The optional `RESTORE_SKILLWIKI_DEMO_STATE.bat` helper requires a separate
+fixture directory that is not included in this checkout. It is not needed to
+recover an ordinary persisted store. Use the [guide examples](user-guide-examples/README.md)
+to exercise the product with material you can inspect.
 
 ---
 
 ## Demo Walkthrough
 
+Step-by-step instructions: [User guide](USER_GUIDE.md) · [中文使用指南](USER_GUIDE.zh-CN.md) · [Frontend setup](skillwiki-frontend/README.md).
+
 | Step | Page | What to explore |
 |:---:|---|---|
 | 1 | [`/wiki`](http://127.0.0.1:5174/wiki) | Skill library — browse, filter by state / tag, inspect schemas |
 | 2 | [`/ingest`](http://127.0.0.1:5174/ingest) | Paste an API doc or upload a file; watch candidates extracted live |
-| 3 | [`/graph`](http://127.0.0.1:5174/graph) | Provenance knowledge graph — Nebula, Readable, and Debug view presets |
-| 4 | [`/harness`](http://127.0.0.1:5174/harness) | Execute-verify loop; observe automated repair attempts |
-| 5 | [`/evaluation`](http://127.0.0.1:5174/evaluation) | SkillsBench P0 sparse-subset analysis |
+| 3 | [`/graph`](http://127.0.0.1:5174/graph) | Skill-only, Provenance and Version impact views; inspect persisted identities and receipts |
+| 4 | [`/harness`](http://127.0.0.1:5174/harness) | Select Local; inspect attempts and verdicts; repair and promotion are explicit options |
+| 5 | [`/evaluation`](http://127.0.0.1:5174/evaluation) | Inspect the available evaluation records; imported historical results remain historical |
 | 6 | [`/versions`](http://127.0.0.1:5174/versions) | Business-readable diffs and re-verification after changes |
 
 ---
@@ -139,15 +190,15 @@ RESTORE_SKILLWIKI_DEMO_STATE.bat
 Install once after cloning:
 
 ```bash
-cd skillwiki && pip install -e .
+cd skillwiki && pip install -e ".[api]"
 ```
 
-All commands accept `--api-url <URL>` (default `http://127.0.0.1:8001`).
+Place global options before the subcommand: `skillwiki --api-url <URL> <command>`. All commands accept `--api-url <URL>` (default `http://127.0.0.1:8001`).
 
 ### Server
 
 ```bash
-skillwiki serve [--host HOST] [--port PORT] [--backend memory|sqlite|postgres]
+skillwiki serve [--host HOST] [--port PORT] [--backend git|memory]
 ```
 
 ### Knowledge Ingestion
@@ -171,7 +222,7 @@ skillwiki skill status  <skill_id>
 skillwiki skill exec    <skill_id>   --input '{"key": "value"}'
 
 skillwiki audit   <skill_id>
-skillwiki verify  <skill_id>  [--harness mock|claude_code|codex] [--max-retries 3] [--watch]
+skillwiki verify  <skill_id>  [--harness local_skillwiki] [--max-attempts 1] [--watch]
 skillwiki promote <skill_id>  <target_state>
 ```
 
@@ -227,12 +278,26 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 | Variable | Default | Description |
 |---|---|---|
 | `LLM_API_KEY` | — | LLM API key *(required)* |
-| `LLM_API_URL` | `https://api.deepseek.com` | LLM base URL |
-| `LLM_MODEL` | `deepseek-v4-flash` | Model name |
-| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
+| `LLM_API_URL` | `https://api.deepseek.com` (API server) | OpenAI-compatible provider base URL; set explicitly |
+| `LLM_MODEL` | `deepseek-flash` (API server) | Provider model identifier; set one available to your account |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8000` (bare Vite) | Set to `http://127.0.0.1:8001` for the commands above; launcher sets its actual port |
+| `VITE_SKILLOS_DISABLE_WS` | unset | Set `1` for the local polling experience; launcher does this by default |
 
 ---
 
 ## License
 
-[MIT](LICENSE) © 2026 SkillWiki Authors
+MIT © 2026 SkillWiki Authors
+
+
+## User documentation and experiment scope
+
+- [User guide](USER_GUIDE.md): model configuration, CLI request files, lifecycle, graph evidence and troubleshooting.
+- [中文使用指南](USER_GUIDE.zh-CN.md): 本地启动、主要操作、CLI 与前端对应关系。
+- [Frontend developer guide](skillwiki-frontend/README.md): routes, proxy configuration and checks.
+- [Source provenance](integration-provenance/README.md): experiment snapshot versus subsequent product integration.
+
+These instructions run the product. The paper's frozen inputs, candidates, raw
+receipts and analysis package are not included in this product PR. A fresh model
+run creates new evidence and may differ from the reported answers; the UI's
+public demo fixtures are not the paper's result dataset.

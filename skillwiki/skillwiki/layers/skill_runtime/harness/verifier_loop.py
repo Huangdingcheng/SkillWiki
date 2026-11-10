@@ -8,11 +8,16 @@ from uuid import uuid4
 
 from ....layers.feedback_evolution.monitor import HealthStatus, SkillHealthReport
 from ....layers.feedback_evolution.repair import SkillRepair
+from ....layers.skill_governance.version_evidence import (
+    record_current_identity_proof,
+    reset_version_evidence,
+)
 from ....models.skill_model import (
     EdgeType,
     Skill,
     SkillEvaluation,
     SkillImplementation,
+    SkillProvenance,
     SkillState,
     SkillTestCase,
 )
@@ -34,12 +39,14 @@ class VerificationLoop:
         executor: SkillExecutor | None = None,
         repair: SkillRepair | None = None,
         evidence_root: Any = None,
+        allow_fixture_repair: bool = False,
     ) -> None:
         self._wiki = wiki
         self._graph = graph
         self._executor = executor or SkillExecutor(skill_registry=wiki)
         self._repair = repair
         self._evidence_root = evidence_root
+        self._allow_fixture_repair = allow_fixture_repair
 
     async def run(
         self,
@@ -55,7 +62,10 @@ class VerificationLoop:
         skill = await self._get_skill(skill_id)
         loop_id = f"verify_loop_{uuid4().hex[:12]}"
         workspace = HarnessWorkspace(loop_id, root=self._evidence_root)
-        cases = test_cases or _build_test_cases(skill, timeout_s=timeout_s)
+        cases = test_cases if test_cases is not None else _build_test_cases(skill, timeout_s=timeout_s)
+        if not cases:
+            raise ValueError('At least one test case is required.')
+        has_contract = all(case.verifier_specs for case in cases)
         harness = self._harness(harness_kind)
         current_skill = skill
         attempts: List[HarnessRunResult] = []
@@ -74,6 +84,10 @@ class VerificationLoop:
                 )
                 case_results.append(run_result)
                 attempts.append(run_result)
+
+            if not has_contract:
+                status = 'not_evaluated'
+                break
 
             if case_results and all(result.verifier_passed for result in case_results):
                 status = "verified"
@@ -97,7 +111,10 @@ class VerificationLoop:
             current_skill = await self._persist_repaired_draft(current_skill, patched, repair_record)
 
         score = _score_loop(attempts, repairs)
-        promotion_allowed = status == "verified" and score["overall"] >= 0.75
+        fixture_only = bool(current_skill.provenance and current_skill.provenance.creation_context.get('fixture_only'))
+        if fixture_only and status == 'verified':
+            status = 'fixture_only'
+        promotion_allowed = status == "verified" and has_contract and not fixture_only and score["overall"] >= 0.75
         if promotion_allowed and promote_on_pass:
             current_skill = await self._promote(current_skill, loop_id, attempts, score, workspace)
 
@@ -140,9 +157,9 @@ class VerificationLoop:
         attempt: int,
     ) -> tuple[Optional[Skill], Dict[str, Any]]:
         failure_cases = [_failure_case(result) for result in case_results if not result.verifier_passed]
-        patched = _deterministic_repair(skill, case_results)
-        source = "deterministic"
-        error = ""
+        patched = _deterministic_repair(skill, case_results) if self._allow_fixture_repair else None
+        source = 'deterministic_fixture' if patched is not None else 'none'
+        error = '' if patched is not None or self._repair is not None else 'No repair provider configured; expected answers are never used to implement production skills.'
 
         if patched is None and self._repair is not None:
             health = SkillHealthReport(
@@ -187,11 +204,16 @@ class VerificationLoop:
             repaired = patched.model_copy(deep=True)
         await self._ensure_unique_repair_version(repaired)
         repaired.state = SkillState.DRAFT
+        if repaired.provenance is None:
+            repaired.provenance = SkillProvenance(source_type='adapt')
+        if repair_record.get('source') == 'deterministic_fixture':
+            repaired.provenance.creation_context['fixture_only'] = True
         if repaired.provenance:
             repaired.provenance.parent_skill_ids = list(
                 dict.fromkeys([*repaired.provenance.parent_skill_ids, original.skill_id])
             )
             repaired.provenance.creation_context["harness_repair"] = repair_record
+        reset_version_evidence(repaired, source_skill=original, reason="harness_repair")
         created = await self._wiki.create(repaired)
         graph = self._graph
         if graph is not None:
@@ -250,7 +272,14 @@ class VerificationLoop:
             "evidence_path": str(workspace.loop_dir),
             "promotion_gate": "passed",
         }
-        updated = await self._wiki.update(skill.skill_id, evaluation=evaluation)
+        skill.evaluation = evaluation
+        record_current_identity_proof(
+            skill,
+            source="harness_verification_loop",
+            evidence_id=loop_id,
+            trace_ids=[item.run_id for item in attempts if item.run_id],
+        )
+        updated = await self._wiki.update(skill.skill_id, evaluation=skill.evaluation)
         if not updated:
             updated = skill
         promoted = await self._wiki.transition_state(updated.skill_id, SkillState.VERIFIED)
@@ -262,10 +291,6 @@ class VerificationLoop:
 
 def _build_test_cases(skill: Skill, *, timeout_s: int) -> List[HarnessTestCase]:
     specs = list(skill.evaluation.verifier_specs or [])
-    if not specs:
-        specs = _specs_from_expected_output(skill.test_cases[:1])
-    if not specs:
-        specs = [{"type": "boolean_success"}]
 
     cases: List[HarnessTestCase] = []
     for index, case in enumerate(skill.test_cases or []):
@@ -275,7 +300,10 @@ def _build_test_cases(skill: Skill, *, timeout_s: int) -> List[HarnessTestCase]:
                 name=case.name,
                 goal=case.description or skill.description or skill.name,
                 input_data=case.input_data,
-                verifier_specs=specs,
+                verifier_specs=specs + _specs_from_expected_output([case]) + [
+                    {'type': 'json_equals', 'path': f'final_state.{key}', 'value': value}
+                    for key, value in case.expected_state_changes.items()
+                ],
                 timeout_s=timeout_s,
             )
         )
@@ -294,8 +322,10 @@ def _build_test_cases(skill: Skill, *, timeout_s: int) -> List[HarnessTestCase]:
 
 
 def _specs_from_expected_output(test_cases: List[SkillTestCase]) -> List[Dict[str, Any]]:
-    if not test_cases or not test_cases[0].expected_output:
+    if not test_cases or test_cases[0].expected_output is None:
         return []
+    if test_cases[0].expected_output == {}:
+        return [{'type': 'json_equals', 'path': 'output', 'value': {}}]
     return [
         {"type": "json_equals", "path": f"output.{key}", "value": value}
         for key, value in test_cases[0].expected_output.items()

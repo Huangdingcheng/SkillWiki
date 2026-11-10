@@ -8,10 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from benchmarks.run_search_eval import load_fixture, run_search_eval, write_outputs
-from skillos.api.deps import app_state
-from skillos.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
-from skillos.api.routes import skills
-from skillos.layers.skill_repository.indexing import (
+from skillwiki.api.deps import app_state
+from skillwiki.api.memory_store import MemoryGraphManager, MemorySearchEngine, MemoryWikiManager
+from skillwiki.api.routes import skills
+from skillwiki.layers.skill_repository.indexing import (
     LocalHashEmbeddingProvider,
     SearchQuery,
     cosine_similarity,
@@ -19,7 +19,7 @@ from skillos.layers.skill_repository.indexing import (
     score_skill_hybrid,
     score_skill_match,
 )
-from skillos.models.skill_model import Skill, SkillImplementation, SkillState, SkillType
+from skillwiki.models.skill_model import Skill, SkillImplementation, SkillState, SkillType
 
 
 def make_skill(

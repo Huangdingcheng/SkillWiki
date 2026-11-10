@@ -22,6 +22,7 @@ import { motion } from 'framer-motion'
 import { useAppStore } from '@/store/appStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useT } from '@/i18n'
+import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
 
 const { Header, Sider, Content } = Layout
 const { useBreakpoint } = Grid
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
+  const { skillId } = useSkillContext()
   const { darkMode, toggleDark, wsEvents, lang, setLang } = useAppStore()
   const t = useT(lang)
   useWebSocket()
@@ -128,7 +130,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
-          onClick={({ key }) => navigate(key)}
+          onClick={({ key }) => navigate(skillContextPath(key, ['/ingest', '/wiki', '/graph', '/lifecycle', '/versions', '/harness'].includes(key) ? skillId : null))}
           inlineCollapsed={siderCollapsed}
           style={{ borderRight: 0, marginTop: 8 }}
         />

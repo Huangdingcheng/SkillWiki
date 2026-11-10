@@ -10,7 +10,7 @@ from typing import Generator
 import pytest
 import yaml
 
-from skillos.config import (
+from skillwiki.config import (
     AgentLLMConfig,
     ConfigManager,
     GlobalConfig,
@@ -18,7 +18,7 @@ from skillos.config import (
     get_config_manager,
     reset_config_manager,
 )
-from skillos.utils import (
+from skillwiki.utils import (
     KNOWN_AGENT_TYPES,
     validate_agent_type,
     validate_config_dict,

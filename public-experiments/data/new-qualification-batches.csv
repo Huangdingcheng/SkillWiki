@@ -1,0 +1,9 @@
+batch,calls,raw_passed,final_passed,full_qualified
+U08 updated,36,36,36,True
+U08 recovered,36,36,36,True
+CI updated,36,33,36,True
+CI recovered,36,33,36,True
+G26 skillwiki,36,33,36,True
+G28 skillwiki,36,33,36,True
+G26 git_ci_plus,36,33,36,True
+G28 git_ci_plus,36,33,36,True

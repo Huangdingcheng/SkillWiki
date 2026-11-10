@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import re
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
 try:  # YAML is an optional-but-declared dependency; keep tests robust if absent.
@@ -18,6 +21,24 @@ from ...utils.logger import get_logger
 logger = get_logger(__name__)
 
 ALLOWED_SKILL_TYPES = {"atomic", "functional", "strategic"}
+
+
+class PipelineStageError(RuntimeError):
+    """A real generation stage failed; offline output is not its result."""
+
+
+def _stage_object(response: Any, stage: str) -> Dict[str, Any]:
+    if getattr(response, "finish_reason", None) not in (None, "stop", "end_turn"):
+        raise PipelineStageError(f"{stage}: incomplete response ({response.finish_reason})")
+    data = _parse_json(response.content)
+    if not isinstance(data, dict) or not data:
+        raise PipelineStageError(f"{stage}: response must be a nonempty JSON object")
+    return data
+
+
+def _source_snapshot(content: str, source_type: str) -> Dict[str, Any]:
+    return {"content": content, "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "source_type": source_type, "character_count": len(content)}
 
 
 @dataclass
@@ -88,7 +109,7 @@ class ExtractorAgent:
             }
         prompt = _EXTRACT_PROMPT.format(
             source_type=source_type,
-            raw_content=raw_content[:4000],
+            raw_content=raw_content,
         )
         try:
             resp = self._llm.chat(
@@ -98,18 +119,14 @@ class ExtractorAgent:
                 ]
             )
             self.last_token_usage = resp.total_tokens
-            data = _parse_json(resp.content)
-            if data:
-                return data
+            data = _stage_object(resp, "extractor")
+            if not isinstance(data.get("actions"), list) or not data["actions"] or not all(
+                isinstance(action, str) and action.strip() for action in data["actions"]
+            ):
+                raise PipelineStageError("extractor: actions must contain nonempty strings")
+            return data
         except Exception as exc:
-            logger.warning("Extractor LLM failed: %s", exc)
-
-        fallback_action = raw_content.strip().splitlines()[0][:160] if raw_content.strip() else "Process input"
-        return {
-            "actions": [fallback_action],
-            "proposed_skill_name": f"skill_from_{_safe_slug(source_type) or 'input'}",
-            "confidence": 0.3,
-        }
+            raise PipelineStageError(f"extractor: {type(exc).__name__}: {exc}") from exc
 
 
 _NORMALIZE_PROMPT = """
@@ -160,14 +177,13 @@ class NormalizerAgent:
                 ]
             )
             self.last_token_usage = resp.total_tokens
-            data = _parse_json(resp.content)
-            normalized = data.get("normalized") if data else None
-            if isinstance(normalized, list):
-                return [n for n in normalized if isinstance(n, dict)]
+            data = _stage_object(resp, "normalizer")
+            normalized = data.get("normalized")
+            if not isinstance(normalized, list) or not normalized or not all(isinstance(n, dict) and n for n in normalized):
+                raise PipelineStageError("normalizer: normalized must contain operation objects")
+            return normalized
         except Exception as exc:
-            logger.warning("Normalizer LLM failed: %s", exc)
-
-        return _fallback_normalized_actions(actions)
+            raise PipelineStageError(f"normalizer: {type(exc).__name__}: {exc}") from exc
 
 
 _SUMMARIZE_PROMPT = """
@@ -208,6 +224,11 @@ Use the Ctx2Skill demo-paper method:
 2. Generate 2-3 challenge tasks with rubrics.
 3. Reason about whether a reusable Skill can solve the challenges.
 4. Propose 1-2 candidate Skills and select the strongest with a cross-time replay lite score.
+5. Write prompt_template as literal execution instructions and set prompt_format to literal; braces in the instructions are ordinary text.
+6. For an API-document candidate, include source_operation with exact method and path from the source when it has multiple operations. Do not invent a mapping.
+7. For a skill that diagnoses potentially invalid requests, keep the invocation envelope separate from the domain schema being checked. Put domain rules in execution instructions, not an input gate that prevents diagnosis.
+
+Source-fidelity rule for schemas: encode only constraints stated by the source. If an object schema omits additionalProperties, do not describe or enforce a ban on extra properties. Preserve an explicit additionalProperties: false only when the source declares it. Do not turn an unspecified rule into a restriction.
 
 Return only valid JSON with this shape:
 {{
@@ -239,6 +260,7 @@ Return only valid JSON with this shape:
       "preconditions": ["condition"],
       "postconditions": ["condition"],
       "prompt_template": "how to execute the skill",
+      "prompt_format": "literal",
       "dependencies": [],
       "components": [],
       "parents": [],
@@ -263,7 +285,7 @@ class SummarizerAgent:
         if _should_skip_llm(self._llm):
             return _fallback_summary(proposed_name)
         prompt = _SUMMARIZE_PROMPT.format(
-            normalized_actions=json.dumps(normalized_actions, ensure_ascii=False)[:4000],
+            normalized_actions=json.dumps(normalized_actions, ensure_ascii=False),
         )
         try:
             resp = self._llm.chat(
@@ -273,13 +295,12 @@ class SummarizerAgent:
                 ]
             )
             self.last_token_usage = resp.total_tokens
-            data = _parse_json(resp.content)
-            if data:
-                return data
+            data = _stage_object(resp, "summarizer")
+            if not isinstance(data.get("description"), str) or not data["description"].strip():
+                raise PipelineStageError("summarizer: description must be a nonempty string")
+            return data
         except Exception as exc:
-            logger.warning("Summarizer LLM failed: %s", exc)
-
-        return _fallback_summary(proposed_name)
+            raise PipelineStageError(f"summarizer: {type(exc).__name__}: {exc}") from exc
 
 
 class IndexerAgent:
@@ -373,7 +394,7 @@ class Ctx2SkillLiteExtractor:
             unit = StructuredExperience(
                 unit_id=str(uuid.uuid4()),
                 source_type=source_type,
-                raw_content=(json.dumps(entry, ensure_ascii=False) if isinstance(entry, dict) else str(entry))[:500],
+                raw_content=json.dumps(entry, ensure_ascii=False) if isinstance(entry, dict) else str(entry),
                 extracted_actions=_string_list(entry.get("steps") or entry.get("actions")) if isinstance(entry, dict) else [str(entry)[:160]],
                 normalized_actions=[
                     {"verb": "normalize", "object": selected["name"], "description": selected["description"]}
@@ -404,8 +425,8 @@ class Ctx2SkillLiteExtractor:
             return None
         prompt = _CTX2SKILL_LITE_PROMPT.format(
             source_type=source_type,
-            raw_content=raw_content[:6000],
-            actions=json.dumps(actions[:12], ensure_ascii=False),
+            raw_content=raw_content,
+            actions=json.dumps(actions, ensure_ascii=False),
         )
         try:
             resp = self._llm.chat(
@@ -415,12 +436,28 @@ class Ctx2SkillLiteExtractor:
                 ]
             )
             self.last_token_usage = resp.total_tokens
-            data = _parse_json(resp.content)
-            if data:
-                return data
+            data = _stage_object(resp, "ctx2skill")
+            if not isinstance(data.get("context_pack"), dict) or not data["context_pack"]:
+                raise PipelineStageError("ctx2skill: context_pack must be a nonempty object")
+            challenges = data.get("challenges")
+            if not isinstance(challenges, list) or not challenges or not all(
+                isinstance(challenge, dict) and challenge for challenge in challenges
+            ):
+                raise PipelineStageError("ctx2skill: challenges must contain challenge objects")
+            candidates = data.get("candidates")
+            if not isinstance(candidates, list) or not candidates or not all(
+                isinstance(candidate, dict) and isinstance(candidate.get("description"), str)
+                and candidate["description"].strip()
+                and isinstance(candidate.get("prompt_template"), str) and candidate["prompt_template"].strip()
+                and isinstance(candidate.get("input_schema"), dict)
+                and isinstance(candidate.get("output_schema"), dict) for candidate in candidates
+            ):
+                raise PipelineStageError("ctx2skill: candidates require description, prompt, and interface objects")
+            for candidate in candidates:
+                candidate["prompt_format"] = _validated_prompt_format(candidate.get("prompt_format")) or "literal"
+            return data
         except Exception as exc:
-            logger.warning("Ctx2Skill-lite LLM failed: %s", exc)
-        return None
+            raise PipelineStageError(f"ctx2skill: {type(exc).__name__}: {exc}") from exc
 
 
 class ExperiencePipeline:
@@ -444,16 +481,28 @@ class ExperiencePipeline:
         import uuid
 
         source_type = _safe_slug(source_type) or "unknown"
-        metadata = metadata or {}
+        caller_metadata = deepcopy(metadata or {})
+        source = _source_snapshot(raw_content, source_type)
+        generation = {"mode": "explicit_offline" if _should_skip_llm(self._extractor._llm) else "model"}
         errors: List[str] = []
+        for agent in (self._extractor, self._normalizer, self._summarizer, self._ctx2skill):
+            agent.last_token_usage = 0
 
         if source_type == "past_skills":
-            return self._ctx2skill.process_past_skills(
-                raw_content=raw_content,
-                source_type=source_type,
-                known_skills=known_skills,
-                max_candidates=_clamp_int(metadata.get("max_candidates"), default=8, minimum=1, maximum=50),
-            )
+            try:
+                result = self._ctx2skill.process_past_skills(
+                    raw_content=raw_content,
+                    source_type=source_type,
+                    known_skills=known_skills,
+                    max_candidates=_clamp_int(caller_metadata.get("max_candidates"), default=8, minimum=1, maximum=50),
+                )
+            except PipelineStageError as exc:
+                return PipelineResult(success=False, source_type=source_type, unit_count=0,
+                                      token_usage=0, errors=[str(exc)])
+            for unit in result.units:
+                unit.metadata.update(source=deepcopy(source), caller_metadata=deepcopy(caller_metadata),
+                                     generation={"mode": "deterministic_legacy_import"})
+            return result
 
         try:
             extracted = self._extractor.extract(raw_content, source_type)
@@ -484,7 +533,7 @@ class ExperiencePipeline:
             unit = StructuredExperience(
                 unit_id=str(uuid.uuid4()),
                 source_type=source_type,
-                raw_content=raw_content[:500],
+                raw_content=raw_content,
                 extracted_actions=actions,
                 normalized_actions=normalized,
                 summary=description,
@@ -502,7 +551,10 @@ class ExperiencePipeline:
                 summary=description,
                 known_skills=known_skills,
             )
+            metadata.update(source=source, caller_metadata=caller_metadata, generation=generation)
             _apply_ctx2skill_metadata(unit, metadata)
+            if source_type in {"document", "script"}:
+                unit.proposed_skill_name = f"{unit.proposed_skill_name[:63]}_{source['sha256']}"
             token_usage += ctx_tokens
 
             return PipelineResult(
@@ -520,7 +572,8 @@ class ExperiencePipeline:
                 success=False,
                 source_type=source_type,
                 unit_count=0,
-                token_usage=0,
+                token_usage=sum(agent.last_token_usage for agent in
+                                (self._extractor, self._normalizer, self._summarizer, self._ctx2skill)),
                 errors=errors,
             )
 
@@ -530,7 +583,8 @@ class ExperiencePipeline:
         errors: List[str] = []
         token_usage = 0
         for item in items:
-            result = self.process(item.get("content", ""), item.get("source_type", "unknown"))
+            result = self.process(item.get("content", ""), item.get("source_type", "unknown"),
+                                  metadata=item.get("metadata"))
             all_units.extend(result.units)
             errors.extend(result.errors)
             token_usage += result.token_usage
@@ -571,6 +625,24 @@ def _metadata_from_ctx2skill_payload(
     context_pack = _normalize_context_pack(payload.get("context_pack"), raw_content, source_type)
     challenges = _normalize_challenges(payload.get("challenges"), source_type, context_pack)
     candidates = _normalize_candidates(payload.get("candidates"), source_type, context_pack)
+    schema_enrichment: List[Dict[str, Any]] = []
+    if source_type == "api_doc":
+        for candidate in candidates:
+            _apply_api_field_validation_order(candidate)
+            schema_enrichment.extend(
+                _enrich_api_candidate_schema(candidate, raw_content)
+            )
+            schema_enrichment.extend(
+                _remove_unsupported_additional_constraints(candidate, raw_content)
+            )
+    # Names are presentation labels and may intentionally be source-normalized.
+    # Content identity plus occurrence disambiguates even identical proposals.
+    occurrences: Dict[str, int] = {}
+    for candidate in candidates:
+        digest = hashlib.sha256(json.dumps(candidate, sort_keys=True, ensure_ascii=False,
+                                          allow_nan=False).encode("utf-8")).hexdigest()
+        occurrences[digest] = occurrences.get(digest, 0) + 1
+        candidate["candidate_id"] = f"candidate-{digest}-{occurrences[digest]}"
     selected = max(candidates, key=lambda item: float(item.get("score", 0.0)))
     selected["name"] = _safe_skill_name(selected.get("name"), fallback=f"skill_from_{source_type}")
     selected["skill_type"] = _safe_skill_type(selected.get("skill_type"))
@@ -580,22 +652,30 @@ def _metadata_from_ctx2skill_payload(
     judge_results = _judge_results_for(challenges, candidates)
     selected_reason = str(payload.get("selected_reason") or "").strip()
     if not selected_reason:
-        selected_reason = "Selected by Ctx2Skill-lite cross-time replay score over generated challenges."
+        selected_reason = "Selected by model self-score; generated challenges have not been executed."
 
     evidence = {
-        "paper_method": "Ctx2Skill-lite: challenger -> reasoner/judge -> proposer -> cross-time replay",
+        "paper_method": "Ctx2Skill-lite: context -> proposed challenges/candidates -> model self-score selection",
         "demo_scope": "P0/P1 demo-paper implementation; not full long-horizon self-play training.",
+        "evaluation_status": "not_executed",
         "context_pack": context_pack,
+        "source_schema_enrichment": schema_enrichment,
         "challenges": challenges,
         "judge_results": judge_results,
         "candidate_scores": [
             {
                 "name": candidate["name"],
+                "candidate_id": candidate["candidate_id"],
                 "score": float(candidate.get("score", 0.0)),
-                "passed_challenges": sum(
+                "evidence_origin": candidate.get("score_origin", "default_heuristic"),
+                "self_score_threshold_met": float(candidate.get("score", 0.0)) >= 0.5,
+                "challenge_count": sum(
                     1 for result in judge_results
-                    if result["candidate"] == candidate["name"] and result["passed"]
+                    if result["candidate_id"] == candidate["candidate_id"]
                 ),
+                "executed_challenges": 0,
+                "challenge_count_basis": "proposed_challenge_rows",
+                "passed_challenges": None,
             }
             for candidate in candidates
         ],
@@ -616,6 +696,8 @@ def _metadata_from_ctx2skill_payload(
         "candidate_evaluation": _candidate_evaluation_for(selected, source_type),
         "candidate_implementation": {
             "prompt_template": selected["prompt_template"],
+            **({"prompt_format": selected["prompt_format"]} if "prompt_format" in selected else {}),
+            **({"request_body_validation": deepcopy(selected["request_body_validation"])} if "request_body_validation" in selected else {}),
             "sub_skill_ids": selected.get("sub_skill_ids", []),
             "tool_calls": selected.get("tool_calls", []),
         },
@@ -629,6 +711,40 @@ def _metadata_from_ctx2skill_payload(
         },
         "candidate_tags": selected["tags"],
     }
+
+
+def _enrich_api_candidate_schema(candidate: Dict[str, Any], raw_content: str) -> List[Dict[str, Any]]:
+    """Deliver source domain rules without strengthening the invocation gate."""
+    from .api_source_rules import attach_source_rules
+    return attach_source_rules(candidate, raw_content)
+
+
+def _apply_api_field_validation_order(candidate: Dict[str, Any]) -> None:
+    prompt = candidate.get("prompt_template")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return
+    rule = (
+        "For each supplied field, check presence before validating its value: "
+        "report required only when the key is absent. If the key is present, "
+        "including with false, 0, an empty value, or null, validate it against "
+        "the source-declared type and constraints and report that violation; "
+        "do not label a present field as missing. Follow the task output contract's path convention."
+        " Use this decision procedure, in order: (1) test key membership in the supplied JSON object, "
+        "without using truthiness or get(key) == null; only a key not in the object can be missing. "
+        "(2) For a present null, check source nullability: absent explicit nullable/type-null permission, "
+        "a typed field has a type violation, never a required violation. (3) Check the remaining type "
+        "and value constraints. Never replace null, false, zero, or an empty string with absence."
+    )
+    if rule not in prompt:
+        candidate["prompt_template"] = f"{prompt.rstrip()}\n{rule}"
+
+
+def _remove_unsupported_additional_constraints(
+    candidate: Dict[str, Any], raw_content: str
+) -> List[Dict[str, Any]]:
+    """Correct source-mapped request-body prose, never invocation schemas."""
+    from .api_source_rules import remove_unsupported_body_ban
+    return remove_unsupported_body_ban(candidate, raw_content)
 
 
 def _fallback_ctx2skill_payload(
@@ -671,6 +787,7 @@ def _fallback_ctx2skill_payload(
         "parents": [],
         "tool_calls": [],
         "score": 0.72,
+        "score_origin": "deterministic_fallback",
         "layering_reason": f"Classified as {skill_type} from source structure and action count.",
     }
     return {
@@ -768,6 +885,12 @@ def _normalize_challenges(value: Any, source_type: str, context_pack: Dict[str, 
     return _fallback_ctx2skill_payload("", source_type, [], context_pack["summary"])["challenges"]
 
 
+def _validated_prompt_format(value: Any) -> Optional[str]:
+    if value is None or (isinstance(value, str) and value in {"literal", "python_format"}):
+        return value
+    raise PipelineStageError("prompt_format must be literal, python_format, or null")
+
+
 def _normalize_candidates(value: Any, source_type: str, context_pack: Dict[str, Any]) -> List[Dict[str, Any]]:
     raw = value if isinstance(value, list) else []
     candidates: List[Dict[str, Any]] = []
@@ -780,6 +903,7 @@ def _normalize_candidates(value: Any, source_type: str, context_pack: Dict[str, 
         description = _source_safe_description(source_type, raw_description or name)
         input_schema = _dict_or_default(item.get("input_schema"), _default_input_schema(source_type))
         output_schema = _dict_or_default(item.get("output_schema"), _default_output_schema(source_type))
+        score, score_origin = _proposal_score(item)
         candidates.append({
             "name": name,
             "description": description,
@@ -790,11 +914,15 @@ def _normalize_candidates(value: Any, source_type: str, context_pack: Dict[str, 
             "preconditions": _string_list(item.get("preconditions")) or _default_preconditions(source_type),
             "postconditions": _string_list(item.get("postconditions")) or _default_postconditions(source_type),
             "prompt_template": str(item.get("prompt_template") or _default_prompt_template(source_type, description)),
+            **({"prompt_format": _validated_prompt_format(item["prompt_format"])} if "prompt_format" in item else {}),
+            **({"request_body_validation": deepcopy(item["request_body_validation"])} if "request_body_validation" in item else {}),
             "dependencies": _string_list(item.get("dependencies")),
             "components": _string_list(item.get("components") or item.get("sub_skill_ids")),
             "parents": _string_list(item.get("parents") or item.get("parent_skill_ids")),
             "tool_calls": _string_list(item.get("tool_calls")),
-            "score": _clamp_float(item.get("score"), default=0.72),
+            **({"source_operation": deepcopy(item["source_operation"])} if "source_operation" in item else {}),
+            "score": score,
+            "score_origin": score_origin,
             "layering_reason": str(item.get("layering_reason") or ""),
         })
     if candidates:
@@ -803,17 +931,40 @@ def _normalize_candidates(value: Any, source_type: str, context_pack: Dict[str, 
     return fallback["candidates"]
 
 
+def _proposal_score(item: Dict[str, Any]) -> Tuple[float, str]:
+    raw = item.get("score")
+    if isinstance(raw, bool):
+        return 0.72, "default_heuristic"
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return 0.72, "default_heuristic"
+    if not math.isfinite(value):
+        return 0.72, "default_heuristic"
+    origin = item.get("score_origin")
+    if origin not in {"deterministic_fallback", "legacy_import_heuristic"}:
+        origin = "model_self_score"
+    if not 0.0 <= value <= 1.0:
+        origin += "_clamped"
+    return max(0.0, min(1.0, value)), origin
+
+
 def _judge_results_for(challenges: List[Dict[str, Any]], candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for candidate in candidates:
         score = float(candidate.get("score", 0.0))
-        for challenge in challenges:
+        for challenge_index, challenge in enumerate(challenges):
             results.append({
                 "candidate": candidate["name"],
+                "candidate_id": candidate["candidate_id"],
                 "task_id": challenge["task_id"],
-                "passed": score >= 0.5,
+                "challenge_index": challenge_index,
+                "executed": False,
+                "passed": None,
+                "self_score_threshold_met": score >= 0.5,
+                "evidence_origin": candidate.get("score_origin", "default_heuristic"),
                 "score": round(score, 3),
-                "rationale": "Ctx2Skill-lite replay score meets the demo threshold." if score >= 0.5 else "Replay score below demo threshold.",
+                "rationale": "Proposal score only; see evidence_origin. This challenge has not been executed.",
             })
     return results
 
@@ -880,6 +1031,7 @@ def _free_text_skill_entry(raw_content: str) -> Dict[str, Any]:
     return {
         "name": title,
         "description": " ".join(lines[:3])[:320] or "Legacy Skill imported from free text.",
+        "instructions_markdown": raw_content,
         "steps": steps,
         "tags": ["legacy", "free_text"],
     }
@@ -946,6 +1098,9 @@ def _candidate_from_past_skill_entry(
         "preconditions": _string_list(entry.get("preconditions") or interface.get("preconditions")) or _past_skill_preconditions(entry),
         "postconditions": _string_list(entry.get("postconditions") or interface.get("postconditions")) or _past_skill_postconditions(entry, name, description),
         "prompt_template": _past_skill_prompt_template(entry, name, description, skill_type),
+        "prompt_format": _past_skill_prompt_format(entry),
+        **({"request_body_validation": deepcopy(implementation.get("request_body_validation", entry.get("request_body_validation")))}
+           if "request_body_validation" in implementation or "request_body_validation" in entry else {}),
         "dependencies": dependencies,
         "components": components,
         "parents": parents,
@@ -955,6 +1110,7 @@ def _candidate_from_past_skill_entry(
         "parent_skill_ids": relation_matches["parent_skill_ids"],
         "tool_calls": _string_list(entry.get("tool_calls") or implementation.get("tool_calls")),
         "score": 0.84 if relation_matches["resolved_count"] else 0.76,
+        "score_origin": "legacy_import_heuristic",
     }
     candidate["layering_reason"] = _layering_reason(candidate)
     return candidate
@@ -1379,8 +1535,33 @@ def _schema_from_params(value: Any, fallback_description: str, fallback: Optiona
 
 
 def _candidate_evaluation_for(selected: Dict[str, Any], source_type: str) -> Dict[str, Any]:
+    input_schema = selected.get("input_schema") if isinstance(selected.get("input_schema"), dict) else {}
     output_schema = selected.get("output_schema") if isinstance(selected.get("output_schema"), dict) else {}
     properties = output_schema.get("properties") if isinstance(output_schema.get("properties"), dict) else {}
+    schema_specs = [
+        {"type": "json_schema", "path": "input", "schema": input_schema},
+        {"type": "json_schema", "path": "output", "schema": output_schema, "runtime_output": True},
+        {"type": "json_declared_content", "path": "output", "schema": output_schema},
+    ]
+    # A supplied interface is authoritative. Source defaults are additional
+    # requirements only when both schemas actually match that default contract.
+    is_default = (input_schema == _default_input_schema(source_type)
+                  and output_schema == _default_output_schema(source_type))
+    if not is_default:
+        # Preserve the established legacy-import validation presence rule when
+        # that field is part of its own interface, never a document default.
+        if source_type == "past_skills" and "validation" in properties:
+            schema_specs.append({"type": "json_exists", "path": "output.validation"})
+        return {
+            "verifier_specs": schema_specs,
+            "test_case_refs": [f"ctx2skill-lite:{source_type}:{selected.get('candidate_id', selected.get('name', 'candidate'))}"],
+            "benchmark_task_ids": [],
+            "validation_summary": (
+                "Declared interface structure only; requires declared business output. "
+                "Model self-reported passed flags do not establish task correctness. "
+                "Task-specific semantic evidence and human review are still required."
+            ),
+        }
     if source_type == "document":
         verifier_specs = [
             {"type": "json_nonempty", "path": "input.task"},
@@ -1425,12 +1606,13 @@ def _candidate_evaluation_for(selected: Dict[str, Any], source_type: str) -> Dic
     if "validation" in properties:
         verifier_specs.append({"type": "json_exists", "path": "output.validation"})
     return {
-        "verifier_specs": verifier_specs,
+        "verifier_specs": schema_specs + verifier_specs,
         "test_case_refs": [f"ctx2skill-lite:{source_type}:{selected.get('name', 'candidate')}"],
         "benchmark_task_ids": [],
         "validation_summary": (
-            "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this "
-            "ephemeral until a human approves import."
+            "Ctx2Skill-lite declared structure plus default contract checks; not independent "
+            "semantic verification. A self-reported passed flag is insufficient. "
+            "External corpus parse/audit keeps this ephemeral until human review."
         ),
     }
 
@@ -1571,12 +1753,30 @@ def _past_skill_postconditions(entry: Dict[str, Any], name: str, description: st
     return postconditions
 
 
+def _past_skill_prompt_format(entry: Dict[str, Any]) -> Optional[str]:
+    implementation = entry.get("implementation") if isinstance(entry.get("implementation"), dict) else {}
+    for source in (entry, implementation):
+        if "prompt_format" in source:
+            _validated_prompt_format(source["prompt_format"])
+    if "prompt_format" in implementation:
+        return implementation["prompt_format"]
+    if "prompt_format" in entry:
+        return entry["prompt_format"]
+    if implementation.get("prompt_template") or entry.get("prompt_template"):
+        return None
+    return "literal"
+
+
 def _past_skill_prompt_template(
     entry: Dict[str, Any],
     name: str,
     description: str,
     skill_type: str,
 ) -> str:
+    implementation = entry.get("implementation") if isinstance(entry.get("implementation"), dict) else {}
+    prompt_template = implementation.get("prompt_template") or entry.get("prompt_template")
+    if isinstance(prompt_template, str) and prompt_template:
+        return prompt_template
     source_path = str(entry.get("source_path") or entry.get("source_repo") or "legacy Skill source").strip()
     file_related = bool(re.search(r"\b(file|source file|project file|path|directory)\b", _entry_text(entry, name, description), re.I))
     artifact_related = bool(re.search(r"\b(artifact|document|docx|pdf|pptx|xlsx|csv|image|presentation|spreadsheet|report)\b", _entry_text(entry, name, description), re.I))
@@ -1601,7 +1801,8 @@ def _past_skill_prompt_template(
         or entry.get("content")
         or description
     )
-    excerpt = _prompt_safe_excerpt(str(instructions), max_chars=7000)
+    excerpt = (str(instructions) if _past_skill_prompt_format(entry) == "literal"
+               else _prompt_safe_excerpt(str(instructions), max_chars=7000))
     return (
         f"You are executing the imported legacy Skill '{name}' as a SkillWiki {skill_type} Skill.\n"
         f"Original source: {source_path}\n"
@@ -1652,12 +1853,10 @@ def _entry_text(entry: Dict[str, Any], name: str, description: str) -> str:
 
 
 def _prompt_safe_excerpt(text: str, *, max_chars: int) -> str:
-    text = text.strip()
-    text = text.replace("{", "(").replace("}", ")")
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip() + "\n[excerpt truncated for SkillWiki prompt safety]"
+    # Preserve literal content through host template rendering. Existing LLM
+    # budget/capacity checks, not silent excerpts, decide whether it can run.
+    from ..skill_runtime.executor import escape_literal_prompt
+    return escape_literal_prompt(text)
 
 
 def _dict_or_default(value: Any, fallback: Dict[str, Any]) -> Dict[str, Any]:

@@ -4,42 +4,22 @@ SkillWiki is a research system that models Skills as versioned, auditable, graph
 
 ## Quick Start
 
-### Requirements
-
-- Python 3.10+
-- Node.js 18+ (frontend only)
-
-### Install
+Follow the repository [installation and startup instructions](../README.md#quick-start)
+for the Python environment, persistent Git backend and correctly configured
+frontend proxy. Use Python 3.10+; the locked frontend toolchain needs Node.js
+20.19+ or 22.12+.
 
 ```bash
-git clone https://github.com/Huangdingcheng/SkillWiki.git
-cd SkillWiki/skillwiki
-
-python -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
-
-pip install -r requirements.txt
-pip install -e .
+# From this directory, with your virtual environment active:
+python -m pip install -e ".[api]"
+# Set LLM_API_KEY, LLM_API_URL and LLM_MODEL in this terminal first.
+git init ./governance
+skillwiki serve --host 127.0.0.1 --port 8001 --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
 ```
 
-### Start the backend
-
-```bash
-skillwiki serve --port 8001 --api-key YOUR_LLM_API_KEY
-# or
-python -m skillwiki.api.main --port 8001 --api-key YOUR_LLM_API_KEY
-```
-
-### Start the frontend (optional)
-
-```bash
-cd ../skillwiki-frontend
-npm install
-npm run dev        # http://localhost:3000
-```
-
----
+Keep the server running. API health: <http://127.0.0.1:8001/health>;
+request schemas: <http://127.0.0.1:8001/docs>.
+The [user guide](../USER_GUIDE.md) covers the CLI request files and the web workflow.
 
 ## CLI Reference
 
@@ -48,7 +28,7 @@ All commands share a global `--api-url` option (default `http://127.0.0.1:8001`)
 ### Server
 
 ```bash
-skillwiki serve [--host HOST] [--port PORT] [--backend memory|sqlite|postgres]
+skillwiki serve [--host HOST] [--port PORT] [--backend git|memory]
 ```
 
 ### Knowledge Ingestion
@@ -82,15 +62,15 @@ skillwiki skill get <skill_id> [--full]
 # Execute a skill
 skillwiki skill exec <skill_id> --input '{"key": "value"}'
 
-# Static audit (schema, safety, postconditions)
+# Non-persisting candidate audit (may call the configured server model)
 skillwiki audit <skill_id>
 
 # Execute-verify loop with optional auto-promote
-skillwiki verify <skill_id> [--harness mock|claude_code|codex] [--max-retries 3] [--watch]
+skillwiki verify <skill_id> [--harness local_skillwiki] [--max-attempts 1] [--watch]
 
 # Manually promote to a target state
 skillwiki promote <skill_id> <target_state>
-    target_state: S1 | S2 | S3 | released | ...
+    target_state: S0 | S1 | S2 | S3 | S4 | S5 | S6 | S7
 ```
 
 ### Health & Evolution
@@ -145,6 +125,12 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 ```
 
 ### Utilities
+
+`init` and `ping` are provider-configuration/connectivity utilities. Their local
+`--api-url` refers to the model provider, unlike the root CLI option that points
+to SkillWiki. They are not required to start the server with environment values;
+`ping` can make a provider request. Prefer the environment-based startup in the
+user guide for normal use.
 
 ```bash
 skillwiki init --api-key KEY [--api-url URL] [--model MODEL]
@@ -218,12 +204,20 @@ skillwiki/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_API_KEY` | — | LLM API key (required) |
-| `LLM_API_URL` | `https://yunwu.ai` | LLM base URL |
-| `LLM_MODEL` | `claude-sonnet-4-6` | Model name |
-| `SKILLOS_API_TARGET` | `http://127.0.0.1:8001` | Frontend proxy target |
+| `LLM_API_URL` | `https://api.deepseek.com` (API server) | Provider base URL; set explicitly |
+| `LLM_MODEL` | `deepseek-flash` (API server) | Model available to your provider account; set explicitly |
+| `SKILLOS_API_TARGET` | `http://127.0.0.1:8000` (bare Vite) | Set to the actual backend URL; quick start uses port 8001 |
 
 ---
 
 ## License
 
 MIT
+
+
+## Detailed native CLI workflow
+
+See the [shared user guide](../USER_GUIDE.md#cli-workflow) for candidate review,
+verification cases, execution receipts, new versions, snapshots, evidence-bound
+release and recovery. Both interfaces use the native API; no external agent is
+automatically substituted when a local run fails.

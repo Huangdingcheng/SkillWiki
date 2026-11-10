@@ -8,10 +8,24 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillos.api.deps import get_app_state
-from skillos.api.routes.lifecycle import router
-from skillos.layers.skill_governance import GitVersionStore, skill_snapshot_path, write_skill_snapshot
-from skillos.models import EdgeType, Skill, SkillEdge, SkillImplementation, SkillInterface, SkillState, SkillType
+from skillwiki.api.deps import get_app_state
+from skillwiki.api.routes.lifecycle import router
+from skillwiki.layers.skill_governance import (
+    GitVersionStore,
+    read_skill_snapshot_at_ref,
+    skill_snapshot_path,
+    write_skill_snapshot,
+)
+from skillwiki.models import (
+    EdgeType,
+    Skill,
+    SkillEdge,
+    SkillImplementation,
+    SkillInterface,
+    SkillProvenance,
+    SkillState,
+    SkillType,
+)
 
 
 def _run_git(repo: Path, args: list[str]) -> None:
@@ -51,6 +65,14 @@ class FakeWiki:
             setattr(new_skill, key, value)
         self.skills[new_skill.skill_id] = new_skill
         return new_skill
+
+    async def update(self, skill_id: str, **kwargs) -> Skill | None:
+        skill = await self.get(skill_id)
+        if skill is None:
+            return None
+        for key, value in kwargs.items():
+            setattr(skill, key, value)
+        return skill
 
 
 class FakeGraph:
@@ -299,6 +321,49 @@ def test_snapshot_diff_can_compare_versioned_snapshot_paths(
     assert data["review_recommendation"] == "review_required"
 
 
+def test_snapshot_diff_resolves_parent_id_for_new_skill_version(
+    git_repo: Path,
+    skill: Skill,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKILLOS_GOVERNANCE_REPO", str(git_repo))
+    old_commit = _commit_snapshot(git_repo, skill, "snapshot original")
+
+    new_skill = skill.model_copy(deep=True)
+    new_skill.skill_id = "skill-1234567890-new"
+    new_skill.version = "1.0.1"
+    new_skill.description = "Search wiki entries with filters."
+    new_skill.provenance = SkillProvenance(
+        source_type="adapt",
+        parent_skill_ids=[skill.skill_id],
+    )
+    new_commit = _commit_snapshot(git_repo, new_skill, "snapshot changed")
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_app_state] = lambda: SimpleNamespace(
+        wiki=FakeWiki(new_skill, [skill]),
+        graph=FakeGraph(),
+    )
+
+    with TestClient(app) as local_client:
+        response = local_client.get(
+            f"/api/v1/lifecycle/{new_skill.skill_id}/snapshot/diff",
+            params={
+                "from_ref": old_commit,
+                "to_ref": new_commit,
+                "from_version": "1.0.0",
+                "to_version": "1.0.1",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["from_snapshot_path"] == "skills/skill-1234567890/1.0.0.json"
+    assert data["to_snapshot_path"] == "skills/skill-1234567890-new/1.0.1.json"
+    assert any(diff["field"] == "description" for diff in data["diffs"])
+
+
 def test_release_tag_endpoint_creates_tag(client: TestClient, git_repo: Path, skill: Skill) -> None:
     commit_hash = _commit_snapshot(git_repo, skill, "snapshot release")
 
@@ -347,10 +412,64 @@ def test_rollback_endpoint_creates_restore_commit(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["commit_message"] == f"skill(search_wiki): restore from {old_tag}"
-    history = GitVersionStore(git_repo).commit_history(skill_snapshot_path(skill))
+    assert data["commit_message"].startswith(f"skill(search_wiki): recovery draft v")
+    assert data["draft_created"] is True
+    assert data["live_skill_updated"] is False
+    assert data["restored_state"] == "S2"
+    assert data["restored_skill_id"] != skill.skill_id
+    assert skill.description == "Changed description."
+    history = GitVersionStore(git_repo).commit_history(data["restored_snapshot_path"])
     assert history[0].subject == data["commit_message"]
-    assert any(item.commit_hash == old_commit for item in history)
+    assert GitVersionStore(git_repo).head_commit() == data["restore_commit"]
+
+
+def test_rollback_endpoint_restores_parent_version_snapshot_into_active_skill(
+    client: TestClient,
+    git_repo: Path,
+    skill: Skill,
+) -> None:
+    parent = skill.model_copy(deep=True)
+    parent.skill_id = "skill-parent-123456"
+    parent.version = "1.0.0"
+    parent.description = "Original parent version."
+    parent_snapshot_path = write_skill_snapshot(git_repo, parent)
+    old_commit = GitVersionStore(git_repo).commit_paths(
+        [parent_snapshot_path], "snapshot parent version"
+    )
+
+    skill.provenance = SkillProvenance(
+        source_type="adapt",
+        parent_skill_ids=[parent.skill_id],
+        creation_context={"source_version": parent.version},
+    )
+    skill.version = "1.0.1"
+    skill.description = "Changed current version."
+    current_commit = _commit_snapshot(git_repo, skill, "snapshot current version")
+
+    response = client.post(
+        f"/api/v1/lifecycle/{skill.skill_id}/rollback",
+        json={"source_ref": old_commit},
+    )
+
+    assert response.status_code == 200
+    assert skill.version == "1.0.1"
+    assert skill.description == "Changed current version."
+    assert skill.skill_id == "skill-1234567890"
+    data = response.json()
+    assert data["draft_created"] is True
+    assert data["restored_state"] == "S2"
+    assert data["source_skill_id"] == parent.skill_id
+    assert data["source_version"] == parent.version
+    assert data["restored_skill_id"] != skill.skill_id
+    restored = read_skill_snapshot_at_ref(
+        git_repo,
+        data["restore_commit"],
+        data["restored_snapshot_path"],
+    )
+    assert restored["version"] == data["restored_version"]
+    assert restored["description"] == "Original parent version."
+    assert restored["skill_id"] == data["restored_skill_id"]
+    assert GitVersionStore(git_repo).head_commit() != current_commit
 
 
 def test_propose_maintenance_change_creates_review_bundle(

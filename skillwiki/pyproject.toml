@@ -28,11 +28,12 @@ dependencies = [
     "click>=8.0",
     "python-json-logger>=2.0",
     "python-dotenv>=1.0",
+    "jsonschema>=4.18,<5",
 ]
 
 [project.optional-dependencies]
 db = [
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
     "psycopg2-binary>=2.9",
     "neo4j>=5.0",
     "redis>=4.0",
@@ -41,6 +42,7 @@ db = [
 api = [
     "fastapi>=0.100",
     "uvicorn>=0.20",
+    "sqlalchemy[asyncio]>=2.0",
 ]
 ai = [
     "anthropic>=0.7",
@@ -64,9 +66,9 @@ all = [
 skillwiki = "skillwiki.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/Huangdingcheng/skillos"
-Repository = "https://github.com/Huangdingcheng/skillos"
-Issues = "https://github.com/Huangdingcheng/skillos/issues"
+Homepage = "https://github.com/Huangdingcheng/SkillWiki"
+Repository = "https://github.com/Huangdingcheng/SkillWiki"
+Issues = "https://github.com/Huangdingcheng/SkillWiki/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

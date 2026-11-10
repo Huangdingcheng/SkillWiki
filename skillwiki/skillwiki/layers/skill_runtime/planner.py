@@ -38,6 +38,7 @@ class PlanStep:
     depends_on: List[str] = field(default_factory=list)          # 依赖的 step_id
     status: StepStatus = StepStatus.PENDING
     result: Optional[Dict[str, Any]] = None
+    execution_evidence: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

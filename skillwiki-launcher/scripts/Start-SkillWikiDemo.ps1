@@ -3,9 +3,11 @@ param(
     [int]$BackendPort = 8001,
     [int]$FrontendPort = 5174,
     [ValidateSet("memory", "git")]
-    [string]$RepositoryBackend = "memory",
+    [string]$RepositoryBackend = "git",
     [string]$OpenPath = "/wiki",
     [switch]$EnableWebSocket,
+    [switch]$SeedDemo,
+    [switch]$EnableM1Budget,
     [switch]$NoOpen,
     [switch]$AllowPlaceholderLlm
 )
@@ -25,6 +27,8 @@ $StopScript = Join-Path $ScriptDir "Stop-SkillWikiDemo.ps1"
 
 New-Item -ItemType Directory -Force $LogDir | Out-Null
 
+# Optional integrations use explicit environment variables or config.local.ps1.
+
 if (Test-Path $ConfigFile) {
     Write-Host "Loading local config: $ConfigFile"
     . $ConfigFile
@@ -36,8 +40,11 @@ if ($env:SKILLOS_DEMO_BACKEND_PORT) {
 if ($env:SKILLOS_DEMO_FRONTEND_PORT) {
     $FrontendPort = [int]$env:SKILLOS_DEMO_FRONTEND_PORT
 }
-if ($env:SKILLOS_DEMO_REPOSITORY_BACKEND) {
+if ($env:SKILLOS_DEMO_REPOSITORY_BACKEND -and -not $PSBoundParameters.ContainsKey('RepositoryBackend')) {
     $RepositoryBackend = $env:SKILLOS_DEMO_REPOSITORY_BACKEND
+}
+if ($RepositoryBackend -notin @("memory", "git")) {
+    throw "Unsupported repository backend: $RepositoryBackend"
 }
 
 if (-not (Test-Path $BackendDir)) {
@@ -101,7 +108,7 @@ function Ensure-DeepSeekConfig {
             $env:LLM_API_URL = "https://api.deepseek.com"
         }
         if (-not $env:LLM_MODEL) {
-            $env:LLM_MODEL = "demo-placeholder-model"
+            $env:LLM_MODEL = "deepseek-flash"
         }
         if (-not $env:LLM_API_KEY) {
             $env:LLM_API_KEY = "demo-placeholder-key"
@@ -118,7 +125,7 @@ function Ensure-DeepSeekConfig {
     Write-Host ""
 
     $apiUrl = Read-RequiredText "DeepSeek API URL" "https://api.deepseek.com"
-    $model = Read-RequiredText "DeepSeek model" "deepseek-v4-flash"
+    $model = Read-RequiredText "DeepSeek model" "deepseek-flash"
     while ($true) {
         $secureKey = Read-Host "DeepSeek API key (input hidden)" -AsSecureString
         $apiKey = ConvertFrom-SecureStringToPlainText $secureKey
@@ -141,7 +148,7 @@ function Ensure-DeepSeekConfig {
         ("`$env:LLM_API_KEY = '" + (Escape-SingleQuotedPowerShellString $apiKey) + "'"),
         "",
         "# Optional launch overrides:",
-        "# `$env:SKILLOS_DEMO_REPOSITORY_BACKEND = 'memory'",
+        "# `$env:SKILLOS_DEMO_REPOSITORY_BACKEND = 'git'",
         "# `$env:SKILLOS_DEMO_BACKEND_PORT = '8001'",
         "# `$env:SKILLOS_DEMO_FRONTEND_PORT = '5174'"
     )
@@ -176,18 +183,29 @@ function Resolve-SkillWikiPython {
         }
     }
 
-    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-one-click-launcher\config.local.ps1."
+    throw "No Python runtime with required SkillWiki backend dependencies was found. Set SKILLOS_PYTHON in skillwiki-launcher\config.local.ps1."
 }
 
 function Get-FreePort([int]$PreferredPort) {
     for ($offset = 0; $offset -lt 50; $offset++) {
         $port = $PreferredPort + $offset
-        $busy = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-        if (-not $busy) {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+        try {
+            $listener.Start()
             return $port
+        } catch [System.Net.Sockets.SocketException] {
+            # Windows can reserve a port without a listening process.
+        } finally {
+            $listener.Stop()
         }
     }
-    throw "No free port found starting at $PreferredPort"
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    try {
+        $listener.Start()
+        return [int]$listener.LocalEndpoint.Port
+    } finally {
+        $listener.Stop()
+    }
 }
 
 function Wait-HttpOk([string]$Url, [int]$TimeoutSeconds, [string]$Name) {
@@ -205,6 +223,35 @@ function Wait-HttpOk([string]$Url, [int]$TimeoutSeconds, [string]$Name) {
     throw "$Name did not become ready: $Url"
 }
 
+function New-SkillWikiBackendArguments {
+    param(
+        [int]$Port,
+        [string]$Backend,
+        [string]$StorageDir,
+        [switch]$IncludeDemo
+    )
+    $arguments = @(
+        "-m", "skillwiki.api.main",
+        "--host", "127.0.0.1",
+        "--port", [string]$Port,
+        "--repository-backend", $Backend,
+        "--llm-retry-count", "0"
+    )
+    if ($IncludeDemo) {
+        $arguments += "--seed-demo"
+    } else {
+        $arguments += "--no-seed-demo"
+    }
+    if ($Backend -eq "git") {
+        if ([string]::IsNullOrWhiteSpace($StorageDir)) {
+            throw "Git backend requires a persistent storage directory."
+        }
+        # Start-Process joins ArgumentList entries into a command line.
+        $arguments += @("--skill-storage-dir", ('"' + $StorageDir + '"'))
+    }
+    return $arguments
+}
+
 if (Test-Path $StopScript) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $StopScript -Silent
 }
@@ -216,6 +263,7 @@ Ensure-DeepSeekConfig
 
 $PythonExe = Resolve-SkillWikiPython
 $NpmExe = (Get-Command npm.cmd -ErrorAction Stop).Source
+$ViteCmd = Join-Path $FrontendDir "node_modules\.bin\vite.cmd"
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 $BackendOut = Join-Path $LogDir "backend-$Stamp.out.log"
@@ -223,17 +271,52 @@ $BackendErr = Join-Path $LogDir "backend-$Stamp.err.log"
 $FrontendOut = Join-Path $LogDir "frontend-$Stamp.out.log"
 $FrontendErr = Join-Path $LogDir "frontend-$Stamp.err.log"
 
-$backendArgs = @(
-    "-m", "skillwiki.api.main",
-    "--host", "127.0.0.1",
-    "--port", [string]$BackendPort,
-    "--repository-backend", $RepositoryBackend
-)
+if ($EnableM1Budget) {
+    # All paid model and embedding calls share one restart-safe 10 CNY ledger.
+    Remove-Item Env:SKILLWIKI_LLM_BUDGET_LIMIT_CNY, Env:SKILLWIKI_LLM_BUDGET_TOTAL_LIMIT_CNY, Env:SKILLWIKI_LLM_BUDGET_LEDGER_PATH, Env:SKILLWIKI_LLM_BUDGET_SCOPE, Env:SKILLWIKI_LLM_BUDGET_MAX_OUTPUT_TOKENS -ErrorAction SilentlyContinue
+    $env:SKILLWIKI_CUMULATIVE_BUDGET_TOTAL_LIMIT_CNY = "10"
+    $env:SKILLWIKI_CUMULATIVE_BUDGET_LEDGER_PATH = Join-Path $RuntimeDir "cumulative-budget.jsonl"
+    # Import existing paid usage once. Missing usage keeps its previous reservation.
+    $legacyLedgers = @(
+        (Join-Path $RepoRoot "artifacts\20261022-m1-recoverable-demo\runtime\llm-budget.jsonl"),
+        (Join-Path $RuntimeDir "embedding-budget.jsonl")
+    ) | Where-Object { Test-Path $_ }
+    if ($legacyLedgers.Count -eq 0 -and -not (Test-Path $env:SKILLWIKI_CUMULATIVE_BUDGET_LEDGER_PATH)) {
+        throw "Historical budget evidence is missing; reconcile before enabling paid calls."
+    }
+    if ($legacyLedgers.Count -gt 0) {
+        $reconcileArgs = @((Join-Path $BackendDir "scripts\reconcile_demo_budget.py"),
+            "--ledger", $env:SKILLWIKI_CUMULATIVE_BUDGET_LEDGER_PATH,
+            "--report", (Join-Path $RuntimeDir "budget-reconciliation.json"))
+        foreach ($legacyLedger in $legacyLedgers) { $reconcileArgs += @("--legacy", $legacyLedger) }
+        & $PythonExe @reconcileArgs
+        if ($LASTEXITCODE -ne 0) { throw "Historical budget reconciliation failed; no calls started." }
+    }
+    $env:SKILLWIKI_FABRIC_EMBEDDING_MODE = "remote"
+    $env:SKILLWIKI_FABRIC_EMBEDDING_ALLOW_REMOTE = "1"
+    $env:SKILLWIKI_FABRIC_EMBEDDING_BUDGET_LIMIT_CNY = "10"
+    $env:SKILLWIKI_FABRIC_EMBEDDING_LEDGER_PATH = $env:SKILLWIKI_CUMULATIVE_BUDGET_LEDGER_PATH
+}
 
+$SkillStorageDir = $null
 if ($RepositoryBackend -eq "git") {
     $SkillStorageDir = Join-Path $RuntimeDir "skill-storage-git"
     New-Item -ItemType Directory -Force $SkillStorageDir | Out-Null
-    $backendArgs += @("--skill-storage-dir", $SkillStorageDir)
+}
+$backendArgs = New-SkillWikiBackendArguments `
+    -Port $BackendPort -Backend $RepositoryBackend `
+    -StorageDir $SkillStorageDir -IncludeDemo:$SeedDemo
+
+# Keep local snapshot commits out of the source checkout by default.
+if (-not $env:SKILLOS_GOVERNANCE_REPO) {
+    $env:SKILLOS_GOVERNANCE_REPO = Join-Path $RuntimeDir "governance-git"
+    if (-not (Test-Path (Join-Path $env:SKILLOS_GOVERNANCE_REPO ".git"))) {
+        New-Item -ItemType Directory -Force $env:SKILLOS_GOVERNANCE_REPO | Out-Null
+        & git init --quiet $env:SKILLOS_GOVERNANCE_REPO
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not initialize the demo governance repository."
+        }
+    }
 }
 
 Write-Host "Starting SkillWiki backend on http://127.0.0.1:$BackendPort ..."
@@ -258,9 +341,16 @@ if ($EnableWebSocket) {
 }
 
 Write-Host "Starting SkillWiki frontend on http://127.0.0.1:$FrontendPort ..."
+if (Test-Path $ViteCmd) {
+    $FrontendExe = $ViteCmd
+    $FrontendArgs = @("--host", "127.0.0.1", "--port", [string]$FrontendPort)
+} else {
+    $FrontendExe = $NpmExe
+    $FrontendArgs = @("run", "dev", "--", "--host", "127.0.0.1", "--port", [string]$FrontendPort)
+}
 $frontendProc = Start-Process `
-    -FilePath $NpmExe `
-    -ArgumentList @("run", "dev", "--", "--host", "127.0.0.1", "--port", [string]$FrontendPort) `
+    -FilePath $FrontendExe `
+    -ArgumentList $FrontendArgs `
     -WorkingDirectory $FrontendDir `
     -RedirectStandardOutput $FrontendOut `
     -RedirectStandardError $FrontendErr `
@@ -284,6 +374,10 @@ $status = [ordered]@{
     backendPort = $BackendPort
     frontendPort = $FrontendPort
     repositoryBackend = $RepositoryBackend
+    skillStorageDir = $(if ($RepositoryBackend -eq "git") { $SkillStorageDir } else { $null })
+    governanceRepo = $env:SKILLOS_GOVERNANCE_REPO
+    seedDemo = [bool]$SeedDemo
+    llmRetryCount = 0
     websocketDisabled = $websocketDisabled
     frontendUrl = $OpenUrl
     apiTarget = $env:SKILLOS_API_TARGET

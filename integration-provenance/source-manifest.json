@@ -1,0 +1,1578 @@
+{
+  "status": "LOCAL_SOURCE_CANDIDATE_NOT_A_RELEASE",
+  "branch": "codex/skillwiki-demo-product-20261109",
+  "public_base": "050d540215374f73cf295c410a8beb4415f7c128",
+  "integration_head": "6a8e042927890b48d809ef50922608727cc2777b",
+  "source_worktree": "integration",
+  "experiment_freeze": "research/stage2-agreed-followup-execution-20261109-r1/01-freeze/product/manifest.json",
+  "experiment_freeze_sha256": "6bc1ec5741173c8522b07431866645ca0f1e63e717b4a666c6522bd5ac370761",
+  "copied_files": [
+    {
+      "path": ".gitignore",
+      "bytes": 2122,
+      "sha256": "a39e058346db3d60f830acddff9be62aeacfc25daf5a97b1d73e81d34506cff5"
+    },
+    {
+      "path": "README.md",
+      "bytes": 8317,
+      "sha256": "60c62412be3ecebc50cad84bd96b33cac599393fabe16ba34e4085fcbedf4fb4"
+    },
+    {
+      "path": "RESTORE_SKILLWIKI_DEMO_STATE.bat",
+      "bytes": 270,
+      "sha256": "f7bbc326ed25069f01addd4b547b1a8160ba0592c02c320859b70c606e80508a"
+    },
+    {
+      "path": "START_SKILLWIKI_DEMO.bat",
+      "bytes": 326,
+      "sha256": "c23ddb849cbd6c2f736bcab02642cd4c726a6b66ba6be2729b7ad1513febb232"
+    },
+    {
+      "path": "STOP_SKILLWIKI_DEMO.bat",
+      "bytes": 176,
+      "sha256": "7e34755f3d6614f2f41a2865ae5597a497f3df9dc95d7e5053fb7c93f91aedc2"
+    },
+    {
+      "path": "docker-compose.yml",
+      "bytes": 776,
+      "sha256": "78405cb2c24fd7f9d3e0ba62ab1e1dd78bed0dc80138631554f20f92b44e7409"
+    },
+    {
+      "path": "figures/figure2_overview/overview.png",
+      "bytes": 320429,
+      "sha256": "b492d39057c862de5c2791074388dfefa7555c30dffe15a52e2961813233f989"
+    },
+    {
+      "path": "scripts/demo_readiness_check.py",
+      "bytes": 16656,
+      "sha256": "e2cbdee259f315b6753558b84cbd73da09bdbf2e496ad9309d1f1b34eb22b675"
+    },
+    {
+      "path": "scripts/prepare_skillsbench_subset.py",
+      "bytes": 10282,
+      "sha256": "a79944ba624f590681dfbf27616baced169037bdaa5a5faf5e7f4eca8ea7ace3"
+    },
+    {
+      "path": "scripts/report_skillsbench_mapping.py",
+      "bytes": 13161,
+      "sha256": "55ae09317a102bca6af08cde34e56c240ed18bd80c4f488f30a5cd4b6f511b42"
+    },
+    {
+      "path": "scripts/restore_demo_state.py",
+      "bytes": 37107,
+      "sha256": "3c93430e241697ac493b16b02ecab1793dc96ad6ffd50de2e9b7d9a5e63bb3e7"
+    },
+    {
+      "path": "scripts/run_input_skill_eval.py",
+      "bytes": 35949,
+      "sha256": "25c276cb306c8b0afeac567dd009c0c29316507891241639b8a85217845f391a"
+    },
+    {
+      "path": "scripts/run_p0_harness_eval.py",
+      "bytes": 22896,
+      "sha256": "c3a8740c41689e1264d6a35fb87eea29d724bc30ba6b3905766164bb32b90853"
+    },
+    {
+      "path": "skill_os.png",
+      "bytes": 918274,
+      "sha256": "88217eb76ac22b1f204954a05b39e9e4b5ef76937470a5d20b64203aa89185d0"
+    },
+    {
+      "path": "skillwiki-frontend/.gitignore",
+      "bytes": 277,
+      "sha256": "d50ab07e11fa4bf3b1c7c3312e1d7baeab56cca756832ccf40476823ad2a38b7"
+    },
+    {
+      "path": "skillwiki-frontend/Dockerfile",
+      "bytes": 243,
+      "sha256": "cf0b9ce87f2d67d8ea8ddbd63781a345da6c34d539abd62a608bb7e0578e9fe0"
+    },
+    {
+      "path": "skillwiki-frontend/README.md",
+      "bytes": 2498,
+      "sha256": "bf14fbe337274f08ba3d9c2d6fe3e8723f13c16b605583bff70483717e3d4f3a"
+    },
+    {
+      "path": "skillwiki-frontend/eslint.config.js",
+      "bytes": 613,
+      "sha256": "f19395caf80173ffbd41ab74f8eef4fc26c042f84a937de4a6286ec5c13ad401"
+    },
+    {
+      "path": "skillwiki-frontend/index.html",
+      "bytes": 374,
+      "sha256": "42555f94b84ed783134555398637455da8be82860905ac7422f81a1fb88b1b36"
+    },
+    {
+      "path": "skillwiki-frontend/nginx.conf",
+      "bytes": 784,
+      "sha256": "91ba1c61388d8b247ca367f250c019c97c75fdefdf79a02d7d12ac90aa1758e6"
+    },
+    {
+      "path": "skillwiki-frontend/package-lock.json",
+      "bytes": 232657,
+      "sha256": "6820b63f47694d6470ae91a3c632fb7d94cd3903e6bcc2c22582052f06f8a7f8"
+    },
+    {
+      "path": "skillwiki-frontend/package.json",
+      "bytes": 1091,
+      "sha256": "5dc6e97c32ef4cb39de0f92361b23f32e6d190489e839e330fd63918cce7ca31"
+    },
+    {
+      "path": "skillwiki-frontend/public/favicon.svg",
+      "bytes": 9522,
+      "sha256": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66"
+    },
+    {
+      "path": "skillwiki-frontend/public/icons.svg",
+      "bytes": 5055,
+      "sha256": "7ca2d67c9c3aebf50cdc8709ee8aacf8cdb8cc7ea6325ea94939caef5da1c53d"
+    },
+    {
+      "path": "skillwiki-frontend/scripts/capture_figures.mjs",
+      "bytes": 8038,
+      "sha256": "6de9e1eea0d72608af472a57428b5fdf21ec6496d96aaec45c0f26cdabe00db6"
+    },
+    {
+      "path": "skillwiki-frontend/scripts/knowledge-import-payload.mjs",
+      "bytes": 1689,
+      "sha256": "b80263338022e24420f761557bf056ad25571f2903a59c81a4177459f374e7ee"
+    },
+    {
+      "path": "skillwiki-frontend/scripts/test-m1-state.mjs",
+      "bytes": 4132,
+      "sha256": "256b280737b443a5c8fdcd2e64356f2f9c968184e242eeb472b1d2d4ed27de8e"
+    },
+    {
+      "path": "skillwiki-frontend/scripts/test_import_payload_backend.py",
+      "bytes": 6792,
+      "sha256": "a2d742a60d89bf3cc97b80b8702ebdcd7b2d818287dbd0fab3255ce2e91ce93b"
+    },
+    {
+      "path": "skillwiki-frontend/src/App.css",
+      "bytes": 3075,
+      "sha256": "c2571ce7245629994b8adc84f6c48e1920f047a4e7e29c89a4aeb51eeb1b5433"
+    },
+    {
+      "path": "skillwiki-frontend/src/App.tsx",
+      "bytes": 2799,
+      "sha256": "49513c5456a09ee7b54976c222eb10da9e91ddc00326aacfa3db828bba94d1f7"
+    },
+    {
+      "path": "skillwiki-frontend/src/api/client.ts",
+      "bytes": 12279,
+      "sha256": "faea612d419f933be40b9e4f302a1d2823e7d9a84e8e4d3f28fa3b34eaf53ee9"
+    },
+    {
+      "path": "skillwiki-frontend/src/api/errors.ts",
+      "bytes": 1342,
+      "sha256": "72520a1466c849b4d58314fac0ca7c6218b6c8ca0fc6cd5754c9b0fe0efc2c1a"
+    },
+    {
+      "path": "skillwiki-frontend/src/api/types.ts",
+      "bytes": 21732,
+      "sha256": "13862fd45e1de2c2eece84eef201937af2fa45c8df66d6a8253310b9ecb6ec69"
+    },
+    {
+      "path": "skillwiki-frontend/src/assets/hero.png",
+      "bytes": 13057,
+      "sha256": "881ffbcaafc212e49addad08846a5b82761355fa20624253af3477ba33262c5c"
+    },
+    {
+      "path": "skillwiki-frontend/src/assets/react.svg",
+      "bytes": 4126,
+      "sha256": "35ef61ed53b323ae94a16a8ec659b3d0af3880698791133f23b084085ab1c2e5"
+    },
+    {
+      "path": "skillwiki-frontend/src/assets/vite.svg",
+      "bytes": 8710,
+      "sha256": "2f1f6c6f90a0ef7422cbb4cfafcd8ad329c507a18afdc34cc21fa72179b9c54a"
+    },
+    {
+      "path": "skillwiki-frontend/src/components/AppLayout.tsx",
+      "bytes": 7246,
+      "sha256": "c7149dc9c3bfecc9827635067634ca99ba31828eca97ef693687f0461735e658"
+    },
+    {
+      "path": "skillwiki-frontend/src/hooks/useSkillContext.ts",
+      "bytes": 567,
+      "sha256": "259d7670e47fd1731562d4ce155b28985acd3d2602fb302e5c7654623e2e7c15"
+    },
+    {
+      "path": "skillwiki-frontend/src/hooks/useWebSocket.ts",
+      "bytes": 1564,
+      "sha256": "cc75c9d74712745137d60d3d6c4c94e5be45e21959c4e9240b24ac48cf83c176"
+    },
+    {
+      "path": "skillwiki-frontend/src/i18n.ts",
+      "bytes": 1675,
+      "sha256": "0e02a5a3c91a4551d1135d66871cfdfe5bd412944e427bea5d6b5a6389f576f2"
+    },
+    {
+      "path": "skillwiki-frontend/src/index.css",
+      "bytes": 682,
+      "sha256": "77fe68d6c5af7d4a9d942bc7140dcaa837d8f208a87b113f4c60e245a23babaa"
+    },
+    {
+      "path": "skillwiki-frontend/src/main.tsx",
+      "bytes": 236,
+      "sha256": "59414e45651337dececea69bbe44c2afa90561a738ac70bca1d14680cce80be7"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/AgentExecution.tsx",
+      "bytes": 21320,
+      "sha256": "22204d404f4de00d207606254842c434d13291086ca0198ce17f10979ea51d73"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/Dashboard.tsx",
+      "bytes": 17938,
+      "sha256": "0f4aad8133cc680928d4ae4415ec62cea56ab4dc3a3fe08fe83c0fe404f06756"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/EvaluationDashboard.tsx",
+      "bytes": 15778,
+      "sha256": "dfdf43f60fe45614c16d95cf401cd29dba4a5a8ceb8c9409e93f5e9f8b5f9592"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/Evolution.tsx",
+      "bytes": 19732,
+      "sha256": "fc77997ef0c0cc9f571bb6514ec6c5e901e571f1081da436c36644311dd76bec"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/HarnessVerification.tsx",
+      "bytes": 33184,
+      "sha256": "e54c7e0002c7c3d3ceeb33f7873c6e2d943dadbce2879e4c15d0e17fd6fc3d26"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/KnowledgeImport.tsx",
+      "bytes": 57707,
+      "sha256": "9cb8a026e43bdbfd748dd4d00c238fe73959c1d307acb20cc17d1ab4df8823e6"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/LifecycleDemo.tsx",
+      "bytes": 16435,
+      "sha256": "d9135fcae900c4faabf54b7afa8e12b88b81a757163f608020cecc5ec0c4806e"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/SelfEvolutionDemo.tsx",
+      "bytes": 27975,
+      "sha256": "fe98f23ea1c5c025a046e107c78e5bf1192c2c214d04a1182b5859728ab51383"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/SkillGraph.tsx",
+      "bytes": 51257,
+      "sha256": "258a535204a8043d3a0c71d014a49b1a924c21f0d74ab640639e070983e369d7"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/SkillWiki.tsx",
+      "bytes": 25206,
+      "sha256": "979d68deb17f05bb096667a0bd32f38c539f6e679d92dcdf1b216211824bd242"
+    },
+    {
+      "path": "skillwiki-frontend/src/pages/VersionControl.tsx",
+      "bytes": 46262,
+      "sha256": "1652fcbeb28b56b9d7b554a8d67c889f4392e1dad91222167b6a2a098a3932dc"
+    },
+    {
+      "path": "skillwiki-frontend/src/store/appStore.ts",
+      "bytes": 1411,
+      "sha256": "625099e25ce6dbb7612814f78f0efa5f8fb9398303582a8cd9d357885cfb5fca"
+    },
+    {
+      "path": "skillwiki-frontend/src/types/antv-g6.d.ts",
+      "bytes": 27,
+      "sha256": "a3527f9003124c01f296e4c27e95746b0d8f1968a3e710174ce0590bfb16b08a"
+    },
+    {
+      "path": "skillwiki-frontend/src/utils/executionEvidence.ts",
+      "bytes": 1538,
+      "sha256": "4e7626b11349733cda90fd5da757e95a745833ea7c6349c04efa34497ff90f23"
+    },
+    {
+      "path": "skillwiki-frontend/src/utils/recoveryDraft.ts",
+      "bytes": 490,
+      "sha256": "8e8c8993179c392e22073b25f92a810d38b43f46d35e6ae5144cec8e2912bfa0"
+    },
+    {
+      "path": "skillwiki-frontend/src/utils/skillContext.ts",
+      "bytes": 530,
+      "sha256": "25186212d1eb794a31adcee064d49600447c3fe23a9ab9fe3d5bb966c16d845e"
+    },
+    {
+      "path": "skillwiki-frontend/tsconfig.app.json",
+      "bytes": 821,
+      "sha256": "3429fe3e71b6bd542f19810cc787416f69a73e2fbf4e64eca84eda3bdb833325"
+    },
+    {
+      "path": "skillwiki-frontend/tsconfig.json",
+      "bytes": 126,
+      "sha256": "ad28d132ee48d6e23917cf5827cace785d0fc01a44ca68b0dda51cc8c3fd3f52"
+    },
+    {
+      "path": "skillwiki-frontend/tsconfig.node.json",
+      "bytes": 615,
+      "sha256": "e0f1936992f77a707102795e8ea311ae74cb54de87b221bb32b44055af66ff7e"
+    },
+    {
+      "path": "skillwiki-frontend/vite.config.ts",
+      "bytes": 544,
+      "sha256": "1ebadf3a592b2a98e414375b39c362a4c1e7e948f246a85a1129bb00bc61c79e"
+    },
+    {
+      "path": "skillwiki-launcher/.gitignore",
+      "bytes": 28,
+      "sha256": "142a24c15a6e52eb6f5cbf14604c760bcad21ae441373c3618086476d8782f79"
+    },
+    {
+      "path": "skillwiki-launcher/README.md",
+      "bytes": 3358,
+      "sha256": "cfacbb9b959cad1bdf80fa23bb0a72b9400edaec7a537290fa5c9db594653a3c"
+    },
+    {
+      "path": "skillwiki-launcher/RESTORE_STATE.bat",
+      "bytes": 236,
+      "sha256": "78e5be014e28145ce624461bad7b7b799aaadb6cf420ab726e0ebed577d05231"
+    },
+    {
+      "path": "skillwiki-launcher/START.bat",
+      "bytes": 307,
+      "sha256": "466a47243ddab87596304ecc3e1cd80d14cdd7eb97b4f3e2b339a9e286c970b1"
+    },
+    {
+      "path": "skillwiki-launcher/STOP.bat",
+      "bytes": 157,
+      "sha256": "017a0e2cdebc1ef8b1e2706c13ce2bd902e781ffc9fb5d118c41de86a435befa"
+    },
+    {
+      "path": "skillwiki-launcher/config.example.ps1",
+      "bytes": 754,
+      "sha256": "d8f6dc56c01d3fe6c2fa23fbd54c2f940b8030a51644f1f44e53857169dc885a"
+    },
+    {
+      "path": "skillwiki-launcher/scripts/Restore-SkillWikiDemoState.ps1",
+      "bytes": 4686,
+      "sha256": "5fd6b828a00d0d54cd926c8a4d9b5f29ccddaefdad9bcbd1f70db57cb6a5e9b3"
+    },
+    {
+      "path": "skillwiki-launcher/scripts/Start-SkillWikiDemo.ps1",
+      "bytes": 15366,
+      "sha256": "80661f5700b2d209039d7422900e6bd094a76627e3a2e2f7c82ff0b481fa645b"
+    },
+    {
+      "path": "skillwiki-launcher/scripts/Stop-SkillWikiDemo.ps1",
+      "bytes": 2533,
+      "sha256": "e47e77c6812d158fba4b28900c1f2a4b5d11dfe21e2ed0cfe7c03d286baa3b8e"
+    },
+    {
+      "path": "skillwiki-launcher/tests/Test-LauncherDefaults.ps1",
+      "bytes": 2186,
+      "sha256": "3cf56822f75142eeb60ad8f7842d1c2b8350aff53daa5a1b719e7da2aa010c0f"
+    },
+    {
+      "path": "skillwiki-skill/.claude-plugin/plugin.json",
+      "bytes": 397,
+      "sha256": "6fa54c9302012c7d8d9921ba0888a3348d00b5439688d965fb73f543e962330f"
+    },
+    {
+      "path": "skillwiki-skill/README.md",
+      "bytes": 1592,
+      "sha256": "3e92d0975c59b017bb80d175472bccec15b4c063c76a4a9b4c7f2063ff8c920c"
+    },
+    {
+      "path": "skillwiki-skill/skills/skillwiki-ingest/SKILL.md",
+      "bytes": 2768,
+      "sha256": "2372fe0a588fd6d24c2f167262eb9e6cc545add7ae09cc0203f6e7be96348fb7"
+    },
+    {
+      "path": "skillwiki-skill/skills/skillwiki-manage/SKILL.md",
+      "bytes": 4519,
+      "sha256": "984fd9bb433936cdce7173ac183e2ef631f22a075bd22461f388ac55404fb3c3"
+    },
+    {
+      "path": "skillwiki-skill/skills/skillwiki-verify/SKILL.md",
+      "bytes": 2357,
+      "sha256": "b7623000cc1e1be03c567c345b13766e560d1afd36a4fd1653df3e538cc84dbe"
+    },
+    {
+      "path": "skillwiki/.env.example",
+      "bytes": 1004,
+      "sha256": "7485830901165e690d4a079c77d084e29523cd98dae55ddeb974fab0b88caa73"
+    },
+    {
+      "path": "skillwiki/.gitignore",
+      "bytes": 139,
+      "sha256": "b6980516d07be3fcca889971d7381af9deada44f4f8d7e8516d5d91676c634ff"
+    },
+    {
+      "path": "skillwiki/Dockerfile",
+      "bytes": 274,
+      "sha256": "bc4a116d46c02166f31c2767c7f5224d90639c4f61518f1804756f238230a60d"
+    },
+    {
+      "path": "skillwiki/README.md",
+      "bytes": 6069,
+      "sha256": "27963343be2425eb1282e1abc94b1265f507967a80a45f577a1912a4f79ccb70"
+    },
+    {
+      "path": "skillwiki/SOURCE_UPDATE_SCOPE.md",
+      "bytes": 3794,
+      "sha256": "e4722fdb67c86a988af8a034ae24eb4be8f12e175e186bef33fb39ae9fbcaf42"
+    },
+    {
+      "path": "skillwiki/benchmarks/run_demo_benchmark.py",
+      "bytes": 15221,
+      "sha256": "b6b19b9786201ab3f521325bcaf9918d8cfd239ff303529bee485708b4d5c7bf"
+    },
+    {
+      "path": "skillwiki/benchmarks/run_llm_planner_eval.py",
+      "bytes": 26104,
+      "sha256": "80bdd61019b287f8005f5591a9549093197d3dfe0e162596ab10c6ce27045558"
+    },
+    {
+      "path": "skillwiki/benchmarks/run_search_eval.py",
+      "bytes": 26850,
+      "sha256": "2cba30916981e74387321aec06e22a24050a410bc7be868c6ad68e380b67d7cf"
+    },
+    {
+      "path": "skillwiki/benchmarks/search_queries.json",
+      "bytes": 9729,
+      "sha256": "0eb6cfb0fee8ff46a1042b4169603a9299e78c43ecd592f8ce8bab9d98544fc6"
+    },
+    {
+      "path": "skillwiki/benchmarks/skillwiki_demo_tasks.json",
+      "bytes": 8784,
+      "sha256": "478ee1b74301b61492b3616004efa5061ba76f204a061e1477e194e03b998020"
+    },
+    {
+      "path": "skillwiki/benchmarks/summarize_results.py",
+      "bytes": 4478,
+      "sha256": "f57b6389b8e4c57d4431aca25dc9e2e6d2542effe7692005c1b42852ed8c22c0"
+    },
+    {
+      "path": "skillwiki/config.yaml",
+      "bytes": 3714,
+      "sha256": "4cc749dfb2f79814ace5c20a2fef7ad6cdda9ab77c65b750906ad60a9d19f496"
+    },
+    {
+      "path": "skillwiki/pyproject.toml",
+      "bytes": 2468,
+      "sha256": "61c704c2762c0a2e1d3518b3b94e704c848aee56b434f8965dc02560ae597821"
+    },
+    {
+      "path": "skillwiki/pytest.ini",
+      "bytes": 75,
+      "sha256": "8a31c6accc0319c51e8858778709ad9889b9db8fffd530fef25f0d3a8d93d1ff"
+    },
+    {
+      "path": "skillwiki/requirements.txt",
+      "bytes": 559,
+      "sha256": "c22c8c0f2f607cff6670d27b99de0a81901fc3b3036dc6fd718689c53081d8c3"
+    },
+    {
+      "path": "skillwiki/scripts/check_five_demo_persistence.py",
+      "bytes": 4107,
+      "sha256": "3ad7b8b71de49cba75402f5b700dad5744e8ba5037ab60e752361961c3be10a7"
+    },
+    {
+      "path": "skillwiki/scripts/five_capability_demo.py",
+      "bytes": 7257,
+      "sha256": "8714e15c557dd1dff8b6fe7e9ec2418af4f45843a394073f47e56f19d6c94ad5"
+    },
+    {
+      "path": "skillwiki/scripts/reconcile_demo_budget.py",
+      "bytes": 2942,
+      "sha256": "f643138020c27cd47929b569e96a129b22143507441025de4ca1253e50427917"
+    },
+    {
+      "path": "skillwiki/scripts/run_five_demo_acceptance.py",
+      "bytes": 3016,
+      "sha256": "35c82ec31ec85114d30ec8d815511a2706a5c30baa00c6498ad8dcc8a3c8c4b4"
+    },
+    {
+      "path": "skillwiki/scripts/validate_model_plan.py",
+      "bytes": 4817,
+      "sha256": "d9b98334bdfb4074b0261d29b3de243571551813d63ffd60caaebc0b6eed0425"
+    },
+    {
+      "path": "skillwiki/skillwiki/__init__.py",
+      "bytes": 327,
+      "sha256": "a943ad2a0ae4d2529447f190eea0d51708607c49dd059acddec773ed9e266ca4"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/__init__.py",
+      "bytes": 35,
+      "sha256": "6afb9a315d6c696c0cfa080d5690319c40e60aca75f4ab479162a280f01d2fe6"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/component_demo.py",
+      "bytes": 23463,
+      "sha256": "5e5c4f943e1314f5e9e8f75cc5b230d0856ea59cb821067695f4f3fd5498e52c"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/deps.py",
+      "bytes": 4158,
+      "sha256": "3e4df43b0c5914c5129f3722f839d3b1d54b2b0916c991100b7ff7961a1795d0"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/execution_history.py",
+      "bytes": 3128,
+      "sha256": "26dfd3271d47e03cbade21c3d5e1255d04741096010a07cf9754a310107350e3"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/main.py",
+      "bytes": 37673,
+      "sha256": "bed5abcb787d5b42b0b01680fdfb07853922c402ada344b48bff373572178bcb"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/memory_store.py",
+      "bytes": 36630,
+      "sha256": "4d4664fc8064002a17254a34f5dbc5f20ace96e836715ce8910b371f36befc1d"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/__init__.py",
+      "bytes": 24,
+      "sha256": "37f6d7ca8adf69d126b9fd40c714b29dbb47dd467d355a1eb933a945a9640b51"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/evaluation.py",
+      "bytes": 9825,
+      "sha256": "4c44b0a71facc3c5dc851e74bb1f3955309e5f51609fcedd3f317311f73ffbfa"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/evolution.py",
+      "bytes": 27287,
+      "sha256": "b7763c6ee1cd26e0701cf94d005d517a52c988c923302a5e7a19dd10b208e2ed"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/execution.py",
+      "bytes": 43401,
+      "sha256": "393f26ea2d74b0a3463b427d12c6002df565c12aa6618693a50537f383b91e28"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/graph.py",
+      "bytes": 19449,
+      "sha256": "ef732f2c71d221f775425bebc0b44a0fa36240adda379e1e1233e9780a6bf52a"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/harness.py",
+      "bytes": 5109,
+      "sha256": "6906379a842e418f2d426669e5ed83572c3bf6c98026127fe635ae0e24fc059c"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/ingest.py",
+      "bytes": 27699,
+      "sha256": "c443cf8de2e5e30cd44cf4ef156e97556093643e00af9d359f5d35482694c678"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/lifecycle.py",
+      "bytes": 43388,
+      "sha256": "b03ecf66478730ae8ef54427be8b0de897379e189db608d00611b85aa5188c5f"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/repository.py",
+      "bytes": 1219,
+      "sha256": "e1f98ec361299f0c50c3f840ec9bfaa3306def912c11b0311f041d6a3f35298f"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/skills.py",
+      "bytes": 9669,
+      "sha256": "61c837263388877e6cd8d7991d6c19e80fd1816a40a6f01cfe5929a32a33af36"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/routes/ws.py",
+      "bytes": 3470,
+      "sha256": "dc0bdb8d1f28c4a10807634101102b6b8464f5780d2214923f2248d9c48ff488"
+    },
+    {
+      "path": "skillwiki/skillwiki/api/schemas.py",
+      "bytes": 22856,
+      "sha256": "9c549d378b33a0f70553fffa6b2db3496b02473e1b1fe6555b471649b763e215"
+    },
+    {
+      "path": "skillwiki/skillwiki/cli.py",
+      "bytes": 34696,
+      "sha256": "2d75da5d7fdde785c17a5e46b71bb22b5cecf57de10be85d3325063d658f4f04"
+    },
+    {
+      "path": "skillwiki/skillwiki/config/__init__.py",
+      "bytes": 654,
+      "sha256": "3b94aee8481229cd128b00db77d866fa607e32f3743e02f7b168cb5bfe4d3860"
+    },
+    {
+      "path": "skillwiki/skillwiki/config/config_manager.py",
+      "bytes": 10482,
+      "sha256": "25522d3903db96de338ac2dbc04c40d9943646b1f31afbc8597febcf713d3a8f"
+    },
+    {
+      "path": "skillwiki/skillwiki/config/llm_config.py",
+      "bytes": 11652,
+      "sha256": "12b658c12ffcdee9a003c2023c90310e379b5f5148a7893bf6b6aea811aed557"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/__init__.py",
+      "bytes": 26,
+      "sha256": "504d4fafdf422dffd6f19ffdfa971cfbf4de52045c473c062f85c4976f6b2939"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/feedback_evolution/__init__.py",
+      "bytes": 523,
+      "sha256": "8c4ea7d13f9f60094a11b9075b518a1351166f03763e99693fe91dc8659ed92e"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/feedback_evolution/evolution_engine.py",
+      "bytes": 10529,
+      "sha256": "e85c5536464a4a9bd6c399fe85720961eade5270f4b609f9f2f435ca04b29edb"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/feedback_evolution/monitor.py",
+      "bytes": 6774,
+      "sha256": "94d1bea84e24da7457064a1fea753a3cb991bfcb79573602a4e3c572abdd19a7"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/feedback_evolution/repair.py",
+      "bytes": 8867,
+      "sha256": "d8cc844b3bad2180e9c3f2f00be5752b92bf04a68a73c0304c7732b4dee5ee16"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/__init__.py",
+      "bytes": 658,
+      "sha256": "ad2299853b2d0ae75da3b212f9a08e0df5898e1a6823c8e03f586bb61b73df9b"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/api_request_transport.py",
+      "bytes": 8695,
+      "sha256": "65f4fb4b56b1f87ec152eef44866930dba684980da11a339ca8d88db35267998"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/api_response_rules.py",
+      "bytes": 9267,
+      "sha256": "e6f4e5d22a6d6c941d2c553feda68999ec7168462dd838e35c3d01b1e9743e88"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/api_source_rules.py",
+      "bytes": 9600,
+      "sha256": "e8716dbb04c1c1cb6ea1eae2a1184b352309a4e7f27f73c6aa8bd09e8f33604d"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/base_parser.py",
+      "bytes": 1925,
+      "sha256": "66b33bfa1f484d8a0a3a027fe1d64e5a4967ec740471a0830b80915a38a0e24e"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/doc_parser.py",
+      "bytes": 8958,
+      "sha256": "e32edbd609b97e9ee0e72cef965f057445df8064166354eac51664b564cdced3"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/pipeline.py",
+      "bytes": 89321,
+      "sha256": "bb857b530284ed79ee76a90e89e0cce2622f2b121dd658f4ed18d6086ffb9fd2"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/script_analyzer.py",
+      "bytes": 9724,
+      "sha256": "a0520de4e144d4db0bc9d4c2db8647fec52e256cd7b71612b1894dce3afafc72"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/input_knowledge/trajectory_parser.py",
+      "bytes": 10417,
+      "sha256": "89a19fca1db8704d57e25edb10b794da9186b36bf6f3dc9680e5df32609827b3"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_construction/__init__.py",
+      "bytes": 300,
+      "sha256": "a322f4e7ce1832756a9813ff1a61419deea6e0ccf43c4c3c5b247d2026973ab4"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_construction/candidate_miner.py",
+      "bytes": 11870,
+      "sha256": "20b3748b8e036a1831bae846c59a7851a6fad48bbf8f8169065feab57f350fbd"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_construction/formalizer.py",
+      "bytes": 14420,
+      "sha256": "ec634b1491edc25850126caacba9adad7210c33865d31ef22046992d850e32cd"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_construction/validator.py",
+      "bytes": 12144,
+      "sha256": "9bce83830eb30951285bd3f9e9440193a7c961cfaedc4002a824932c033ef80e"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/__init__.py",
+      "bytes": 3247,
+      "sha256": "099f41b2a108ccf5747b2befa7ab2d0dc8d7bf95787db319783bbf1af701e48d"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/arex_skillguard_adapter.py",
+      "bytes": 10204,
+      "sha256": "66cf6f03d08783bc0b37bb2dffdae03eb2a6d48063e4536108013e7dc3c74359"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/artifact_identity.py",
+      "bytes": 2165,
+      "sha256": "3d98c67637be96071df7fcfb1966b6b5c0166b9c85e23ca61fc55f17b244c251"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/component_checks.py",
+      "bytes": 23001,
+      "sha256": "d127037307a6ae36de616046888217784e3daec06a686d187fb1ec54dac8635b"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/dual_bundle.py",
+      "bytes": 3140,
+      "sha256": "9551c0ba87704944a42dbce5b7172c833226076124667d81f709cf619fc369c0"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/dual_bundle_secure.py",
+      "bytes": 25850,
+      "sha256": "192fbc5aafc6d8739017805a9876555427272de895db43f5d11cde51f2a5e630"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/evidence_applicability.py",
+      "bytes": 24710,
+      "sha256": "90890586e8761fb0224d6ad99562f887f4c5a516d019bd66a2ff1655b707eb04"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/evidence_gate.py",
+      "bytes": 10204,
+      "sha256": "eb0bb6454900a2b9b30c722aae54547905c989523e0b786cf8a02ae488df7eab"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/git_ci_release_baseline.py",
+      "bytes": 6051,
+      "sha256": "b9fa06b78ff9ab6ea97094264fe4ee0474a0a6cc988e073b2b3bccd68dc470d5"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/git_version_store.py",
+      "bytes": 18274,
+      "sha256": "35f1f91dde76e97db1f8da312d60fc40ed146b3a0b9bef6b321db26150896e81"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/implementation_handoff.py",
+      "bytes": 2067,
+      "sha256": "3cde3b2588c642ad94b7b270840ff1a7320c70376e44803850f453dce29d8e00"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/merger.py",
+      "bytes": 14770,
+      "sha256": "fa9421af3e49527378c656c4b455290d3f929c2bc3990c6a3b8b12b8b6fc2390"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/release_preparation.py",
+      "bytes": 1376,
+      "sha256": "60658fa7593d0b95f1ef5bdd9ebce97f850d8bfe4332b93ee0dfbb523167175a"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/reviewer.py",
+      "bytes": 8737,
+      "sha256": "32eeeb266597dd9d0ad544a21f42400938fa376c9a3d080d21e46aac0781998d"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/skill_change_workflow.py",
+      "bytes": 4152,
+      "sha256": "d8c40197095d001d3cb3d0959cce05943b4408e9461c59264a43272bc666408b"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/skill_release.py",
+      "bytes": 5506,
+      "sha256": "352e404a856f84b1e756023ebb483f0dad4e35286234a5bdcb4d49194f94e57a"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/skill_snapshot.py",
+      "bytes": 14402,
+      "sha256": "8460ba7b7696822359cce1378d8d41d43f12648a978a9dba3a5938645dcf22dd"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/source_update_scope.py",
+      "bytes": 10072,
+      "sha256": "892fca32de5544701205c505e15f6f7bbb9d6deff0c80bdabb282a870e8e2691"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/upstream_adapters.py",
+      "bytes": 26217,
+      "sha256": "bf8ce76ff2ea7fb181ea643ad9aa6c9637c7f837f880434ebcbedbcde3e915b4"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/version_control.py",
+      "bytes": 5748,
+      "sha256": "e3bbb8532deb7ef0564ebce0b6b34a394b033e946fc0333e03d5379214ac96e6"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_governance/version_evidence.py",
+      "bytes": 4803,
+      "sha256": "695f1de19bd1cff7b36f13dfa5e27d81634a35bc49e4e1f891da74e54fb13bd3"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/__init__.py",
+      "bytes": 692,
+      "sha256": "913439e31cbd43323834c7eeaa30f44e0f30c8c2bdce426576e81a698afa0ec0"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/auditor.py",
+      "bytes": 17637,
+      "sha256": "844a5cd22060e58ff564a1b125dd3924fe07d3e752449a9e7203dfc1cf0111bf"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/builder.py",
+      "bytes": 12290,
+      "sha256": "57aa7712528e2d526460bd3badd0cddf69b7a13eb6b6388ea054faa7b1a993d2"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/dialogue_demo.py",
+      "bytes": 5104,
+      "sha256": "4f888defc2608656215919d1296f39ee033d2a0c87c4cc089b8ccaf8189b4513"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/gepa_adapter.py",
+      "bytes": 7896,
+      "sha256": "646a7f1eaf6e93a8f5311b8d1a16cf465638f858f5f00182f4dca25275f4030a"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/gepa_skillopt_adapter.py",
+      "bytes": 38197,
+      "sha256": "a9b64abb11ffa5c8dec4368c84ae73cc4a6b060e155f7e10a8e8fcbeb0b73589"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/librarian.py",
+      "bytes": 5987,
+      "sha256": "998c73fa0ac4750ec215ba9cfa5011b9ff2e01da3f7523d51002c3ad53e499df"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/maintainer.py",
+      "bytes": 25454,
+      "sha256": "0583e876762b1914421749a82e2dd1b4be32a8341fc656051a447a171a4f7546"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/meta_controller.py",
+      "bytes": 6284,
+      "sha256": "7734144d516fb6446c9d0d122609e6a976cc7b41a22b6fa98c1eae18327d4b2c"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_management/skillnet_adapter.py",
+      "bytes": 5312,
+      "sha256": "624b4054d50c43d8e0d937a426fb029399875252d1f9507620dc546f20f38388"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_repository/__init__.py",
+      "bytes": 629,
+      "sha256": "08f3edb224d09f973a379498dbeb84eaa6cbb62e28422f72fdf19b81fe97bdfe"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_repository/graph_manager.py",
+      "bytes": 13365,
+      "sha256": "bf7419997d5efa032474d5d966da5bdfd55c196b78349dce01c4d4aab88e2d81"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_repository/indexing.py",
+      "bytes": 20355,
+      "sha256": "38e4101ff57638b1446efd0a033c5d04c5e2bcd64b7f4b370dc9b9d14251e678"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_repository/repository.py",
+      "bytes": 13708,
+      "sha256": "41e170eac13e93b858552f232639495697ad4c3b32d21e7d0d253407dab7d71a"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/__init__.py",
+      "bytes": 1445,
+      "sha256": "b0a69a47a7aa3331e3fc3c3b199f93c349050a95d6d6113d5aadf789d163d0d0"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/composition.py",
+      "bytes": 5445,
+      "sha256": "045a6620fd57c070070201667634fd99ada9d2cd2048ee50a5e93b16a4531aeb"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/executor.py",
+      "bytes": 29994,
+      "sha256": "184f5641e6db67d56b301e6a245dbffa0de14e1b541f51745f388f038dd95d59"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/__init__.py",
+      "bytes": 1684,
+      "sha256": "26337b392195f6b123a3adbf0555c2490d619657becb8ba8b23b8953969acb7b"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/base.py",
+      "bytes": 2641,
+      "sha256": "1b1ff7a79a53e46dbcd599c990264b18df4d769884cf2f9226aac0297dc0484f"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/benchflow_current_registry.py",
+      "bytes": 9554,
+      "sha256": "0a466ba0cab96ea1a840ba1f384996545b18157d9428bbaf1d92197a2bf629af"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/benchflow_evidence.py",
+      "bytes": 40361,
+      "sha256": "58874cc531170ef6999af6bf77007d34e6f0aaee2c0134ebcd7607532adbdd09"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/benchflow_registry.py",
+      "bytes": 4683,
+      "sha256": "3e657ce304115d4c012c94d87bda493abe02b08ac31093a91dcbf03e732c61ff"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/benchflow_runtime_evidence.py",
+      "bytes": 8011,
+      "sha256": "aabf8b4cc7d0b7b8409d5ebf6af9cf166cb519fdcf41bf3fd625102c811dbc91"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/benchflow_skills_dir.py",
+      "bytes": 19646,
+      "sha256": "e5f927d53a103a44b50d9e17479441e8cd17693d6468345c72a8b76c6fcfcced"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/codex_cli.py",
+      "bytes": 8560,
+      "sha256": "7e8dd88f2e298d3cb957b86a4243efc9a312172b8a53eb64380f504d05adda71"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/local_skillwiki.py",
+      "bytes": 5237,
+      "sha256": "24565fcd64ea3dc38b03e8dd07536129c5ad787413eef9dbc7fb923640b81ab9"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/m1_trace.py",
+      "bytes": 10131,
+      "sha256": "6c9cc217c2b6c188ba49ccc972536f77d502d7a867d032bb7ec3130d00fbd8e5"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/pair_envelope.py",
+      "bytes": 22540,
+      "sha256": "0f713a7cce33b98c94304f40bf3279597fb62923edc9c98493088f122cafc6b3"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/verifier_loop.py",
+      "bytes": 19888,
+      "sha256": "4eb9bc57099ea6e22845b3570e12c6feb74125532b2a4149f0b182b16a032c0f"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/harness/workspace.py",
+      "bytes": 2823,
+      "sha256": "56ca5dd371a3d58916bbc07e2ece7652fb8197be799ca1109cf1885e7de0658c"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/input_contract.py",
+      "bytes": 2237,
+      "sha256": "13100c4d1ebee7b49f827995f1e4e4350398f1a2fa3f7588cd5748c37d371c15"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/planner.py",
+      "bytes": 16757,
+      "sha256": "b680e3a629ab41a99278471cf5f24abd62ff30d4fbfbc73af7b41ccac7e974c5"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/reflection.py",
+      "bytes": 11031,
+      "sha256": "8321f210e1219c5e6b6af11fb64c134eb5c8a43a35ab4d1a3e623e83ada15ef5"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/request_body_validation.py",
+      "bytes": 12619,
+      "sha256": "f889e9e7d88535b2b43aaf7c00c2e7be2ce5d6804721233820c8e859c422d2ea"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/retriever.py",
+      "bytes": 9203,
+      "sha256": "206386867fca5d44e141a2f18eed8febc8ffeb9a8cd40efe0a20dd922e2a4487"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/skillnet_fabric_adapter.py",
+      "bytes": 17678,
+      "sha256": "0b36d9c58db3fdee54538c4abf4f63f6f15a1d81219f1901adb06eb45b428372"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/state_tracker.py",
+      "bytes": 5271,
+      "sha256": "b6fcb164c98216ad14645b9868515e9d33402880cb7c0bb1854573b79a467197"
+    },
+    {
+      "path": "skillwiki/skillwiki/layers/skill_runtime/verifier.py",
+      "bytes": 17662,
+      "sha256": "d8873f3cd19be0d5e1174a9ddc87374d1354e459c7fcbb5914d56f394044e24d"
+    },
+    {
+      "path": "skillwiki/skillwiki/models/__init__.py",
+      "bytes": 2225,
+      "sha256": "653abe1ed537b7c01c18c693bb3044d17bcd25c30fefc6b9b557ac0c7caf30cd"
+    },
+    {
+      "path": "skillwiki/skillwiki/models/experience_model.py",
+      "bytes": 10142,
+      "sha256": "d3d59687738540c8d36bc9fbe82f38d7b90d4e2c2c4a55d0c848eb3bfa5cfdb3"
+    },
+    {
+      "path": "skillwiki/skillwiki/models/graph_model.py",
+      "bytes": 16337,
+      "sha256": "19d9bdbfdf0c0c691dff904ed19473cde82a6e16fdbe9645fd225bfedda72bf4"
+    },
+    {
+      "path": "skillwiki/skillwiki/models/maintenance_model.py",
+      "bytes": 13101,
+      "sha256": "1abdd120350a1ddd45156aece67f5c40794088cd4376bd05b8548848d8a4a872"
+    },
+    {
+      "path": "skillwiki/skillwiki/models/skill_model.py",
+      "bytes": 17860,
+      "sha256": "643c2d158a522b6dd78574e93ea18c396a831f543a7663c6d1a11c7b7f46d4c3"
+    },
+    {
+      "path": "skillwiki/skillwiki/scripts/__init__.py",
+      "bytes": 15,
+      "sha256": "a069520f9dca36a1ab9c47043f379591f73708ac5a08a84bc0dbdca1b2805e18"
+    },
+    {
+      "path": "skillwiki/skillwiki/scripts/init_db.py",
+      "bytes": 12461,
+      "sha256": "c73d289ff5a6ed6f8f5f4baea1bdd7156e0cef79ac668368c809de00b41c13d8"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/__init__.py",
+      "bytes": 940,
+      "sha256": "225a11cfdb39e788510bc74e6d7d573d0832dd776a8d037bdc674129d1699349"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/base.py",
+      "bytes": 1842,
+      "sha256": "b73b920ec54e8dbcd02ae6d6e7aeac5029d248a19ed654b5c894c5e49f277602"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/neo4j_db.py",
+      "bytes": 16408,
+      "sha256": "9dd9908f8bb75d409eacf9f292402c5ab0bf11214df596d9f4d6ebdf0ba82d2f"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/postgres_db.py",
+      "bytes": 20389,
+      "sha256": "a99564dbeff897e95a7a18106ef8aca814c5b674596efc733a1a325072d4c921"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/redis_cache.py",
+      "bytes": 9274,
+      "sha256": "e0bfe49339e63109cf0401ef10c4c9808f5afdbb23d4d79fa58b161285b70413"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/skill_repo/__init__.py",
+      "bytes": 108,
+      "sha256": "2e99c83e0be5718db924dc133169b8dfd8711795704f673c14f31a053ee763d3"
+    },
+    {
+      "path": "skillwiki/skillwiki/storage/skill_repo/common.py",
+      "bytes": 42130,
+      "sha256": "cf52b0b961f5cb932e3ad74f1584aae56aabd7cf173215e158171cb3784a71ee"
+    },
+    {
+      "path": "skillwiki/skillwiki/tests/test_governance_runtime_evolution.py",
+      "bytes": 28674,
+      "sha256": "d2a57931bcfceda0726595d19eb6d2225cc3efa24ead6954ef51f7bb39260030"
+    },
+    {
+      "path": "skillwiki/skillwiki/tests/test_layers.py",
+      "bytes": 24833,
+      "sha256": "94f6867603225cd34f7f75d809a7754926eac5295b97ecb56f0b8ab6ed1a8722"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/__init__.py",
+      "bytes": 1013,
+      "sha256": "cd9903f3719d9b74307373ef7f8812b4f237b8a25304d4f5ff262196ed0e522b"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/cumulative_budget.py",
+      "bytes": 24086,
+      "sha256": "21829f6609886e3f52a2bcbeeb2ae062df939fe239db25fcc289b896ede5a356"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/filesystem_paths.py",
+      "bytes": 783,
+      "sha256": "d4b039dfbd10827545ad3f5ca340db5a675d0ffb0189aff2b70ba46cd2f94b99"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/git_paths.py",
+      "bytes": 2566,
+      "sha256": "db4e12ac81dd38a1033cbbc16589bd80649d174e3e47346f7598278fc376bbd1"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/llm_budget.py",
+      "bytes": 18953,
+      "sha256": "b661a922f07d5a0add64484e239484b772427b81e3ddcb37eba3a014dcdb6ae5"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/llm_client.py",
+      "bytes": 19299,
+      "sha256": "e97172a22499660c8caecc7ba2f541093f69180ba8c4a3d0b53ea3da779e289e"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/logger.py",
+      "bytes": 3934,
+      "sha256": "df5f5aedeb0a66e30e372ff82a5ef4c2b313459b41544dd0b098f96864fa174a"
+    },
+    {
+      "path": "skillwiki/skillwiki/utils/validators.py",
+      "bytes": 8160,
+      "sha256": "1c7d33d427a0c15ee3d73d25d0efa68e8d74da8b2221b365f8f5f9e7d757f4ce"
+    },
+    {
+      "path": "skillwiki/tests/__init__.py",
+      "bytes": 17,
+      "sha256": "f76afba7a78c09f5f53195f8d0366fd8e04b1e0ee5e3461a0eb450dcb4f5855c"
+    },
+    {
+      "path": "skillwiki/tests/fixtures/c03-input-binding-skill.json",
+      "bytes": 6043,
+      "sha256": "e72b0d4cb6e7545822df236b11286b064a60e2cd8d092b4b460626fdc77257f2"
+    },
+    {
+      "path": "skillwiki/tests/fixtures/source_contract_alignment/c02.json",
+      "bytes": 8375,
+      "sha256": "75fb4897cba9f03281be604d384bf89aafc6e35208c0a4170c74bd78f3f7cbe8"
+    },
+    {
+      "path": "skillwiki/tests/fixtures/source_contract_alignment/c03.json",
+      "bytes": 10381,
+      "sha256": "d449bcafa7021d8675479f831b890713a825b176b4b6c2b2ffa362830e248802"
+    },
+    {
+      "path": "skillwiki/tests/test_api_domain_boundary.py",
+      "bytes": 10122,
+      "sha256": "2aea27e4bdd47de4b2ec4373997d5970bf23ac1dca4773a259b8f1d5f41e94c3"
+    },
+    {
+      "path": "skillwiki/tests/test_api_response_rules.py",
+      "bytes": 8653,
+      "sha256": "4d75b9ee6d49a08dff180fa567c5dc0530e7558645a18145e2079646333abb22"
+    },
+    {
+      "path": "skillwiki/tests/test_arex_skillguard_adapter.py",
+      "bytes": 2587,
+      "sha256": "9eee1a8117b1ba3a3bba77f4bc3bad2cb9afb429b977fbc256990095d8393023"
+    },
+    {
+      "path": "skillwiki/tests/test_arex_source_environment.py",
+      "bytes": 9495,
+      "sha256": "65fcdb7bbf554df1e5be8b1e6a599788dca9efd3b29948d90ecbb102e865d90d"
+    },
+    {
+      "path": "skillwiki/tests/test_b02_evidence_gate.py",
+      "bytes": 7512,
+      "sha256": "e97d79e731922a6d89000fbd0e1c95e87a81838c20587331cf5bfcef9fdbf900"
+    },
+    {
+      "path": "skillwiki/tests/test_b03_release_with_evidence.py",
+      "bytes": 10310,
+      "sha256": "39a23424e4f1364724855ae6490d43ac439c659ac50fd96fab57eca9ef111b71"
+    },
+    {
+      "path": "skillwiki/tests/test_b_int_003_gepa_candidate.py",
+      "bytes": 1027,
+      "sha256": "942a07a58dd3c28329e90769db57617ae23f99fa8f7ca0dbe4cf941a07f130ac"
+    },
+    {
+      "path": "skillwiki/tests/test_b_or_68_release_baseline.py",
+      "bytes": 5866,
+      "sha256": "e569bdcd9074be5e68de5b65c59745e2d607cabac4ea7f207f4b1464911981fb"
+    },
+    {
+      "path": "skillwiki/tests/test_b_ref_21_integration_contract.py",
+      "bytes": 958,
+      "sha256": "acd1fe9bcb8e75cb62038e6be8c5e1420a6823e23415ef668d87f013e0ab2f89"
+    },
+    {
+      "path": "skillwiki/tests/test_b_ref_31_gepa_adapter.py",
+      "bytes": 1510,
+      "sha256": "8ae50d9e0951de6472c47a08983b3c7157fb36e5eba0ba4a80859597a6571c85"
+    },
+    {
+      "path": "skillwiki/tests/test_benchflow_evidence.py",
+      "bytes": 33095,
+      "sha256": "6e9fe03ad0c0f0a153285042ff033f1fc88680efb301d1eed706e71f30351bbe"
+    },
+    {
+      "path": "skillwiki/tests/test_benchflow_formal_matrix.py",
+      "bytes": 5457,
+      "sha256": "5e10dd0b1110a65561f0aca232ba461e2f2c61b24efbd2de9bc661050ca52f52"
+    },
+    {
+      "path": "skillwiki/tests/test_benchflow_skills_dir.py",
+      "bytes": 13340,
+      "sha256": "54d86ec9135b4302b838b7dca6c4a76fe00a278e6bd1feb9aca005733722b147"
+    },
+    {
+      "path": "skillwiki/tests/test_benchflow_source_runtime.py",
+      "bytes": 6404,
+      "sha256": "e7e509c17d704f867945c7595d8c99d8c2a455de3d054f43a60406dbb9c177ed"
+    },
+    {
+      "path": "skillwiki/tests/test_component_demo.py",
+      "bytes": 4634,
+      "sha256": "730635d2cfcee1c6bb02a701c6233dab6b2c06c1aad283c07c775a823d319fab"
+    },
+    {
+      "path": "skillwiki/tests/test_component_demo_durability.py",
+      "bytes": 10007,
+      "sha256": "f406afa6b53d4882f552c7b612e443180470abe4a4b4f108c393303d45f4b062"
+    },
+    {
+      "path": "skillwiki/tests/test_config.py",
+      "bytes": 15973,
+      "sha256": "005f1b402fb3bdf292517fdb0f91fe0290337890306b667ccb6dcae020b4d138"
+    },
+    {
+      "path": "skillwiki/tests/test_cumulative_budget.py",
+      "bytes": 6916,
+      "sha256": "8d78ce648c1339b5a9cec31215c8e3135fbe0c7d240b5fef72b36092cfc23b35"
+    },
+    {
+      "path": "skillwiki/tests/test_cumulative_llm_client.py",
+      "bytes": 6555,
+      "sha256": "7ef970b45906d678435351bbf80f18883966f39f451936a4c9a3c84ed60091b3"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_benchmark_parameterized_web.py",
+      "bytes": 2799,
+      "sha256": "b1a49c714e6e2a31fae2d94ca2d9a5fb3529da65a382948bdc46e33e29042b11"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_lifecycle_defects.py",
+      "bytes": 12283,
+      "sha256": "8690e9d79b331c822f9d331ca6898f8340c9d07a6af929394083dc96655445b4"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_persistence_m1.py",
+      "bytes": 9623,
+      "sha256": "f6f16d8ea2d31ff4ed107c691aca14261efb116a2ba86cbdef4d09256c032ea0"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_route_handoff.py",
+      "bytes": 13169,
+      "sha256": "61af12421c5f25c2d51fffc24ce39dd6b1b36238faccbc460685ad41526a92bc"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_runtime_defects.py",
+      "bytes": 16487,
+      "sha256": "8986c5258a7bc695c7696826252cadb873f7fee70d48281423203359d6c574d4"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_source_defects.py",
+      "bytes": 12890,
+      "sha256": "91e28a864564726536128f8ed14105c3145473f5fb7aa3195ef260dd476d6910"
+    },
+    {
+      "path": "skillwiki/tests/test_demo_verification_defects.py",
+      "bytes": 4135,
+      "sha256": "cf38d8b38f60f35ea8c6ed68721017be8bd6522de0570dd6d3d6624c92000b62"
+    },
+    {
+      "path": "skillwiki/tests/test_dual_bundle.py",
+      "bytes": 14260,
+      "sha256": "92ff0d8a132d403d34283f8a669892c701691cb8082f4b2aaeec74eacc1dd62a"
+    },
+    {
+      "path": "skillwiki/tests/test_dual_bundle_unsupported.py",
+      "bytes": 1948,
+      "sha256": "4f14923ddff165a104d57f5849705db97f04c6a964bbc8d233e95a35a0f6bb3f"
+    },
+    {
+      "path": "skillwiki/tests/test_e2e_real.py",
+      "bytes": 13669,
+      "sha256": "edbbecac2750f05307e030bbcd59505a70095f41c1dc05e41ac37fd9852e186b"
+    },
+    {
+      "path": "skillwiki/tests/test_evaluation_dashboard_api.py",
+      "bytes": 5117,
+      "sha256": "fc267fb950130c84cb799a2ce97116008b4345100890115160b5204817d03811"
+    },
+    {
+      "path": "skillwiki/tests/test_evidence_applicability.py",
+      "bytes": 11193,
+      "sha256": "160f2ef711767a57b262a5f24adf51636d6828a1a03325bab809d1d572fc9e27"
+    },
+    {
+      "path": "skillwiki/tests/test_execution_history_paths.py",
+      "bytes": 6865,
+      "sha256": "99f05339efbf3d45dfa5acea87051663b67416ef72dacc1254b4f7f71b0124c1"
+    },
+    {
+      "path": "skillwiki/tests/test_execution_history_persistence.py",
+      "bytes": 5578,
+      "sha256": "084239d2930acc2bd3490ed589c26ccbf3393da82344321706ea2f830b00652e"
+    },
+    {
+      "path": "skillwiki/tests/test_five_capability_wiring.py",
+      "bytes": 4193,
+      "sha256": "ebd9ef0da10058c569bf61b99dc58482f2d2fcf33da4d204de5b7d5f907ad9a1"
+    },
+    {
+      "path": "skillwiki/tests/test_gepa_skillopt_adapter.py",
+      "bytes": 7997,
+      "sha256": "a9bad994863d8b073f17c067e704c705dc11dcdc7e7cdb98bc403cd6a381672e"
+    },
+    {
+      "path": "skillwiki/tests/test_git_repository_path_errors.py",
+      "bytes": 3693,
+      "sha256": "973108b7f76db47d0512092d0d54d02c32ea809553b6a820cf4634f45ac99025"
+    },
+    {
+      "path": "skillwiki/tests/test_git_store_filesystem_paths.py",
+      "bytes": 2792,
+      "sha256": "4cb56243c81e46df1a2ea4c737325403e278cbe7183b0d133bd5da1fae9eb8a5"
+    },
+    {
+      "path": "skillwiki/tests/test_governance_unprefixed_paths.py",
+      "bytes": 3880,
+      "sha256": "84885e9b6891e02a4992034e6d13cb17452353d6f61d854ef1d388c8f5795cf3"
+    },
+    {
+      "path": "skillwiki/tests/test_harness_api.py",
+      "bytes": 6946,
+      "sha256": "77ac0a800ae8ebdf26b6f2f22e251bd4aa6fa93e15505d28463c026afed21020"
+    },
+    {
+      "path": "skillwiki/tests/test_harness_codex_cli.py",
+      "bytes": 2786,
+      "sha256": "9feee2e7ebad15e0abe10542cdeed9fb0d84f8c4cf2d60de1f3082ea72fd2eb9"
+    },
+    {
+      "path": "skillwiki/tests/test_harness_local.py",
+      "bytes": 6305,
+      "sha256": "e0d722c908b068e31f3997326e7f611bcf16f06f4ec06a12e73b2f147d3b050a"
+    },
+    {
+      "path": "skillwiki/tests/test_harness_verifier_loop.py",
+      "bytes": 7260,
+      "sha256": "8fb44662120856ce0c21d0092915b4066ba7739f5e69293cc80ff2c2f0967416"
+    },
+    {
+      "path": "skillwiki/tests/test_harness_windows_paths.py",
+      "bytes": 2801,
+      "sha256": "7b9c50a5acbe1e6753a43bc12a6dfacd408640df90f63c5dfcd853fb8bcb008e"
+    },
+    {
+      "path": "skillwiki/tests/test_heterogeneous_graph_p0.py",
+      "bytes": 25815,
+      "sha256": "5bd4014dc3a0e184cf2109e61ed10ea41c177cf7b26807c17e65af6cac37b335"
+    },
+    {
+      "path": "skillwiki/tests/test_ingest_candidate_review.py",
+      "bytes": 16767,
+      "sha256": "57acb63b9e1f90b1c039d2ac0cb639361f0a6b9d61521c2b22fa65f6ce304530"
+    },
+    {
+      "path": "skillwiki/tests/test_input_skill_eval_runner.py",
+      "bytes": 7916,
+      "sha256": "bcb027fd0768b9735e6a6186d7e0e1c9354389a0aa47856d9c2ea352677f27e4"
+    },
+    {
+      "path": "skillwiki/tests/test_llm_budget.py",
+      "bytes": 12937,
+      "sha256": "d2155313ade747933dfeffe553e47e69763e666ba0fa0f515282d8fef668d897"
+    },
+    {
+      "path": "skillwiki/tests/test_llm_client.py",
+      "bytes": 8019,
+      "sha256": "884821a20b77396b9961c0996bc2049a80c744c9d5d39d4f730e6f46ab5c4884"
+    },
+    {
+      "path": "skillwiki/tests/test_llm_planner_eval.py",
+      "bytes": 6747,
+      "sha256": "11968ba8f37de582a21997568f9c33269a77df6dc23927b153ba6556ac2f6ed5"
+    },
+    {
+      "path": "skillwiki/tests/test_m1_traces.py",
+      "bytes": 5447,
+      "sha256": "9ceff88fc9533d4e303cea411fa7b5dd9c1da37439d95b5f69cfcc62e9841afb"
+    },
+    {
+      "path": "skillwiki/tests/test_models.py",
+      "bytes": 22202,
+      "sha256": "7ad14484de06a23813e4a7ebf03977a8d501b05e58e979e23c09738f0511cd35"
+    },
+    {
+      "path": "skillwiki/tests/test_optimizer_reflection_demo.py",
+      "bytes": 10590,
+      "sha256": "003f4764ff655e61d83f621cf65170610952c78e6df122997cf2a0806ca4119b"
+    },
+    {
+      "path": "skillwiki/tests/test_p0_harness_eval_runner.py",
+      "bytes": 4294,
+      "sha256": "d9d40e1012138b6f4fd7726980f5c9a5b89220ec9fa20d9a4bc16e015e834c21"
+    },
+    {
+      "path": "skillwiki/tests/test_pair_envelope.py",
+      "bytes": 15051,
+      "sha256": "feaa469142716c5c5413040bb9fc9a2dc22b508b35bb02be576563745a095f1b"
+    },
+    {
+      "path": "skillwiki/tests/test_prepare_skillsbench_subset.py",
+      "bytes": 3074,
+      "sha256": "9978c066a9da44a8bf0a537c18c1a1b5f4377175ee510c2643d5bd031020fd4a"
+    },
+    {
+      "path": "skillwiki/tests/test_prompt_format_governance_diff.py",
+      "bytes": 3642,
+      "sha256": "7224ca7bdfce8264ac854e16dbf9aabab191b5ccbb61050129d7fa3957419eab"
+    },
+    {
+      "path": "skillwiki/tests/test_prompt_input_binding.py",
+      "bytes": 9823,
+      "sha256": "917d6429bd98d1fb6a422537ffcb40c0fb018a51ac7d6cccf34d87c4c17b416b"
+    },
+    {
+      "path": "skillwiki/tests/test_prompt_output_preservation.py",
+      "bytes": 4757,
+      "sha256": "244f120a656cdfbe53e3ac77347ccc1b7b470e15de1728193b75ad59a82c6f3d"
+    },
+    {
+      "path": "skillwiki/tests/test_release_consistency.py",
+      "bytes": 13499,
+      "sha256": "46d66d60ff86ecfcae4d7ed5b44f4a4490ab441051f6747b45741210ca11cb7d"
+    },
+    {
+      "path": "skillwiki/tests/test_released_version_listing.py",
+      "bytes": 3473,
+      "sha256": "c3774c211bd623513797e573641122b45ac93e5a3e44d9c1abe43735b370bca1"
+    },
+    {
+      "path": "skillwiki/tests/test_report_skillsbench_mapping.py",
+      "bytes": 4220,
+      "sha256": "e382ec5407035a876837e1c77a946aeafe4c974fa36e621f13dbcfbd6e3d1373"
+    },
+    {
+      "path": "skillwiki/tests/test_request_body_validation.py",
+      "bytes": 14314,
+      "sha256": "e764443739f745b31f93836988249a99e6edc98885b5db2b21c1f8041bdfe4a4"
+    },
+    {
+      "path": "skillwiki/tests/test_response_output_contract.py",
+      "bytes": 6604,
+      "sha256": "c26614f286b813187f3ae97b06c59dd5850306352d72e8f5e96ebd5760cffbcd"
+    },
+    {
+      "path": "skillwiki/tests/test_runtime_contract_repair.py",
+      "bytes": 12681,
+      "sha256": "cc5393c6fe09dbd753554762d279b984a0c54485b6f0e5f066deff3cff0d974a"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_governance_branch_review.py",
+      "bytes": 5241,
+      "sha256": "18810e86cf4f16297178f1eac026b216a6558b7274910e1b75acee4fe4ce1531"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_governance_git_adapter.py",
+      "bytes": 5964,
+      "sha256": "256d0f5b88986a4d4e79fd5884962e50bda518af21f293b85690a7d2f422d193"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_governance_lifecycle_api.py",
+      "bytes": 25852,
+      "sha256": "79d754a465d55efe263e4e6eb96e12e9fcbf8fe2a07593dd3d77439a380b990e"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_governance_release_rollback.py",
+      "bytes": 5477,
+      "sha256": "c5c2a1f7602edd4069d0cbaac9f8b99f3d118743be2cde1f0f9e805551da7e46"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_governance_snapshot_diff.py",
+      "bytes": 13202,
+      "sha256": "f3b252b6843f300598b566f2b781f6957400fe031d1308b00af990593ac6cb40"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_management_phase1.py",
+      "bytes": 71841,
+      "sha256": "4fed426c29415afc579148f25a04479b518f41903d2659d9d010f84f533defdf"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_provenance_source_bound_receipt.py",
+      "bytes": 3419,
+      "sha256": "f84c2fd333b362973b7287e50a587906ee94ec15ab0eaefc79165913f153b99e"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_repo_git_backend.py",
+      "bytes": 10184,
+      "sha256": "e78b905b9803c1b739f3a293d53ac32fcffc54b2aef7e84911044942be061243"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_repository_persistence_phase4.py",
+      "bytes": 7519,
+      "sha256": "c71edd6e0c997545a04e82a47173d60c3b8ea0229034c826bd74dd9a8224da5d"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_repository_phase1.py",
+      "bytes": 19452,
+      "sha256": "9dae1aa03dfbe7cd198aa3befbb75570f78cd08399c48bbdea61ed350fe254e5"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_repository_search_phase2.py",
+      "bytes": 13699,
+      "sha256": "288b007111017cacdcf2346eaf198d9168e804fe362c946ca52ef9cd07eb2118"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_runtime_phase1.py",
+      "bytes": 10651,
+      "sha256": "789c2bf69629eb5215deead4c47d1d673e30e0e6d0a353e6b076b2ea884c796e"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_runtime_phase2.py",
+      "bytes": 9647,
+      "sha256": "08d7f39180659cdd1b26c15349b3f448ed4a5480e4bf5d1881b94b2b2aee0dc1"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_runtime_phase3.py",
+      "bytes": 6525,
+      "sha256": "daa48bc90e82e8f3b48e32b0eb6545fd5cf70f2f9c1ff657d2e9f1689e3dd004"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_runtime_phase4.py",
+      "bytes": 7217,
+      "sha256": "99dc14c52f37351cc83ac4ce39c4e2edd2ed6e33bd0888a3ef3276ad908ce56f"
+    },
+    {
+      "path": "skillwiki/tests/test_skill_runtime_verifier_specs.py",
+      "bytes": 4481,
+      "sha256": "22e24fc5c46aaa09041e9650883711a65ff845c3114e7f047d6001c38e8b7165"
+    },
+    {
+      "path": "skillwiki/tests/test_skillnet_adapter.py",
+      "bytes": 2248,
+      "sha256": "0792bd7483908441dd2cf1e98c8969d152480741aca13a6c80b40e9b9888d0f7"
+    },
+    {
+      "path": "skillwiki/tests/test_skillnet_fabric_core.py",
+      "bytes": 10578,
+      "sha256": "bd42a4b6177b71c37072ca9f6d795e9e6e88b341062dcb7210881271e009037b"
+    },
+    {
+      "path": "skillwiki/tests/test_source_contract_alignment.py",
+      "bytes": 20214,
+      "sha256": "f6228c43fc144274d5c45db5c457504890d032aa7c36a50be8a38728ebec1d3a"
+    },
+    {
+      "path": "skillwiki/tests/test_source_update_scope.py",
+      "bytes": 9074,
+      "sha256": "80ee8b79a6541ccf163d8938667a55dbcc2ce22c0d7c4adabe17c96ab47a68ed"
+    },
+    {
+      "path": "skillwiki/tests/test_upstream_adapters.py",
+      "bytes": 17692,
+      "sha256": "e2a7c12ba2e3dd4b70f0f90464e40dd194651431f57a1315fb1fe2a235b31b3d"
+    },
+    {
+      "path": "skillwiki/tests/test_windows_git_paths.py",
+      "bytes": 7898,
+      "sha256": "44458a3c32ecc6064047e00efca94bf0fe857df21bea781f1c0f49531c8761bb"
+    },
+    {
+      "path": "tests/test_source_prompt_format.py",
+      "bytes": 10264,
+      "sha256": "a3379976c10f5ae860c24113a38057aad0d52742e90e2f9d20f06837b64d9980"
+    }
+  ],
+  "policy": [
+    "Original GitHub tree retained; overlay only the enumerated source files.",
+    "Local runtime SkillStorage, credentials, environments and raw research outputs excluded.",
+    "No CLI or frontend fixes applied during isolation.",
+    "Historical research evidence remains in integration; this is not a self-contained experiment archive.",
+    "Research-dependent tests/helpers require the separately retained research workspace."
+  ]
+}

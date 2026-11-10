@@ -72,6 +72,36 @@ class LLMConfig(BaseModel):
         default=False,
         description="是否启用流式输出",
     )
+    budget_limit_cny: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    budget_total_limit_cny: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    budget_ledger_path: Optional[str] = None
+    budget_scope: Optional[str] = None
+    budget_max_output_tokens: Optional[int] = Field(default=None, ge=1, le=128000)
+    cumulative_budget_ledger_path: Optional[str] = None
+    # The active session may authorize a larger limit; the ledger still
+    # requires explicit reservations and immutable usage settlement.
+    cumulative_budget_total_limit_cny: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_budget(self) -> "LLMConfig":
+        fields = (self.budget_limit_cny, self.budget_total_limit_cny,
+                  self.budget_ledger_path, self.budget_scope, self.budget_max_output_tokens)
+        if any(value is not None for value in fields):
+            if any(value is None for value in fields):
+                raise ValueError("Budget requires scope/total limits, ledger path, scope, and output cap")
+            if not self.budget_ledger_path or not self.budget_scope or not self.budget_scope.strip():
+                raise ValueError("Budget ledger path and scope must not be empty")
+            if self.budget_limit_cny > self.budget_total_limit_cny:
+                raise ValueError("Budget scope limit exceeds total limit")
+            if self.stream:
+                raise ValueError("Streaming is not supported with the persistent budget guard")
+        cumulative_fields = (self.cumulative_budget_ledger_path, self.cumulative_budget_total_limit_cny)
+        if any(value is not None for value in cumulative_fields):
+            if not self.cumulative_budget_ledger_path or self.cumulative_budget_total_limit_cny is None:
+                raise ValueError("Cumulative budget requires a ledger path and total limit")
+            if self.stream:
+                raise ValueError("Streaming is not supported with the cumulative budget guard")
+        return self
 
     @field_validator("api_url")
     @classmethod
@@ -146,6 +176,13 @@ class AgentLLMConfig(BaseModel):
             retry_count=self.retry_count if self.retry_count is not None else global_cfg.retry_count,
             retry_delay=self.retry_delay if self.retry_delay is not None else global_cfg.retry_delay,
             stream=self.stream if self.stream is not None else global_cfg.stream,
+            budget_limit_cny=global_cfg.budget_limit_cny,
+            budget_total_limit_cny=global_cfg.budget_total_limit_cny,
+            budget_ledger_path=global_cfg.budget_ledger_path,
+            budget_scope=global_cfg.budget_scope,
+            budget_max_output_tokens=global_cfg.budget_max_output_tokens,
+            cumulative_budget_ledger_path=global_cfg.cumulative_budget_ledger_path,
+            cumulative_budget_total_limit_cny=global_cfg.cumulative_budget_total_limit_cny,
         )
 
     model_config = {"populate_by_name": True}

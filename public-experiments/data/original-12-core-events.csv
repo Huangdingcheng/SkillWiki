@@ -1,0 +1,13 @@
+event_id,family,development_status,target_answers_per_condition,P_target_final,U_target_raw,U_target_final,P_keep_final,U_keep_raw,U_keep_final,keep_case_regressions,unchanged_target_field_damage,event_primary_success
+U01,route,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U02,route,known_E-G_regression,16,0,16,16,16,16,16,0,0,True
+U03,route,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U04,required_tighten,known_E-P_regression,16,0,8,16,16,13,13,2,0,False
+U05,required_tighten,same_system_extension,16,0,12,16,16,12,12,2,0,False
+U06,required_tighten,same_system_extension,16,0,12,16,16,12,12,2,0,False
+U07,required_relax,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U08,required_relax,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U09,required_relax,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U10,enum,same_system_extension,16,0,16,16,16,12,12,2,0,False
+U11,enum,same_system_extension,16,0,16,16,16,16,16,0,0,True
+U12,enum,same_system_extension,16,0,16,16,16,12,12,2,0,False

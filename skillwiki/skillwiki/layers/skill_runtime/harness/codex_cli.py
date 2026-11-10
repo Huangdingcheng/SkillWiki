@@ -31,9 +31,17 @@ class CodexCliHarness:
         *,
         attempt: int = 1,
     ) -> HarnessRunResult:
-        attempt_path = workspace.attempt_dir(attempt)
         run_id = f"harness_run_{uuid4().hex[:12]}"
+        attempt_path = workspace.attempt_dir(attempt) / run_id
+        attempt_path.mkdir(parents=True, exist_ok=False)
+        (attempt_path / 'artifacts').mkdir()
         prompt = _build_prompt(skill, test_case)
+        # Keep the attempt-level manifest files available for existing harness
+        # consumers; the run-specific directory below remains the authoritative
+        # receipt location for multiple cases in one attempt.
+        attempt_root = workspace.attempt_dir(attempt)
+        workspace.write_text(attempt_root / "SKILL.md", _skill_markdown(skill))
+        workspace.write_text(attempt_root / "prompt.md", prompt)
         workspace.write_text(attempt_path / "prompt.md", prompt)
         workspace.write_text(attempt_path / "SKILL.md", _skill_markdown(skill))
         workspace.write_json(attempt_path / "skill.json", skill.model_dump(mode="json"))
@@ -128,7 +136,7 @@ class CodexCliHarness:
             skill_id=skill.skill_id,
             attempt=attempt,
             harness=self.kind,
-            status="passed" if passed else "failed",
+            status=('not_evaluated' if process_ok and not test_case.verifier_specs else ('passed' if passed else 'failed')),
             input_data=test_case.input_data,
             output=payload,
             stdout=stdout,
@@ -147,6 +155,9 @@ class CodexCliHarness:
             evidence_path=str(attempt_path),
         )
         workspace.write_json(attempt_path / "result.json", result.model_dump(mode="json"))
+        attempt_index = attempt_path.parent / "result.json"
+        if not attempt_index.exists():
+            workspace.write_json(attempt_index, result.model_dump(mode="json"))
         return result
 
 

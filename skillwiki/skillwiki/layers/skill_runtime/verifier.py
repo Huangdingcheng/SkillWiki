@@ -231,6 +231,52 @@ def _evaluate_spec(spec: Dict[str, Any], document: Dict[str, Any]) -> VerifierSp
             issue=f"Path not found: {path}",
         )
 
+    if spec_type == "json_schema":
+        schema = spec.get("schema")
+        try:
+            from jsonschema import Draft202012Validator
+            from referencing import Registry
+            from referencing.exceptions import NoSuchResource
+
+            def deny_remote(uri: str) -> Any:
+                raise NoSuchResource(ref=uri)
+
+            if not isinstance(schema, (dict, bool)):
+                raise ValueError("schema must be a JSON Schema object or boolean")
+            if isinstance(schema, dict) and schema.get("$schema") not in (
+                None, "https://json-schema.org/draft/2020-12/schema",
+                "https://json-schema.org/draft/2020-12/schema#",
+            ):
+                raise ValueError("Only JSON Schema 2020-12 is supported by this rule")
+            Draft202012Validator.check_schema(schema)
+            validator = Draft202012Validator(schema, registry=Registry(retrieve=deny_remote))
+            # Runtime metadata lives outside business output. Never hide model
+            # fields merely because their names resemble historical metadata.
+            errors = list(validator.iter_errors(actual))
+            passed = not errors
+            issue = "" if passed else f"Schema mismatch at {path}: " + "; ".join(
+                f"{list(error.absolute_path)}: {error.message}" for error in errors[:5]
+            )
+        except Exception as exc:
+            passed = False
+            issue = f"Schema validation unavailable or invalid at {path}: {type(exc).__name__}: {exc}"
+        return VerifierSpecResult(spec=spec, passed=passed, path=path, actual=actual,
+                                  expected=schema, issue=issue)
+
+    if spec_type == "json_declared_content":
+        schema = spec.get("schema")
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        properties = properties if isinstance(properties, dict) else {}
+        fields = set(properties) - {"verifier", "passed", "success", "ok"}
+        # Presence, not truthiness: false, zero and empty arrays may be valid
+        # business values. Requiredness and types are checked by json_schema.
+        passed = isinstance(actual, dict) and any(key in actual for key in fields)
+        return VerifierSpecResult(
+            spec=spec, passed=passed, path=path, actual=actual,
+            expected=sorted(fields),
+            issue="" if passed else f"Expected declared business content at {path}; a passed flag alone is not evidence.",
+        )
+
     if spec_type == "json_exists":
         return VerifierSpecResult(spec=spec, passed=True, path=path, actual=actual)
 

@@ -151,7 +151,7 @@ def main() -> int:
                 harness = client.post(
                     f"/harness/{harness_skill_id}/verify-loop",
                     {
-                        "harness": "local_skillos",
+                        "harness": "local_skillwiki",
                         "max_attempts": 2,
                         "promote_on_pass": True,
                         "allow_repair": True,

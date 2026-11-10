@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from skillos.layers.skill_repository.graph_manager import SkillGraphManager
-from skillos.models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
-from skillos.models.skill_model import (
+from skillwiki.layers.skill_repository.graph_manager import SkillGraphManager
+from skillwiki.models.graph_model import SkillEdge, SkillGraphNode, SkillSubgraph
+from skillwiki.models.skill_model import (
     EdgeType,
     Skill,
     SkillImplementation,
@@ -15,8 +15,8 @@ from skillos.models.skill_model import (
     SkillState,
     SkillType,
 )
-from skillos.storage.neo4j_db import SkillGraphRepository
-from skillos.storage.postgres_db import orm_to_skill, skill_to_orm
+from skillwiki.storage.neo4j_db import SkillGraphRepository
+from skillwiki.storage.postgres_db import orm_to_skill, skill_to_orm
 
 
 def make_skill(

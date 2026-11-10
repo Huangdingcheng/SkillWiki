@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -139,6 +139,26 @@ class ReleaseRequest(BaseModel):
     author: str = "api"
 
 
+class EvidenceReleaseRequest(BaseModel):
+    """Versioned inline M1 evidence request for the bound release path."""
+
+    schema_version: Literal["m1-evidence-release-v1"] = "m1-evidence-release-v1"
+    manifest: Dict[str, Any]
+    traces: List[Dict[str, Any]] = Field(min_length=1, max_length=100)
+    evaluation: Dict[str, Any]
+    author: str = Field(default="api", min_length=1, max_length=128)
+
+
+class EvidenceReleaseResponse(BaseModel):
+    skill_id: str
+    version: str
+    state: Optional[SkillState] = None
+    decision: str
+    reason: str
+    released: bool
+    evidence_reference: Optional[Dict[str, Any]] = None
+
+
 class DeprecateRequest(BaseModel):
     reason: str
     replacement_id: Optional[str] = None
@@ -196,6 +216,9 @@ class ReleaseTagRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     source_ref: str
+    source_version: Optional[str] = None
+    author: str = "api"
+    reason: str = "Create a recovery draft for review"
 
 
 class MaintenanceReviewRequest(BaseModel):
@@ -348,6 +371,8 @@ class ExecuteSkillRequest(BaseModel):
 class ExecutePlanRequest(BaseModel):
     goal: str
     context: Dict[str, Any] = Field(default_factory=dict)
+    skill_ids: Optional[List[str]] = Field(default=None, min_length=1, max_length=50)
+    planning_mode: Literal["model", "single_skill"] = "model"
     max_skills: int = Field(default=10, ge=1, le=50)
 
 
@@ -360,6 +385,7 @@ class ExecutionStepResult(BaseModel):
     input_mapping: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
     result: Optional[Dict[str, Any]] = None
+    execution_evidence: Dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
     latency_ms: Optional[float] = None
 
@@ -371,6 +397,63 @@ class RetrievedSkill(BaseModel):
     skill_type: str
     score: float
     match_reason: str
+    version: Optional[str] = None
+    graph_depth: int = 0
+    is_seed: bool = True
+
+
+class RetrievalTrace(BaseModel):
+    trace_id: Optional[str] = None
+    adapter: str = "skillwiki-lexical"
+    source_commit: Optional[str] = None
+    embedding_model: Optional[str] = None
+    embedding_mode: Optional[str] = None
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    alternatives: List[Dict[str, Any]] = Field(default_factory=list)
+    blocked: List[str] = Field(default_factory=list)
+    governance: Dict[str, Any] = Field(default_factory=dict)
+    plan: Dict[str, Any] = Field(default_factory=dict)
+    execution: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UpstreamCandidateRequest(BaseModel):
+    """A candidate produced by an external optimizer, kept in review state."""
+
+    component: str
+    skill_id: str
+    parent_version: str
+    parent_hash: str
+    candidate_text: str
+    candidate_hash: str
+    upstream_repository: str
+    upstream_commit: str
+    upstream_version: Optional[str] = None
+    upstream_license: str = ""
+    failure_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    model_status: Dict[str, Any] = Field(default_factory=dict)
+    trace_id: Optional[str] = None
+
+    @field_validator("component", "skill_id", "parent_version", "parent_hash", "candidate_hash", "upstream_repository", "upstream_commit")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not value:
+            raise ValueError("candidate provenance fields must not be blank")
+        return value
+
+    @field_validator("candidate_text")
+    @classmethod
+    def validate_candidate_bytes(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("candidate text must not be blank")
+        return value
+
+
+class ComponentRunRequest(BaseModel):
+    component: Literal["gepa", "skillopt", "arex", "skillguard"]
+    skill_id: str = Field(min_length=1)
+    refresh: bool = False
 
 
 class ExecutionExperienceUnit(BaseModel):
@@ -403,6 +486,7 @@ class ExecutionResult(BaseModel):
     suggested_skill: Optional[Dict[str, Any]] = None
     verifier_passed: Optional[bool] = None
     verifier_summary: Optional[Dict[str, Any]] = None
+    retrieval_trace: RetrievalTrace = Field(default_factory=RetrievalTrace)
 
 
 class ExecutionHistoryItem(BaseModel):
@@ -445,6 +529,71 @@ class HarnessVerifyLoopResponse(BaseModel):
 class HarnessLoopListResponse(BaseModel):
     loops: List[Dict[str, Any]] = Field(default_factory=list)
     total: int = 0
+
+
+class HistoricalBenchFlowRun(BaseModel):
+    run_id: str
+    label: str
+    evidence_kind: Literal["historical_real_run"]
+    task_id: str
+    task_digest: str
+    skill_mode: str
+    agent: str
+    requested_model: str
+    sandbox: str
+    observed_reward: Optional[float] = None
+    admission_status: str
+    admission_reason: str
+    evidence_integrity: Literal["verified", "mismatch", "missing"]
+    model_result_eligible: Literal[False] = False
+    promotion_allowed: Literal[False] = False
+    skill_binding: None = None
+    cost: Dict[str, Any] = Field(default_factory=dict)
+    raw_artifacts: List[Dict[str, Any]] = Field(default_factory=list)
+    runtime_attestation_valid: bool = False
+    source_manifest_present: Literal[False] = False
+    limitations: List[str] = Field(default_factory=list)
+
+
+class HistoricalBenchFlowRunListResponse(BaseModel):
+    runs: List[HistoricalBenchFlowRun] = Field(default_factory=list)
+    total: int = 0
+
+
+class CurrentBenchFlowRun(BaseModel):
+    run_id: str
+    condition: str
+    status: str
+    task_id: str
+    task_digest: str
+    task_commit: str
+    verifier_sha256: str
+    product_commit: Optional[str] = None
+    benchflow_commit: str
+    runtime_version: Optional[str] = None
+    skill_mode: str
+    skill_binding: Optional[Dict[str, Any]] = None
+    observed_skill_mode: Optional[str] = None
+    observed_model: Optional[str] = None
+    observed_agent: Optional[str] = None
+    observed_runtime_version: Optional[str] = None
+    observed_reward: Optional[float] = None
+    observed_cost: Dict[str, Any] = Field(default_factory=dict)
+    usage: Dict[str, Any] = Field(default_factory=dict)
+    cost: Dict[str, Any] = Field(default_factory=dict)
+    run_path: str
+    raw_artifacts: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    evidence_integrity: Literal["verified", "mismatch"]
+    integrity_errors: List[str] = Field(default_factory=list)
+    model_result_eligible: Literal[False] = False
+    promotion_allowed: Literal[False] = False
+    notes: List[str] = Field(default_factory=list)
+
+
+class CurrentBenchFlowRunListResponse(BaseModel):
+    runs: List[CurrentBenchFlowRun] = Field(default_factory=list)
+    total: int = 0
+    formal_matrix: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class EvolutionStats(BaseModel):

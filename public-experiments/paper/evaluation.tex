@@ -1,0 +1,76 @@
+\section{Evaluation}
+\label{sw-eval-section}
+
+\paragraph{Materials and execution.}
+We evaluated skill utility, governance, and source adaptation using Petstore/OpenAPI
+creation, lookup, and deletion tasks. The materials comprised 60 task inputs,
+60 governance states in 30 pairs, and 12 related source changes spanning routes,
+required request fields, and enumeration values. Each change contained eight target
+and eight retention inputs. Model-backed execution used deepseek-flash at
+temperature~0, with zero automatic retries and output limits of 2,048 task tokens
+and 4,096 proposal tokens. SkillWiki's local harness processed requests and supplied
+responses without contacting the business API. The archived evaluation contains
+4,590 unique model calls, including 18 update proposals; technical repetitions do
+not increase the number of independent material units.
+
+\paragraph{Skill utility.}
+Each input was evaluated twice under three conditions. Table~\ref{sw-eval-utility}
+shows that fixed skill representations achieved 120/120 correct answers, improving
+on source material by 6.67 percentage points. Creation, lookup, and deletion each
+achieved 40/40. Raw and final outputs coincided, attributing this observed benefit
+to model use of the selected representations rather than output correction.
+
+\begin{table}[t]
+\centering
+\caption{Skill utility on 60 inputs with two technical repeats. All answers completed and met the output format.}
+\label{sw-eval-utility}
+\begin{tabular}{lrr}
+\hline
+Condition & Correct & Accuracy \\
+\hline
+No domain material & 84/120 & 70.00\% \\
+Source material & 112/120 & 93.33\% \\
+Fixed skill & 120/120 & 100.00\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Evidence-based governance.}
+The governance states exercised valid release, identity/content binding,
+applicability, completeness, deferral/resolution, and recovery/state consistency.
+An independent Git/CI+ implementation applied the same evidence contract and
+performed its own repository actions. Both routes made correct decisions on 50/50
+main states and 10/10 remaining states at the supplementary revision, with no false
+accepts or state inconsistencies. One SkillWiki input-validation error was within
+its preregistered allowed decision set and retains that classification. Agreement
+with this explicitly implemented Git/CI+ workflow demonstrates the integration of
+its evaluated governance requirements into SkillWiki's native skill lifecycle.
+
+\paragraph{Source adaptation and lifecycle.}
+The 12 events compared an original-rule reference, an unchanged skill, and an
+updated skill, with two repeats: 1,152 core answers. Under changed requirements,
+target correctness increased from 0/192 for unchanged skills to 176/192 raw model
+answers and 192/192 final outputs; explicit source checks corrected 16 answers.
+Retention was 173/192 against the unchanged baseline's 192/192, with seven events
+meeting the joint improvement-and-retention criterion. Full qualification used
+36 cases per identity. Five updated events per route qualified, were released,
+and completed recovery with revalidation and readback in the main evaluation.
+
+In subsequent revisions separating request and response constraints, five revised
+candidates achieved 180/180 final qualification answers (171/180 raw). Their five
+recovered identities achieved 180/180 final answers (167/180 raw), rejected old
+proofs, and were revalidated and republished. These candidates comprise four R1
+identities and one R2 identity; U06 R1 remains recorded at 35/36. Supplementary U08
+updated and recovered identities each achieved 36/36 raw and final answers and
+completed release/readback. Across recorded revisions, 11 events have successful
+lifecycle chains. U03 remains unpublished at 35/36 because an out-of-range integer
+is rejected with an error category that differs from the contract.
+
+\paragraph{Scope and artifacts.}
+The results establish utility for selected skills, agreement with a carefully
+implemented governance baseline, and executable evidence-gated adaptation and
+recovery. The materials comprise development/regression cases and related
+extensions within one API family. Results retain their runtime and candidate
+revisions; cross-revision coverage is not a single-version success rate. The
+public companion provides synthetic inputs, expected answers, source snapshots,
+governance states, result tables, and a de-identified call index.

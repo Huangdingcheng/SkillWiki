@@ -1,0 +1,201 @@
+{
+  "skill_id": "a968b5e9-45fa-4942-8deb-4cc67ad66cad",
+  "name": "petstore_add_pet_request_builder",
+  "version": "1.0.0",
+  "display_name": "Petstore Add Pet Request Builder",
+  "description": "Builds and validates an authenticated POST /pet request for the Petstore API, including OAuth2 header and Pet schema validation.",
+  "tags": [
+    "api_doc",
+    "candidate-review",
+    "ctx2skill",
+    "openapi",
+    "petstore",
+    "http",
+    "oauth2"
+  ],
+  "skill_type": "atomic",
+  "meta_category": null,
+  "domain": "general",
+  "granularity_level": 1,
+  "state": "S1",
+  "created_at": "2026-10-27T06:06:02.195620",
+  "updated_at": "2026-10-27T06:06:02.195622",
+  "released_at": null,
+  "deprecated_at": null,
+  "interface": {
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pet": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "photoUrls": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "category": {
+              "type": "object"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "available",
+                "pending",
+                "sold"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "photoUrls"
+          ]
+        },
+        "access_token": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string",
+          "enum": [
+            "application/json",
+            "application/xml"
+          ]
+        }
+      },
+      "required": [
+        "pet",
+        "access_token"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object"
+        },
+        "body": {
+          "type": "string"
+        },
+        "validation_errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "preconditions": [
+      "A Pet object is provided.",
+      "An OAuth2 access token with write:pets or read:pets scope is available."
+    ],
+    "postconditions": [
+      "A valid HTTP request is produced if the Pet object passes schema validation.",
+      "Validation errors are reported if the Pet object is invalid."
+    ],
+    "side_effects": []
+  },
+  "implementation": {
+    "language": "prompt",
+    "code": null,
+    "prompt_template": "Given a Pet object and OAuth2 access token, validate the Pet against the Petstore Pet schema (required name and photoUrls; optional id, category, tags, status enum). Then construct a POST request to http://petstore.swagger.io/v2/pet with Content-Type application/json or application/xml, Authorization Bearer token, and the serialized Pet body. Return the request details and any validation errors.",
+    "tool_calls": [],
+    "sub_skill_ids": [],
+    "execution_order": null
+  },
+  "test_cases": [],
+  "test_trajectory_ids": [],
+  "evaluation": {
+    "verifier_specs": [
+      {
+        "type": "json_nonempty",
+        "path": "input.task"
+      },
+      {
+        "type": "json_nonempty",
+        "path": "input.endpoint"
+      },
+      {
+        "type": "json_object",
+        "path": "input.parameters"
+      },
+      {
+        "type": "json_nonempty",
+        "path": "output.result.endpoint"
+      },
+      {
+        "type": "json_object",
+        "path": "output.result.parameters"
+      },
+      {
+        "type": "json_array_nonempty",
+        "path": "output.evidence"
+      },
+      {
+        "type": "json_equals",
+        "path": "output.verifier.passed",
+        "value": true
+      }
+    ],
+    "test_case_refs": [
+      "ctx2skill-lite:api_doc:petstore_add_pet_request_builder"
+    ],
+    "benchmark_task_ids": [],
+    "validation_summary": "Ctx2Skill-lite preview verifier contract. External corpus parse/audit keeps this ephemeral until a human approves import.",
+    "harness_validation": {}
+  },
+  "tool_refs": [],
+  "trajectory_refs": [],
+  "doc_refs": [],
+  "metrics": {
+    "usage_count": 0,
+    "success_count": 0,
+    "failure_count": 0,
+    "avg_latency_ms": 0.0,
+    "p95_latency_ms": 0.0,
+    "last_used_at": null,
+    "last_success_at": null,
+    "last_failure_at": null,
+    "success_rate": 0.0,
+    "total_executions": 0,
+    "successful_executions": 0,
+    "failed_executions": 0
+  },
+  "provenance": {
+    "source_type": "api_doc",
+    "source_ids": [
+      "56110b2a-7758-4bc0-b6b6-d6ae86f2a52a"
+    ],
+    "parent_skill_ids": [],
+    "created_by_agent": "ingest_pipeline_research_preview",
+    "creation_context": {
+      "source_type": "api_doc",
+      "unit_id": "56110b2a-7758-4bc0-b6b6-d6ae86f2a52a",
+      "raw_content_preview": "openapi: 3.0.0\nservers:\n  - url: 'http://petstore.swagger.io/v2'\ninfo:\n  description: >-\n    This is a sample server Petstore server. For this sample, you can use the api key\n    `special-key` to test the authorization filters.\n  version: 1.0.0\n  title: OpenAPI Petstore\n  license:\n    name: Apache-2.0\n    url: 'https://www.apache.org/licenses/LICENSE-2.0.html'\ntags:\n  - name: pet\n    description: Everything about your Pets\npaths:\n  /pet:\n    post:\n      tags:\n        - pet\n      summary: Add a n",
+      "paper_backlog_task": "E-P0-1",
+      "human_review_required": true
+    }
+  },
+  "dependency_ids": [],
+  "component_ids": [],
+  "deprecation_reason": null,
+  "replacement_skill_id": null
+}

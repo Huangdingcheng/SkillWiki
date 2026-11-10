@@ -1,0 +1,2250 @@
+[
+  {
+    "case_id": "CASE-EV-API-P-01-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-01-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "body": {
+          "name": "Pet-52e8224579162b",
+          "photoUrls": [
+            "https://example.invalid/wp02/52e8224579162b/photo-1.png"
+          ]
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_52e8224579162b",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-01-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_WP02_OAUTH_52e8224579162b",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "Pet-52e8224579162b",
+          "photoUrls": [
+            "https://example.invalid/wp02/52e8224579162b/photo-1.png"
+          ]
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-P-02-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-02-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "body": {
+          "name": "Pet-239fb667747e4d",
+          "photoUrls": [
+            "https://example.invalid/wp02/239fb667747e4d/photo-1.png",
+            "https://example.invalid/wp02/239fb667747e4d/photo-2.png"
+          ],
+          "id": 730002,
+          "category": {
+            "id": 740002,
+            "name": "Category-239fb667747e4d"
+          },
+          "tags": [
+            {
+              "id": 750002,
+              "name": "Tag-239fb667747e4d"
+            }
+          ],
+          "status": "available"
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_239fb667747e4d",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-02-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_WP02_OAUTH_239fb667747e4d",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "Pet-239fb667747e4d",
+          "photoUrls": [
+            "https://example.invalid/wp02/239fb667747e4d/photo-1.png",
+            "https://example.invalid/wp02/239fb667747e4d/photo-2.png"
+          ],
+          "id": 730002,
+          "category": {
+            "id": 740002,
+            "name": "Category-239fb667747e4d"
+          },
+          "tags": [
+            {
+              "id": 750002,
+              "name": "Tag-239fb667747e4d"
+            }
+          ],
+          "status": "available"
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-P-03-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-03-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "body": {
+          "name": "Pet-b3fd0f68214a82"
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_b3fd0f68214a82",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-03-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/photoUrls",
+          "code": "required"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-P-04-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-04-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "body": {
+          "name": "Pet-06576660615ba9",
+          "photoUrls": [
+            "https://example.invalid/wp02/06576660615ba9/photo-1.png",
+            "https://example.invalid/wp02/06576660615ba9/photo-2.png"
+          ],
+          "id": 730004,
+          "category": {
+            "id": false,
+            "name": "Category-06576660615ba9"
+          },
+          "tags": [
+            {
+              "id": 750004,
+              "name": "Tag-06576660615ba9"
+            }
+          ]
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_06576660615ba9",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-04-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/category/id",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-P-05-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-05-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "body": {
+          "name": "Pet-197272676523a0",
+          "photoUrls": [
+            "https://example.invalid/wp02/197272676523a0/photo-1.png"
+          ]
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_197272676523a0",
+          "scopes": [
+            "write:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-05-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/auth",
+          "code": "authentication"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-P-06-v1",
+    "task_id": "API-P",
+    "partition": "retained18",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-P-06-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "name": "ResponsePet-28d088a2698144"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-P-06-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "response_invalid",
+        "body_schema_valid": false
+      }
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-01-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-01-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730007
+        },
+        "auth": {
+          "api_key": "SIMULATED_WP02_APIKEY_4acc832f3983aa"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-01-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/730007",
+        "headers": {
+          "api_key": "SIMULATED_WP02_APIKEY_4acc832f3983aa"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-02-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-02-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730008
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_0cb889a4e3a70c",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-02-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/730008",
+        "headers": {
+          "authorization": "Bearer SIMULATED_WP02_OAUTH_0cb889a4e3a70c"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-03-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-03-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "path": {},
+        "auth": {
+          "api_key": "SIMULATED_WP02_APIKEY_b1401e12953606"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-03-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "required"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-04-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-04-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": false
+        },
+        "auth": {
+          "api_key": "SIMULATED_WP02_APIKEY_c9bf086aa46ea6"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-04-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-05-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-05-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730011
+        },
+        "auth": {}
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-05-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/auth",
+          "code": "authentication"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-G-06-v1",
+    "task_id": "API-G",
+    "partition": "retained18",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-G-06-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 404,
+        "content_type": "application/json",
+        "body": {
+          "message": "Pet absent dd7169927a1a0e"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-G-06-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 404,
+        "matched_response": "404",
+        "classification": "error",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-01-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-01-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730013
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_bf52a4bbd478ed",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-01-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/730013",
+        "headers": {
+          "authorization": "Bearer SIMULATED_WP02_OAUTH_bf52a4bbd478ed"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-02-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-02-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730014
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_2be8499e5200ec",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "headers": {
+          "api_key": "SIMULATED_WP02_OPTIONAL_2be8499e5200ec"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-02-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/730014",
+        "headers": {
+          "authorization": "Bearer SIMULATED_WP02_OAUTH_2be8499e5200ec",
+          "api_key": "SIMULATED_WP02_OPTIONAL_2be8499e5200ec"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-03-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-03-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "path": {},
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_79e5900b98ac13",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-03-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "required"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-04-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-04-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": false
+        },
+        "auth": {
+          "access_token": "SIMULATED_WP02_OAUTH_5e29b35d8f8e88",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-04-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-05-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-05-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "path": {
+          "petId": 730017
+        },
+        "auth": {
+          "api_key": "SIMULATED_WP02_APIKEY_e6492b8757b477"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-05-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/auth",
+          "code": "authentication"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "CASE-EV-API-D-06-v1",
+    "task_id": "API-D",
+    "partition": "retained18",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "CASE-EV-API-D-06-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 404,
+        "content_type": "application/json",
+        "body": {
+          "message": "Deletion unavailable 710b437ab4122b"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "CASE-EV-API-D-06-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 404,
+        "matched_response": "default",
+        "classification": "unexpected",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-P-07-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-07-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "",
+          "photoUrls": []
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-07-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "",
+          "photoUrls": []
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-08-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-08-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "Latte",
+          "photoUrls": [
+            "https://example.invalid/a.png",
+            "https://example.invalid/b.png"
+          ],
+          "category": {
+            "id": 4,
+            "name": "Cats"
+          },
+          "tags": [
+            {
+              "id": 8,
+              "name": "indoor"
+            }
+          ],
+          "status": "pending"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-08-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "Latte",
+          "photoUrls": [
+            "https://example.invalid/a.png",
+            "https://example.invalid/b.png"
+          ],
+          "category": {
+            "id": 4,
+            "name": "Cats"
+          },
+          "tags": [
+            {
+              "id": 8,
+              "name": "indoor"
+            }
+          ],
+          "status": "pending"
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-09-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-09-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "小白",
+          "photoUrls": [
+            "https://example.invalid/c.png"
+          ],
+          "status": "sold"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-09-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "小白",
+          "photoUrls": [
+            "https://example.invalid/c.png"
+          ],
+          "status": "sold"
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-10-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-10-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "Int64Pet",
+          "photoUrls": [
+            "https://example.invalid/d.png"
+          ],
+          "id": 9223372036854775807
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-10-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "Int64Pet",
+          "photoUrls": [
+            "https://example.invalid/d.png"
+          ],
+          "id": 9223372036854775807
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-11-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-11-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "SparsePet",
+          "photoUrls": [
+            "https://example.invalid/e.png"
+          ],
+          "category": {},
+          "tags": []
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-11-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "POST",
+        "url": "https://petstore3.swagger.io/api/v3/pet",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "SparsePet",
+          "photoUrls": [
+            "https://example.invalid/e.png"
+          ],
+          "category": {},
+          "tags": []
+        }
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-12-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-12-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "photoUrls": [
+            "https://example.invalid/f.png"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-12-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/name",
+          "code": "required"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-13-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-13-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "UnknownStatus",
+          "photoUrls": [],
+          "status": "reserved"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-13-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/status",
+          "code": "enum"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-14-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-14-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "BadPhoto",
+          "photoUrls": [
+            7
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-14-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/photoUrls/0",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-15-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-15-v1",
+      "task_id": "API-P",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "body": {
+          "name": "BadTag",
+          "photoUrls": [],
+          "tags": [
+            {
+              "id": "seven",
+              "name": "tag"
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-15-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/body/tags/0/id",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-P-16-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-16-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "name": "ReplyPet",
+          "photoUrls": []
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-16-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "success",
+        "body_schema_valid": true
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-P-17-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-17-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "name": "BadReply",
+          "photoUrls": "one.png"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-17-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "response_invalid",
+        "body_schema_valid": false
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-P-18-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-18-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 400,
+        "content_type": "application/json",
+        "body": {
+          "message": "invalid input"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-18-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 400,
+        "matched_response": "400",
+        "classification": "error",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-P-19-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-19-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 422,
+        "content_type": "application/json",
+        "body": {
+          "message": "invalid fields"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-19-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 422,
+        "matched_response": "422",
+        "classification": "error",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-P-20-v1",
+    "task_id": "API-P",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-P-20-v1",
+      "task_id": "API-P",
+      "kind": "response",
+      "input": {
+        "status": 503,
+        "content_type": "application/json",
+        "body": {
+          "message": "maintenance"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-P-20-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 503,
+        "matched_response": "default",
+        "classification": "unexpected",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-07-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-07-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "path": {
+          "petId": 0
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-07-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/0",
+        "headers": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-08-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-08-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": -8
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-08-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/-8",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-09-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-09-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ],
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "path": {
+          "petId": 821009
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-09-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/821009",
+        "headers": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-10-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-10-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "api_key": "SIMULATED_STAGE2_API_KEY",
+          "access_token": "SIMULATED_INCOMPLETE_SCOPE",
+          "scopes": [
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 821010
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-10-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/821010",
+        "headers": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-11-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-11-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_EXTRA_SCOPE",
+          "scopes": [
+            "write:pets",
+            "read:pets",
+            "extra:scope"
+          ]
+        },
+        "path": {
+          "petId": 821011
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-11-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "GET",
+        "url": "https://petstore3.swagger.io/api/v3/pet/821011",
+        "headers": {
+          "authorization": "Bearer SIMULATED_EXTRA_SCOPE"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-12-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-12-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "path": {
+          "petId": "821012"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-12-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-13-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-13-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "api_key": "SIMULATED_STAGE2_API_KEY"
+        },
+        "path": {
+          "petId": 9223372036854775808
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-13-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "format"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-14-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-14-v1",
+      "task_id": "API-G",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_MISSING_WRITE",
+          "scopes": [
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 821014
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-14-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/auth",
+          "code": "authentication"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-G-15-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-15-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "id": 821015,
+          "name": "ReturnedPet",
+          "photoUrls": [
+            "https://example.invalid/g.png"
+          ],
+          "status": "available",
+          "category": {
+            "id": 3,
+            "name": "Dogs"
+          },
+          "tags": [
+            {
+              "id": 5,
+              "name": "trained"
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-15-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "success",
+        "body_schema_valid": true
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-16-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-16-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "name": "MinimalReply",
+          "photoUrls": []
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-16-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "success",
+        "body_schema_valid": true
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-17-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-17-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "name": "WrongEnumReply",
+          "photoUrls": [],
+          "status": "reserved"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-17-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "response_invalid",
+        "body_schema_valid": false
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-18-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-18-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 400,
+        "content_type": "application/json",
+        "body": {
+          "message": "bad id"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-18-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 400,
+        "matched_response": "400",
+        "classification": "error",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-19-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-19-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 500,
+        "content_type": "application/json",
+        "body": {
+          "message": "server error"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-19-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 500,
+        "matched_response": "default",
+        "classification": "unexpected",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-G-20-v1",
+    "task_id": "API-G",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-G-20-v1",
+      "task_id": "API-G",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "photoUrls": []
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-G-20-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "response_invalid",
+        "body_schema_valid": false
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-D-07-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-07-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 0
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-07-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/0",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-08-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-08-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": -8
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-08-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/-8",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-09-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-09-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 9223372036854775807
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-09-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/9223372036854775807",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-10-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-10-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 821010
+        },
+        "headers": {
+          "api_key": "SIMULATED_OPTIONAL_HEADER"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-10-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/821010",
+        "headers": {
+          "authorization": "Bearer SIMULATED_STAGE2_OAUTH",
+          "api_key": "SIMULATED_OPTIONAL_HEADER"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-11-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-11-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_DELETE_EXTRA",
+          "scopes": [
+            "write:pets",
+            "read:pets",
+            "extra:scope"
+          ]
+        },
+        "path": {
+          "petId": 821011
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-11-v1",
+      "decision": "send",
+      "issues": [],
+      "request": {
+        "method": "DELETE",
+        "url": "https://petstore3.swagger.io/api/v3/pet/821011",
+        "headers": {
+          "authorization": "Bearer SIMULATED_DELETE_EXTRA"
+        },
+        "body": null
+      },
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-12-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-12-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 821012
+        },
+        "headers": {
+          "api_key": 17
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-12-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/header/api_key",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-13-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-13-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": "821013"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-13-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "type"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-14-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-14-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_STAGE2_OAUTH",
+          "scopes": [
+            "write:pets",
+            "read:pets"
+          ]
+        },
+        "path": {
+          "petId": 9223372036854775808
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-14-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/path/petId",
+          "code": "format"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-15-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "request",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-15-v1",
+      "task_id": "API-D",
+      "kind": "request",
+      "input": {
+        "auth": {
+          "access_token": "SIMULATED_DELETE_MISSING_READ",
+          "scopes": [
+            "write:pets"
+          ]
+        },
+        "path": {
+          "petId": 821015
+        },
+        "headers": {
+          "api_key": "SIMULATED_NOT_AUTH_REPLACEMENT"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-15-v1",
+      "decision": "reject",
+      "issues": [
+        {
+          "path": "/auth",
+          "code": "authentication"
+        }
+      ],
+      "request": null,
+      "response": null
+    }
+  },
+  {
+    "case_id": "EXP-API-D-16-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-16-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": null
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-16-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "success",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-D-17-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-17-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 400,
+        "content_type": "application/json",
+        "body": {
+          "message": "invalid pet"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-17-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 400,
+        "matched_response": "400",
+        "classification": "error",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-D-18-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-18-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 503,
+        "content_type": "application/json",
+        "body": {
+          "message": "maintenance"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-18-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 503,
+        "matched_response": "default",
+        "classification": "unexpected",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-D-19-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-19-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 204,
+        "content_type": "application/json",
+        "body": null
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-19-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 204,
+        "matched_response": "default",
+        "classification": "unexpected",
+        "body_schema_valid": null
+      }
+    }
+  },
+  {
+    "case_id": "EXP-API-D-20-v1",
+    "task_id": "API-D",
+    "partition": "added42",
+    "kind": "response",
+    "source_sha256": "aa8f3e20c4f7f842ca7163bcde1f9e725f6e9bc6afe74cb355aa267ee5b29e71",
+    "case": {
+      "case_id": "EXP-API-D-20-v1",
+      "task_id": "API-D",
+      "kind": "response",
+      "input": {
+        "status": 200,
+        "content_type": "application/json",
+        "body": {
+          "arbitrary": "body is not constrained"
+        }
+      }
+    },
+    "expected": {
+      "case_id": "EXP-API-D-20-v1",
+      "decision": "report",
+      "issues": [],
+      "request": null,
+      "response": {
+        "status": 200,
+        "matched_response": "200",
+        "classification": "success",
+        "body_schema_valid": null
+      }
+    }
+  }
+]

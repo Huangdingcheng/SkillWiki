@@ -1,5 +1,7 @@
 import axios from 'axios'
 import type {
+  ComponentRun,
+  EvolutionComponent,
   CandidateAuditResult,
   CandidateCreateResponse,
   CandidateSkillReviewRequest,
@@ -7,12 +9,17 @@ import type {
   ExecutionExperienceUnit,
   ExecutionResult,
   ExecutionHistoryItem,
+  RetrievalTrace,
   GraphData,
   GraphViewData,
   GraphViewMode,
   HarnessLoopListResponse,
   HarnessVerifyLoopRequest,
   HarnessVerifyLoopResponse,
+  HistoricalBenchFlowRun,
+  HistoricalBenchFlowRunListResponse,
+  CurrentBenchFlowRun,
+  CurrentBenchFlowRunListResponse,
   HeterogeneousGraphData,
   HealthReport,
   IngestResponse,
@@ -74,7 +81,7 @@ export const skillsApi = {
 
 export const lifecycleApi = {
   release: (id: string) =>
-    http.post<SkillSummary>(`/lifecycle/${id}/release`).then(r => r.data),
+    http.post<SkillSummary>(`/lifecycle/${id}/release`, {}).then(r => r.data),
 
   deprecate: (id: string, reason: string) =>
     http.post<SkillSummary>(`/lifecycle/${id}/deprecate`, { reason }).then(r => r.data),
@@ -146,8 +153,8 @@ export const executionApi = {
   executeSkill: (skill_id: string, inputs: Record<string, unknown> = {}) =>
     http.post<ExecutionResult>('/execution/skill', { skill_id, inputs }).then(r => r.data),
 
-  executePlan: (goal: string, context: Record<string, unknown> = {}) =>
-    http.post<ExecutionResult>('/execution/plan', { goal, context }).then(r => r.data),
+  executePlan: (goal: string, context: Record<string, unknown> = {}, skill_ids?: string[]) =>
+    http.post<ExecutionResult>('/execution/plan', { goal, context, skill_ids }).then(r => r.data),
 
   getState: () =>
     http.get<Record<string, unknown>>('/execution/state').then(r => r.data),
@@ -157,6 +164,9 @@ export const executionApi = {
 
   history: () =>
     http.get<ExecutionHistoryItem[]>('/execution/history').then(r => r.data),
+
+  retrievalTrace: (execution_id: string) =>
+    http.get<RetrievalTrace>(`/execution/trace/${execution_id}`).then(r => r.data),
 
   experience: (execution_id: string) =>
     http.get<ExecutionExperienceUnit>(`/execution/history/${execution_id}/experience`).then(r => r.data),
@@ -173,9 +183,30 @@ export const harnessApi = {
 
   get: (loop_id: string) =>
     http.get<Record<string, unknown>>(`/harness/${loop_id}`).then(r => r.data),
+
+  benchflowRuns: () =>
+    http.get<HistoricalBenchFlowRunListResponse>('/harness/benchflow/runs').then(r => r.data),
+
+  benchflowRun: (run_id: string) =>
+    http.get<HistoricalBenchFlowRun>(`/harness/benchflow/runs/${encodeURIComponent(run_id)}`).then(r => r.data),
+
+  currentBenchflowRuns: () =>
+    http.get<CurrentBenchFlowRunListResponse>('/harness/benchflow/current-runs').then(r => r.data),
+
+  currentBenchflowRun: (run_id: string) =>
+    http.get<CurrentBenchFlowRun>(`/harness/benchflow/current-runs/${encodeURIComponent(run_id)}`).then(r => r.data),
 }
 
 export const evolutionApi = {
+  runComponent: (component: EvolutionComponent, skill_id: string, refresh = false) =>
+    http.post<ComponentRun>('/evolution/component-runs', { component, skill_id, refresh }).then(r => r.data),
+
+  componentRuns: (skill_id: string) =>
+    http.get<{ runs: ComponentRun[] }>('/evolution/component-runs', { params: { skill_id } }).then(r => r.data),
+
+  componentRun: (run_id: string) =>
+    http.get<ComponentRun>(`/evolution/component-runs/${encodeURIComponent(run_id)}`).then(r => r.data),
+
   systemHealth: () =>
     http.get<SystemHealth>('/evolution/health').then(r => r.data),
 

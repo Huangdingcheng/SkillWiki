@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ...models.skill_model import Skill
-from .git_version_store import GitVersionStore
+from ...utils.filesystem_paths import filesystem_path
+from .git_version_store import GitVersionStore, GitVersionStoreError
 from .skill_snapshot import skill_snapshot_path
 
 
@@ -106,11 +107,40 @@ def restore_skill_snapshot(
 ) -> SkillRollbackRecord:
     version_store = store or GitVersionStore(repo_path)
     snapshot_path = skill_snapshot_path(current_skill)
-    snapshot = read_skill_snapshot_at_ref(repo_path, source_ref, snapshot_path, version_store)
+    source_paths = [snapshot_path]
+    provenance = current_skill.provenance
+    if provenance:
+        source_version = provenance.creation_context.get("source_version")
+        source_paths.extend(
+            f"skills/{parent_id}/{source_version}.json"
+            for parent_id in provenance.parent_skill_ids
+            if parent_id and source_version
+        )
+    snapshot = None
+    last_error = None
+    for source_path in dict.fromkeys(source_paths):
+        try:
+            snapshot = read_skill_snapshot_at_ref(
+                repo_path, source_ref, source_path, version_store
+            )
+            break
+        except GitVersionStoreError as exc:
+            last_error = exc
+            continue
+    if snapshot is None:
+        if last_error is not None:
+            raise last_error
+        raise GitVersionStoreError(
+            f"No Skill snapshot for {current_skill.skill_id} exists at {source_ref}"
+        )
+
+    restored_version = str(snapshot.get("version") or current_skill.version)
+    restored_snapshot_path = f"skills/{current_skill.skill_id}/{restored_version}.json"
+    snapshot["skill_id"] = current_skill.skill_id
 
     with version_store.lock():
-        version_store.ensure_paths_clean([snapshot_path])
-        target = Path(repo_path) / snapshot_path
+        version_store.ensure_paths_clean([restored_snapshot_path])
+        target = filesystem_path(Path(repo_path) / restored_snapshot_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(snapshot, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
@@ -118,16 +148,16 @@ def restore_skill_snapshot(
         )
 
         commit_message = f"skill({current_skill.name}): restore from {source_ref}"
-        restore_commit = version_store.commit_paths([snapshot_path], commit_message)
+        restore_commit = version_store.commit_paths([restored_snapshot_path], commit_message)
 
     return SkillRollbackRecord(
         source_ref=source_ref,
         restore_commit=restore_commit,
-        restored_snapshot_path=snapshot_path,
+        restored_snapshot_path=restored_snapshot_path,
         commit_message=commit_message,
         skill_id=current_skill.skill_id,
         skill_name=current_skill.name,
-        version=current_skill.version,
+        version=restored_version,
     )
 
 

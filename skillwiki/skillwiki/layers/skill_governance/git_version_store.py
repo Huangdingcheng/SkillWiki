@@ -13,9 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
+from ...utils.git_paths import ensure_local_longpaths, git_process_cwd, git_process_path_error
+from ...utils.filesystem_paths import filesystem_path
+
 
 class GitVersionStoreError(RuntimeError):
     """Raised when a Git-backed version operation cannot be completed."""
+
+
+class GitRepositoryPathError(GitVersionStoreError):
+    """The OS cannot start Git in the configured repository directory."""
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,8 @@ class GitVersionStore:
         """Return True when repo_path is inside a Git work tree."""
         try:
             output = self._run(["rev-parse", "--is-inside-work-tree"], check=False)
+        except GitRepositoryPathError:
+            raise
         except GitVersionStoreError:
             return False
         return output.strip().lower() == "true"
@@ -126,7 +135,11 @@ class GitVersionStore:
 
         with self.lock():
             self._ensure_no_unrelated_staged_paths(normalized_paths)
-            self._run(["add", "--", *normalized_paths])
+            # Governance owns the exact paths supplied by the caller. Runtime
+            # repositories can live under a parent project whose .gitignore
+            # excludes `skills/`; force-add only these explicit paths rather
+            # than weakening ignore rules or staging unrelated files.
+            self._run(["add", "-f", "--", *normalized_paths])
             self._run(
                 [
                     "-c",
@@ -255,6 +268,10 @@ class GitVersionStore:
     def _require_repo(self) -> None:
         if not self.is_git_repo():
             raise GitVersionStoreError(f"{self.repo_path} is not a Git repository.")
+        try:
+            ensure_local_longpaths(self.repo_path, timeout_seconds=self.timeout_seconds)
+        except RuntimeError as exc:
+            raise GitVersionStoreError(str(exc)) from exc
 
     @contextmanager
     def lock(self) -> Iterator[None]:
@@ -268,7 +285,9 @@ class GitVersionStore:
                 self._lock_depth -= 1
             return
 
-        lock_path = self.repo_path / self._run(["rev-parse", "--git-path", "skillos-governance.lock"]).strip()
+        # Worktrees may return an absolute Git metadata path. Normalize the
+        # final filesystem target, while leaving subprocess cwd unchanged.
+        lock_path = filesystem_path(self.repo_path / self._run(["rev-parse", "--git-path", "skillos-governance.lock"]).strip())
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -345,7 +364,7 @@ class GitVersionStore:
         try:
             completed = subprocess.run(
                 command,
-                cwd=self.repo_path,
+                cwd=git_process_cwd(self.repo_path),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -353,7 +372,11 @@ class GitVersionStore:
                 timeout=self.timeout_seconds,
             )
         except FileNotFoundError as exc:
+            if not self.repo_path.is_dir():
+                raise GitRepositoryPathError(git_process_path_error(self.repo_path, exc)) from exc
             raise GitVersionStoreError("Git executable was not found.") from exc
+        except OSError as exc:
+            raise GitRepositoryPathError(git_process_path_error(self.repo_path, exc)) from exc
         except subprocess.TimeoutExpired as exc:
             printable = " ".join(command)
             raise GitVersionStoreError(f"Git command timed out: {printable}") from exc

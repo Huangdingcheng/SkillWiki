@@ -1,6 +1,13 @@
 """skill_governance 层包导出。"""
 
 from .git_version_store import GitCommit, GitVersionStore, GitVersionStoreError
+from .evidence_gate import EvidenceGateResult, decide_evidence_gate
+from .dual_bundle import DualBundleReceipt, materialize_dual_bundle, read_dual_bundle_state
+from .artifact_identity import (
+    artifact_identity_projection,
+    canonical_skill_artifact_hash,
+    canonical_skill_artifact_json,
+)
 from .merger import MergeResult, SkillMerger, SplitResult
 from .reviewer import ReviewResult, ReviewStatus, SkillReviewer
 from .skill_change_workflow import (
@@ -30,11 +37,37 @@ from .skill_snapshot import (
     write_skill_snapshot,
 )
 from .version_control import ChangeRecord, ChangeType, VersionController
+from .evidence_applicability import (
+    APPLICABILITY_STATUSES,
+    EXECUTION_STATUSES,
+    LEDGER_MODEL,
+    PRIMARY_ACTIONS,
+    PLANNER_ACTIONS,
+    PLANNER_MODES,
+    ApplicabilityAdapter,
+    ApplicabilityPlan,
+    CommonInputEnvelope,
+    EvidenceApplicabilityRecord,
+    ImpactEdge,
+    PlannerAction,
+    PlannerBudget,
+    StatusLedger,
+    plan_applicability,
+    validate_common_input_envelope,
+)
 
 __all__ = [
     "GitVersionStore",
     "GitVersionStoreError",
     "GitCommit",
+    "EvidenceGateResult",
+    "decide_evidence_gate",
+    "DualBundleReceipt",
+    "materialize_dual_bundle",
+    "read_dual_bundle_state",
+    "artifact_identity_projection",
+    "canonical_skill_artifact_hash",
+    "canonical_skill_artifact_json",
     "SkillChangeReviewBundle",
     "skill_change_branch_name",
     "skill_change_commit_message",
@@ -64,4 +97,20 @@ __all__ = [
     "SkillMerger",
     "MergeResult",
     "SplitResult",
+    "APPLICABILITY_STATUSES",
+    "EXECUTION_STATUSES",
+    "LEDGER_MODEL",
+    "PRIMARY_ACTIONS",
+    "PLANNER_ACTIONS",
+    "PLANNER_MODES",
+    "ApplicabilityAdapter",
+    "ApplicabilityPlan",
+    "CommonInputEnvelope",
+    "EvidenceApplicabilityRecord",
+    "ImpactEdge",
+    "PlannerAction",
+    "PlannerBudget",
+    "StatusLedger",
+    "plan_applicability",
+    "validate_common_input_envelope",
 ]

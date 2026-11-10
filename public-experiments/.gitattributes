@@ -1,0 +1,3 @@
+# Preserve exported source bytes and file digests across platforms.
+* -text whitespace=cr-at-eol
+**/* -text whitespace=cr-at-eol

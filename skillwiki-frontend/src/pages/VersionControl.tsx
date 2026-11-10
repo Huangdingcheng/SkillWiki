@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -34,7 +34,9 @@ import {
   TagOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
+import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
+import { recoveryDraftId } from '@/utils/recoveryDraft'
 import { lifecycleApi, skillsApi } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errors'
 import type {
@@ -324,6 +326,9 @@ function BusinessDiffView({ diff, summary }: { diff: BusinessDiffEntry[]; summar
 
 export default function VersionControl() {
   const location = useLocation()
+  const queryCompareTo = new URLSearchParams(location.search).get('compare_to') || undefined
+  const { skillId: querySkillId, setSkillId } = useSkillContext()
+  const activeSelection = useRef<string | null>(null)
   const [form] = Form.useForm<VersionLabForm>()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -346,9 +351,11 @@ export default function VersionControl() {
   const [lastSnapshot, setLastSnapshot] = useState<SnapshotCommitResponse | null>(null)
   const [lastRelease, setLastRelease] = useState<SkillReleaseRecord | null>(null)
   const [lastRestore, setLastRestore] = useState<SkillRollbackRecord | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   useEffect(() => {
-    skillsApi.list({ limit: 200 }).then(setSkills).catch(err => {
+    skillsApi.list({ limit: 200 }).then(items => setSkills(previous => [...new Map([...items, ...previous].map(skill => [skill.skill_id, skill])).values()])).catch(err => {
       message.error(getApiErrorMessage(err, 'Load Skills failed'))
     })
   }, [])
@@ -357,28 +364,38 @@ export default function VersionControl() {
     setLoadingVersions(true)
     try {
       const nextVersions = await skillsApi.versions(id)
+      if (activeSelection.current !== id) return
       setVersions(nextVersions.sort((a, b) => semverCompare(a.version, b.version)))
+    } catch (err) {
+      if (activeSelection.current !== id) return
+      setVersions([])
+      setSelectionError(getApiErrorMessage(err, 'Load version history failed'))
     } finally {
-      setLoadingVersions(false)
+      if (activeSelection.current === id) setLoadingVersions(false)
     }
   }, [])
 
-  const loadDiff = useCallback(async (id: string) => {
+  const loadDiff = useCallback(async (id: string, compareTo?: string) => {
     setLoadingDiff(true)
     try {
-      const data = await lifecycleApi.getDiff(id)
+      const data = await lifecycleApi.getDiff(id, compareTo)
+      if (activeSelection.current !== id) return
       setDiffData(data as unknown as DiffData)
     } catch (err) {
+      if (activeSelection.current !== id) return
+      setDiffData(null)
       message.error(getApiErrorMessage(err, 'Load version diff failed'))
     } finally {
-      setLoadingDiff(false)
+      if (activeSelection.current === id) setLoadingDiff(false)
     }
   }, [])
 
   const loadSelectedFull = useCallback(async (id: string) => {
     try {
       const full = await skillsApi.getFull(id)
+      if (activeSelection.current !== id) return
       setSelectedFull(full)
+      setSkills(previous => [full, ...previous.filter(skill => skill.skill_id !== id)])
       form.setFieldsValue({
         bump: 'patch',
         description: full.description,
@@ -388,8 +405,9 @@ export default function VersionControl() {
         evaluation_json: jsonText(full.evaluation),
       })
     } catch (err) {
+      if (activeSelection.current !== id) return
       setSelectedFull(null)
-      message.warning(getApiErrorMessage(err, 'Load editable Skill details failed'))
+      setSelectionError(getApiErrorMessage(err, 'Selected Skill does not exist or is temporarily unavailable'))
     }
   }, [form])
 
@@ -397,22 +415,35 @@ export default function VersionControl() {
     setHistoryLoading(true)
     try {
       const data = await lifecycleApi.snapshotHistory(id)
+      if (activeSelection.current !== id) return
+      setHistoryError(null)
       setSnapshotPath(data.snapshot_path)
       setSnapshotHistory(data.history)
       setSourceRef(prev => prev || data.history[0]?.commit_hash || '')
     } catch (err) {
+      if (activeSelection.current !== id) return
       setSnapshotPath('')
       setSnapshotHistory([])
+      setHistoryError(getApiErrorMessage(err, 'Snapshot history could not be loaded'))
       if (!options.silent) {
         message.warning(getApiErrorMessage(err, 'Snapshot history is not available yet'))
       }
     } finally {
-      setHistoryLoading(false)
+      if (activeSelection.current === id) setHistoryLoading(false)
     }
   }, [])
 
-  const handleSelect = useCallback((id: string, options: { loadCurrentDiff?: boolean } = {}) => {
+  const handleSelect = useCallback((id: string, options: { loadCurrentDiff?: boolean; compareTo?: string } = {}) => {
+    activeSelection.current = id
     setSelectedId(id)
+    setSkillId(id)
+    setSelectedFull(null)
+    setLoadingDiff(false)
+    setVersions([])
+    setSnapshotHistory([])
+    setSnapshotPath('')
+    setSelectionError(null)
+    setHistoryError(null)
     setDiffData(null)
     setSnapshotDiff(null)
     setLastSnapshot(null)
@@ -423,31 +454,38 @@ export default function VersionControl() {
     void loadSelectedFull(id)
     void loadSnapshotHistory(id, { silent: true })
     if (options.loadCurrentDiff) {
-      void loadDiff(id)
+      void loadDiff(id, options.compareTo)
     }
-  }, [loadDiff, loadSelectedFull, loadSnapshotHistory, loadVersions])
+  }, [loadDiff, loadSelectedFull, loadSnapshotHistory, loadVersions, setSkillId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const query = new URLSearchParams(location.search)
-      const querySkillId = query.get('skill_id')
-      if (!querySkillId || selectedId === querySkillId) return
-      if (skills.length > 0 && skills.some(skill => skill.skill_id === querySkillId)) {
-        handleSelect(querySkillId, { loadCurrentDiff: Boolean(query.get('proposal_id')) })
+      if (!querySkillId) {
+        activeSelection.current = null
+        setSelectedId(null)
+        setSelectedFull(null)
+        setVersions([])
+        setSnapshotHistory([])
+        setDiffData(null)
+        setSnapshotDiff(null)
+        setSelectionError(null)
+        setHistoryError(null)
+        return
       }
+      if (selectedId === querySkillId) return
+      handleSelect(querySkillId, { loadCurrentDiff: true, compareTo: queryCompareTo })
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [handleSelect, location.search, selectedId, skills])
+  }, [handleSelect, queryCompareTo, querySkillId, selectedId])
 
   const handleBump = async (bump: 'major' | 'minor' | 'patch') => {
-    if (!selectedId) return
+    if (!selectedId || selectedFull?.skill_id !== selectedId) return
     setBumpLoading(true)
     try {
       const newSkill = await lifecycleApi.newVersion(selectedId, bump)
       message.success(`Created version v${newSkill.version}`)
-      const allSkills = await skillsApi.list({ limit: 200 })
-      setSkills(allSkills)
-      void loadVersions(selectedId)
+      setSkills(previous => [newSkill, ...previous.filter(skill => skill.skill_id !== newSkill.skill_id)])
+      handleSelect(newSkill.skill_id, { loadCurrentDiff: true })
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Create version failed'))
     } finally {
@@ -456,7 +494,7 @@ export default function VersionControl() {
   }
 
   const handleEditableVersion = async (values: VersionLabForm) => {
-    if (!selectedId || !selectedFull) return
+    if (!selectedId || selectedFull?.skill_id !== selectedId) return
     setBumpLoading(true)
     try {
       const nextInterface = parseJsonField(values.interface_json, 'Interface')
@@ -473,14 +511,10 @@ export default function VersionControl() {
       }
       const newSkill = await lifecycleApi.newVersion(selectedId, request)
       message.success(`Created draft version v${newSkill.version}`)
-      const allSkills = await skillsApi.list({ limit: 200 })
-      setSkills(allSkills)
-      setSelectedId(newSkill.skill_id)
-      await loadVersions(newSkill.skill_id)
-      await loadSelectedFull(newSkill.skill_id)
-      await loadDiff(newSkill.skill_id)
+      setSkills(previous => [newSkill, ...previous.filter(skill => skill.skill_id !== newSkill.skill_id)])
+      handleSelect(newSkill.skill_id, { loadCurrentDiff: true })
     } catch (err) {
-      message.error(err instanceof Error ? err.message : getApiErrorMessage(err, 'Create editable version failed'))
+      message.error(getApiErrorMessage(err, 'Create editable version failed'))
     } finally {
       setBumpLoading(false)
     }
@@ -499,8 +533,10 @@ export default function VersionControl() {
   const handleCreateSnapshot = async () => {
     if (!selectedId) return
     setSnapshotLoading(true)
+    setLastSnapshot(null)
     try {
       const snapshot = await lifecycleApi.createSnapshot(selectedId, { author: 'human_reviewer' })
+      if (activeSelection.current !== selectedId) return
       setLastSnapshot(snapshot)
       setSourceRef(snapshot.commit)
       message.success(`Snapshot commit ${shortRef(snapshot.commit)} created`)
@@ -518,11 +554,13 @@ export default function VersionControl() {
       return
     }
     setSnapshotDiffLoading(true)
+    setSnapshotDiff(null)
     try {
       const data = await lifecycleApi.snapshotDiff(selectedId, {
         from_ref: ref.trim(),
         to_ref: 'HEAD',
       })
+      if (activeSelection.current !== selectedId) return
       setSnapshotDiff(data)
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Load snapshot structured diff failed'))
@@ -532,10 +570,15 @@ export default function VersionControl() {
   }
 
   const handleReleaseTag = async (ref = sourceRef || 'HEAD') => {
-    if (!selectedId) return
+    if (!selectedId || selectedFull?.state !== 'S4') {
+      message.warning('Release tags require a backend-confirmed Released (S4) Skill')
+      return
+    }
     setReleaseTagLoading(true)
+    setLastRelease(null)
     try {
       const release = await lifecycleApi.releaseTag(selectedId, ref.trim() || 'HEAD')
+      if (activeSelection.current !== selectedId) return
       setLastRelease(release)
       message.success(`Release tag ${release.tag_name} created`)
     } catch (err) {
@@ -547,17 +590,21 @@ export default function VersionControl() {
 
   const handleRestoreCommit = async (ref = sourceRef) => {
     if (!selectedId || !ref.trim()) {
-      message.warning('Select or enter a source commit/tag first')
+      message.warning('Select or enter a source commit/tag for the recovery draft first')
       return
     }
     setRestoreLoading(true)
+    setLastRestore(null)
     try {
       const restore = await lifecycleApi.restoreSnapshot(selectedId, ref.trim())
-      setLastRestore(restore)
-      message.success(`Restore commit ${shortRef(restore.restore_commit)} created`)
-      await loadSnapshotHistory(selectedId, { silent: true })
+      if (activeSelection.current !== selectedId) return
+      const restoredId = recoveryDraftId(restore)
+      // The response creates a new skill identity. A hard route replacement
+      // makes the new identity authoritative before any stale source-ID
+      // effects can clear or reload the old selection.
+      window.location.replace(skillContextPath(location.pathname, restoredId))
     } catch (err) {
-      message.error(getApiErrorMessage(err, 'Create restore commit failed'))
+      message.error(getApiErrorMessage(err, 'Create recovery draft failed'))
     } finally {
       setRestoreLoading(false)
     }
@@ -576,7 +623,7 @@ export default function VersionControl() {
         <Space>
           <TagOutlined style={{ color: '#1677ff' }} />
           <Text code style={{ cursor: 'pointer' }} onClick={() => setDrawerSkill(record)}>v{version}</Text>
-          {record.skill_id === selectedId && <Tag color="blue">HEAD</Tag>}
+          {record.skill_id === selectedId && <Tag color="blue">Selected</Tag>}
         </Space>
       ),
     },
@@ -602,7 +649,9 @@ export default function VersionControl() {
       title: 'Actions',
       render: (_, record) => (
         <Space>
-          {(record.state === 'S2' || record.state === 'S3') && (
+          <Button size="small" onClick={() => handleSelect(record.skill_id, { loadCurrentDiff: true })}>Select</Button>
+          {record.state === 'S2' && <Tag>Verification required before release</Tag>}
+          {record.state === 'S3' && (
             <Popconfirm title="Release this version?" onConfirm={() => handleRelease(record.skill_id)}>
               <Button size="small" type="primary" icon={<RocketOutlined />}>Release</Button>
             </Popconfirm>
@@ -651,16 +700,16 @@ export default function VersionControl() {
           <Button size="small" icon={<DiffOutlined />} onClick={() => { setSourceRef(record.commit_hash); void handleSnapshotDiff(record.commit_hash) }}>
             Diff
           </Button>
-          <Button size="small" icon={<TagOutlined />} loading={releaseTagLoading} onClick={() => handleReleaseTag(record.commit_hash)}>
+          <Button size="small" icon={<TagOutlined />} disabled={selectedFull?.state !== 'S4'} loading={releaseTagLoading} onClick={() => handleReleaseTag(record.commit_hash)}>
             Tag
           </Button>
           <Popconfirm
-            title="Create a restore commit from this snapshot?"
-            description="This writes a new restore commit; it does not reset Git history."
+            title="Create a new recovery draft from this snapshot?"
+            description="Creates a separate S2 draft, keeps every existing version, and leaves the current used version unchanged. Verification is required before release."
             onConfirm={() => handleRestoreCommit(record.commit_hash)}
           >
             <Button size="small" danger icon={<RollbackOutlined />} loading={restoreLoading}>
-              Restore commit
+              Create recovery draft
             </Button>
           </Popconfirm>
         </Space>
@@ -673,9 +722,12 @@ export default function VersionControl() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Version Governance</h2>
         <p style={{ color: '#666', marginBottom: 24 }}>
-          Review Skill versions, Git snapshots, structured diffs, release tags, and restore commits.
+          Review Skill versions, Git snapshots, structured diffs, release tags, and recovery drafts.
         </p>
       </motion.div>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Version governance does not run a task" description="Snapshots, new versions, diffs, and rollback confirm stored content and governance changes. Static review is separate from execution and verifier evidence." />
+      {selectionError && <Alert type="error" showIcon message={selectionError} style={{ marginBottom: 16 }} action={<Button size="small" onClick={() => selectedId && handleSelect(selectedId, { loadCurrentDiff: true })}>Retry</Button>} />}
+      {selectedId && <Space wrap style={{ marginBottom: 16 }}><Text code copyable>{selectedId}</Text><Link to={skillContextPath('/wiki', selectedId)}>Open in Wiki</Link><Link to={skillContextPath('/lifecycle', selectedId)}>Lifecycle</Link><Link to={skillContextPath('/harness', selectedId)}>Verification</Link></Space>}
 
       {queryProposalId && (
         <Alert
@@ -702,7 +754,7 @@ export default function VersionControl() {
             title={<span><BranchesOutlined /> Version history</span>}
             variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
-            extra={selectedId && (
+            extra={selectedId && selectedFull?.skill_id === selectedId && (
               <Space wrap>
                 <Button size="small" icon={<DiffOutlined />} loading={loadingDiff} onClick={() => loadDiff(selectedId)}>
                   Legacy diff
@@ -724,6 +776,7 @@ export default function VersionControl() {
             <div style={{ marginBottom: 16 }}>
               <Select
                 value={selectedId ?? undefined}
+                disabled={bumpLoading || snapshotLoading || restoreLoading || releaseTagLoading}
                 placeholder="Select a Skill"
                 style={{ width: '100%' }}
                 onChange={value => handleSelect(value)}
@@ -731,8 +784,8 @@ export default function VersionControl() {
                 filterOption={(input, option) =>
                   String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
-                options={[...new Map(skills.map(skill => [skill.name, skill])).values()].map(skill => ({
-                  label: `${skill.name} (${STATE_LABEL[skill.state] || skill.state})`,
+                options={skills.map(skill => ({
+                  label: `${skill.name} · v${skill.version} (${STATE_LABEL[skill.state] || skill.state})`,
                   value: skill.skill_id,
                 }))}
               />
@@ -754,7 +807,7 @@ export default function VersionControl() {
             variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
           >
-            {!selectedId || !selectedFull ? (
+            {!selectedId || selectedFull?.skill_id !== selectedId ? (
               <Empty description="Select a Skill to create an editable draft version" />
             ) : (
               <Form
@@ -838,7 +891,7 @@ export default function VersionControl() {
             title={<span><SaveOutlined /> Git-backed governance snapshots</span>}
             variant="borderless"
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginTop: 16 }}
-            extra={selectedId && (
+            extra={selectedId && selectedFull?.skill_id === selectedId && (
               <Space wrap>
                 <Button icon={<SaveOutlined />} loading={snapshotLoading} onClick={handleCreateSnapshot}>
                   Create snapshot
@@ -849,10 +902,11 @@ export default function VersionControl() {
               </Space>
             )}
           >
-            {!selectedId ? (
+            {!selectedId || selectedFull?.skill_id !== selectedId ? (
               <Empty description="Select a Skill to manage snapshots" />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {historyError && <Alert type="error" showIcon message={historyError} />}
                 {snapshotPath && (
                   <Text type="secondary">Snapshot path: <Text code>{snapshotPath}</Text></Text>
                 )}
@@ -876,10 +930,13 @@ export default function VersionControl() {
                   <Alert
                     type="warning"
                     showIcon
-                    message="Restore commit created"
+                    message="New recovery draft created — current used version unchanged"
                     description={(
                       <Space direction="vertical" size={2}>
                         <Text code copyable={{ text: lastRestore.restore_commit }}>{shortRef(lastRestore.restore_commit)}</Text>
+                        <Text>Recovery draft: <Text code copyable>{lastRestore.restored_skill_id}</Text> · v{lastRestore.restored_version} · {lastRestore.restored_state}</Text>
+                        <Text>Source: <Text code>{lastRestore.source_skill_id}</Text> · v{lastRestore.source_version} · <Text code>{shortRef(lastRestore.source_ref)}</Text></Text>
+                        <Text>All existing versions are retained. This S2 draft requires verification before release; no live version is replaced.</Text>
                         <Text type="secondary">{lastRestore.commit_message}</Text>
                       </Space>
                     )}
@@ -895,19 +952,20 @@ export default function VersionControl() {
                   <Button icon={<DiffOutlined />} loading={snapshotDiffLoading} onClick={() => handleSnapshotDiff()}>
                     Structured diff
                   </Button>
-                  <Button icon={<TagOutlined />} loading={releaseTagLoading} onClick={() => handleReleaseTag()}>
+                  <Button icon={<TagOutlined />} disabled={selectedFull?.state !== 'S4'} loading={releaseTagLoading} onClick={() => handleReleaseTag()}>
                     Release tag
                   </Button>
                   <Popconfirm
-                    title="Create restore commit from this ref?"
-                    description="This creates a new commit from the selected snapshot; it does not reset history."
+                    title="Create a new recovery draft from this ref?"
+                    description="Creates a separate S2 draft, keeps every existing version, and leaves the current used version unchanged. Verification is required before release."
                     onConfirm={() => handleRestoreCommit()}
                   >
                     <Button danger icon={<RollbackOutlined />} loading={restoreLoading}>
-                      Restore commit
+                      Create recovery draft
                     </Button>
                   </Popconfirm>
                 </Space.Compact>
+                {selectedFull.state !== 'S4' && <Text type="secondary">Release tags stay disabled until the backend confirms Released (S4). Recovery drafts require verification before release.</Text>}
 
                 <Table
                   dataSource={snapshotHistory}

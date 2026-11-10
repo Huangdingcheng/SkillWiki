@@ -1,0 +1,202 @@
+{
+  "context_pack": {
+    "summary": "Runbook for diagnosing a Kubernetes Pod stuck in Pending status by inspecting scheduler events with kubectl describe pod and interpreting FailedScheduling messages caused by insufficient node resources.",
+    "facts": [
+      "A Pod can remain Pending when it does not fit on any node due to insufficient resources or a label selector that matches no nodes.",
+      "The scheduler emits a Warning event with reason FailedScheduling when it cannot place a Pod.",
+      "The FailedScheduling message can include per-node fit failure details such as 'Node didn't have enough resource: CPU, requested: 1000, used: 1420, capacity: 2000'.",
+      "kubectl get pods shows STATUS Pending for unscheduled Pods.",
+      "kubectl describe pod <pending-pod-name> shows the Pod's Events section including scheduler messages."
+    ],
+    "procedures": [
+      "Run kubectl get pods to identify Pods with STATUS Pending.",
+      "Run kubectl describe pod <pending-pod-name> on the Pending Pod.",
+      "Inspect the Events section for a Warning event with reason FailedScheduling.",
+      "Read the FailedScheduling message to determine which nodes failed to fit the Pod and why (e.g., insufficient CPU).",
+      "Conclude that the scheduler could not place the Pod because nodes lacked enough requested resources."
+    ],
+    "constraints": [
+      "Diagnosis must be grounded in the Pod's scheduler events, not assumptions.",
+      "The required diagnostic command is kubectl describe pod <pending-pod-name>.",
+      "The failure signal to parse is a Warning event with reason FailedScheduling.",
+      "The expected conclusion is insufficient CPU or other requested resources on nodes."
+    ],
+    "examples": [
+      "kubectl get pods output shows nginx-deployment-1370807587-fz9sd with STATUS Pending.",
+      "kubectl describe pod nginx-deployment-1370807587-fz9sd shows Warning FailedScheduling: pod failed to fit in any node.",
+      "Fit failure on node (kubernetes-node-6ta5): Node didn't have enough resource: CPU, requested: 1000, used: 1420, capacity: 2000."
+    ],
+    "apis_tools": [
+      "kubectl get pods",
+      "kubectl describe pod <pending-pod-name>"
+    ]
+  },
+  "challenges": [
+    {
+      "task_id": "challenge_1",
+      "task": "Given kubectl get pods output showing a Pod with STATUS Pending, identify the Pod and state the next diagnostic command to run.",
+      "rubric": [
+        "Correctly identifies the Pending Pod name from the output.",
+        "States kubectl describe pod <pending-pod-name> as the next command.",
+        "Does not jump to a conclusion before inspecting events."
+      ],
+      "expected_evidence": "Pending Pod name identified and kubectl describe pod <pending-pod-name> specified.",
+      "failure_signal": "Wrong Pod selected or a diagnostic command other than kubectl describe pod is proposed."
+    },
+    {
+      "task_id": "challenge_2",
+      "task": "Given kubectl describe pod output containing a Warning FailedScheduling event, interpret the event and explain why the Pod is Pending.",
+      "rubric": [
+        "Locates the Warning event with reason FailedScheduling.",
+        "Reads the message indicating the Pod failed to fit in any node.",
+        "Explains that nodes did not have enough requested resources such as CPU."
+      ],
+      "expected_evidence": "Explanation cites FailedScheduling and insufficient node resources from the event message.",
+      "failure_signal": "Misses the FailedScheduling event or attributes Pending status to an unrelated cause."
+    },
+    {
+      "task_id": "challenge_3",
+      "task": "Given per-node fit failure lines in the FailedScheduling message, determine which resource is insufficient and summarize the scheduler's conclusion.",
+      "rubric": [
+        "Identifies CPU as the insufficient resource from the fit failure lines.",
+        "References requested, used, and capacity values from the message.",
+        "Concludes the scheduler could not place the Pod on any node due to resource shortfall."
+      ],
+      "expected_evidence": "Summary names CPU shortfall and cites node fit failure details.",
+      "failure_signal": "Misidentifies the resource or ignores the per-node fit failure details."
+    }
+  ],
+  "candidates": [
+    {
+      "name": "diagnose_pending_pod_failed_scheduling",
+      "description": "Diagnose a Kubernetes Pod stuck in Pending by inspecting scheduler events and identifying insufficient node resources.",
+      "skill_type": "atomic",
+      "tags": [
+        "ctx2skill",
+        "kubernetes",
+        "debugging",
+        "scheduling"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pod_name": {
+            "type": "string",
+            "description": "Name of the Pending Pod"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Namespace of the Pod"
+          },
+          "describe_output": {
+            "type": "string",
+            "description": "Output of kubectl describe pod"
+          }
+        },
+        "required": [
+          "pod_name"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "failure_reason": {
+            "type": "string"
+          },
+          "insufficient_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          }
+        }
+      },
+      "preconditions": [
+        "A Pod is observed with STATUS Pending.",
+        "kubectl access to the cluster is available."
+      ],
+      "postconditions": [
+        "The Pod's scheduler events have been inspected.",
+        "The FailedScheduling reason and insufficient resource have been identified."
+      ],
+      "prompt_template": "Run kubectl get pods to find the Pending Pod. Run kubectl describe pod <pending-pod-name>. Locate the Warning event with reason FailedScheduling. Parse the message for node fit failures and identify insufficient resources such as CPU. Summarize why the scheduler could not place the Pod.",
+      "dependencies": [
+        "kubectl"
+      ],
+      "components": [],
+      "parents": [],
+      "tool_calls": [
+        "kubectl get pods",
+        "kubectl describe pod <pending-pod-name>"
+      ],
+      "score": 0.92
+    },
+    {
+      "name": "inspect_kubernetes_pod_events",
+      "description": "Inspect Kubernetes Pod events to find warning signals and interpret them.",
+      "skill_type": "atomic",
+      "tags": [
+        "ctx2skill",
+        "kubernetes",
+        "events"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pod_name": {
+            "type": "string"
+          },
+          "describe_output": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pod_name"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "preconditions": [
+        "kubectl access to the cluster is available."
+      ],
+      "postconditions": [
+        "Pod events have been listed and warnings identified."
+      ],
+      "prompt_template": "Run kubectl describe pod <pod-name> and extract the Events section. List Warning events and their reasons.",
+      "dependencies": [
+        "kubectl"
+      ],
+      "components": [],
+      "parents": [],
+      "tool_calls": [
+        "kubectl describe pod <pod-name>"
+      ],
+      "score": 0.7
+    }
+  ],
+  "selected_reason": "diagnose_pending_pod_failed_scheduling is the strongest candidate because it directly encodes the full runbook: trigger (Pending Pod), required command (kubectl describe pod), failure signal (Warning FailedScheduling), and expected conclusion (insufficient node resources). It scores higher than the generic event-inspection skill, which lacks the Pending-Pod trigger and resource-shortfall interpretation."
+}

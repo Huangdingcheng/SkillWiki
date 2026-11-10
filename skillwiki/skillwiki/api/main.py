@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _default_skill_storage_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "storage" / "skill_repo" / "SkillStorage"
+    return Path(os.environ.get("SKILLWIKI_STORAGE_DIR", "skillwiki-data")).expanduser().resolve()
 
 
 @asynccontextmanager
@@ -41,11 +41,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     graph_mgr = MemoryGraphManager()
 
     app_state.initialize(llm=llm, wiki=wiki, graph=graph_mgr)
+    app_state.execution_trace_path = (
+        Path(app.state.skill_storage_dir) / "runtime-traces" / "retrieval-traces.jsonl"
+    )
 
-    # Seed demo data, then mirror the Wiki state into the in-memory graph.
+    # Rebuild the graph from durable Skills on every startup. Demo-only graph
+    # records must stay opt-in and must not determine whether real Skills appear.
     if app.state.seed_demo:
         await _seed_demo_skills(wiki)
-        await _sync_graph_from_wiki(wiki, graph_mgr)
+    await _sync_graph_from_wiki(wiki, graph_mgr)
+    if app.state.seed_demo:
+        await _seed_demo_graph_edges(graph_mgr)
         await _seed_demo_heterogeneous_graph(wiki, graph_mgr)
 
     # Wire WebSocket broadcast events into the executor.
@@ -61,18 +67,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 async def _sync_graph_from_wiki(wiki: Any, graph_mgr: MemoryGraphManager) -> None:
     """Best-effort startup sync from the Wiki store into the in-memory graph."""
     try:
-        seeded_skills = await wiki.list(limit=10000)
-        skill_ids = [skill.skill_id for skill in seeded_skills]
-        for skill in seeded_skills:
+        list_skills = getattr(wiki, "list_all_versions", wiki.list)
+        stored_skills = await list_skills(limit=10000)
+        snapshot_sync = getattr(graph_mgr, 'sync_repository_snapshot', None)
+        if callable(snapshot_sync):
+            await snapshot_sync(stored_skills)
+            return
+        skill_ids = [skill.skill_id for skill in stored_skills]
+        for skill in stored_skills:
             await graph_mgr.sync_skill(skill)
 
         if hasattr(graph_mgr, "sync_auto_edges"):
-            for skill in seeded_skills:
+            for skill in stored_skills:
                 await graph_mgr.sync_auto_edges(skill, skill_ids)
-
-        await _seed_demo_graph_edges(graph_mgr)
+        if hasattr(graph_mgr, "sync_persisted_skill_graph"):
+            await graph_mgr.sync_persisted_skill_graph(stored_skills)
     except Exception as exc:  # pragma: no cover - startup should survive graph issues
-        logger.warning("Failed to sync seeded Skills into graph: %s", exc)
+        logger.warning("Failed to sync stored Skills into graph: %s", exc)
 
 
 async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
@@ -530,6 +541,11 @@ async def _seed_demo_skills(wiki: MemoryWikiManager) -> None:
     for data in demos + meta_skills + test_graph_skills:
         skill_data = dict(data)
         skill_data.setdefault("skill_id", skill_data["name"])
+        if await wiki.get(skill_data["skill_id"]):
+            continue
+        get_by_name = getattr(wiki, "get_by_name", None)
+        if callable(get_by_name) and await get_by_name(skill_data["name"]):
+            continue
         skill = Skill(
             **skill_data,
             provenance=SkillProvenance(source_type="demo", created_by_agent="system"),
@@ -724,16 +740,33 @@ async def _seed_demo_heterogeneous_graph(wiki: Any, graph_mgr: Any) -> None:
 
 def create_app(
     api_key: str,
-    model: str = "claude-sonnet-4-6",
+    model: str = "deepseek-flash",
     *,
-    api_url: str = "https://yunwu.ai",
+    api_url: str = "https://api.deepseek.com",
     repository_backend: str = "git",
     skill_storage_dir: Optional[Path] = None,
-    seed_demo: bool = True,
+    seed_demo: bool = False,
+    llm_retry_count: int = 3,
 ) -> FastAPI:
     from ..config.llm_config import LLMConfig
 
-    llm_cfg = LLMConfig(api_key=api_key, api_url=api_url, model=model)
+    budget_config = {
+        field: os.environ[env_name]
+        for field, env_name in {
+            "budget_limit_cny": "SKILLWIKI_LLM_BUDGET_LIMIT_CNY",
+            "budget_total_limit_cny": "SKILLWIKI_LLM_BUDGET_TOTAL_LIMIT_CNY",
+            "budget_ledger_path": "SKILLWIKI_LLM_BUDGET_LEDGER_PATH",
+            "budget_scope": "SKILLWIKI_LLM_BUDGET_SCOPE",
+            "budget_max_output_tokens": "SKILLWIKI_LLM_BUDGET_MAX_OUTPUT_TOKENS",
+            "cumulative_budget_ledger_path": "SKILLWIKI_CUMULATIVE_BUDGET_LEDGER_PATH",
+            "cumulative_budget_total_limit_cny": "SKILLWIKI_CUMULATIVE_BUDGET_TOTAL_LIMIT_CNY",
+        }.items()
+        if env_name in os.environ
+    }
+    llm_cfg = LLMConfig(
+        api_key=api_key, api_url=api_url, model=model,
+        retry_count=llm_retry_count, **budget_config,
+    )
 
     app = FastAPI(
         title="SkillWiki API",
@@ -791,25 +824,37 @@ def main() -> None:
     parser.add_argument("--api-key", default=None, help="LLM API key; defaults to LLM_API_KEY")
     parser.add_argument("--api-url", default=None, help="LLM API base URL; defaults to LLM_API_URL")
     parser.add_argument("--model", default=None, help="LLM model; defaults to LLM_MODEL")
+    parser.add_argument(
+        "--llm-retry-count", type=int, default=None,
+        help="LLM retries after the first attempt; defaults to LLM_RETRY_COUNT or 3",
+    )
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
     parser.add_argument("--repository-backend", choices=["git", "memory"], default="git")
     parser.add_argument("--skill-storage-dir", default=None)
-    parser.add_argument("--no-seed-demo", action="store_true")
+    demo_seed = parser.add_mutually_exclusive_group()
+    demo_seed.add_argument("--seed-demo", action="store_true", help="Add synthetic demo fixtures")
+    demo_seed.add_argument("--no-seed-demo", action="store_true", help="Skip demo fixtures (default)")
     args = parser.parse_args()
 
     storage_dir = Path(args.skill_storage_dir).resolve() if args.skill_storage_dir else None
     api_key = args.api_key or os.getenv("LLM_API_KEY") or "demo-placeholder-key"
-    api_url = args.api_url or os.getenv("LLM_API_URL") or "https://yunwu.ai"
-    model = args.model or os.getenv("LLM_MODEL") or "claude-sonnet-4-6"
+    api_url = args.api_url or os.getenv("LLM_API_URL") or "https://api.deepseek.com"
+    model = args.model or os.getenv("LLM_MODEL") or "deepseek-flash"
+    retry_count = (
+        args.llm_retry_count
+        if args.llm_retry_count is not None
+        else int(os.getenv("LLM_RETRY_COUNT", "3"))
+    )
     app = create_app(
         api_key=api_key,
         api_url=api_url,
         model=model,
         repository_backend=args.repository_backend,
         skill_storage_dir=storage_dir,
-        seed_demo=not args.no_seed_demo,
+        seed_demo=args.seed_demo,
+        llm_retry_count=retry_count,
     )
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
 

@@ -1,0 +1,14 @@
+**/.env
+**/.env.*
+!**/.env.example
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.coverage
+htmlcov
+tests
+benchmarks
+skillwiki-data
+artifacts
+skillwiki/storage/skill_repo/SkillStorage

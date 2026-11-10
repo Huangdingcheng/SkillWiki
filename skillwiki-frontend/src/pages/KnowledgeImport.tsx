@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert, Badge, Button, Card, Col, Collapse, Descriptions, Divider, Input, Progress,
   Row, Select, Space, Steps, Tabs, Tag, Typography, Upload,
@@ -11,7 +11,8 @@ import {
 } from '@ant-design/icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { ingestApi, lifecycleApi } from '@/api/client'
+import { ingestApi, lifecycleApi, skillsApi } from '@/api/client'
+import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
 import { getApiErrorMessage } from '@/api/errors'
 import type {
   CandidateAuditResult,
@@ -19,6 +20,7 @@ import type {
   CreatedSkill,
   ExperienceUnit,
   IngestResponse,
+  PromptFormat,
   SkillEvaluation,
   SkillProvenance,
   SkillType,
@@ -223,6 +225,8 @@ interface CandidateDraft {
   preconditionsText: string
   postconditionsText: string
   promptTemplate: string
+  promptFormat?: PromptFormat | null
+  requestBodyValidation?: Record<string, unknown> | null
   provenanceText: string
   evaluationText: string
   dependencyIds: string[]
@@ -302,6 +306,20 @@ function metadataRecord(unit: ExperienceUnit | null | undefined): Record<string,
 
 function nestedRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
   return asRecord(parent[key]) ?? {}
+}
+
+function validatedPromptFormat(value: unknown): PromptFormat | null | undefined {
+  if (value === undefined || value === null || value === 'literal' || value === 'python_format') {
+    return value
+  }
+  throw new Error('prompt_format must be literal, python_format, or null.')
+}
+
+function validatedRequestBodyValidation(value: unknown): Record<string, unknown> | null | undefined {
+  if (value === undefined || value === null) return value
+  const policy = asRecord(value)
+  if (!policy) throw new Error('request_body_validation must be an object or null.')
+  return policy
 }
 
 function extractJsonAfterLabel(content: string, label: string): Record<string, unknown> {
@@ -513,11 +531,17 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
     validation_summary: 'Pending human validation. This Skill remains Candidate (S1).',
   }
 
-  const contractPrompt = contract?.kind === 'api_doc'
+  const promptSource = typeof candidateImplementation.prompt_template === 'string' && candidateImplementation.prompt_template
+    ? candidateImplementation
+    : selectedCandidate
+  const sourcePrompt = typeof promptSource.prompt_template === 'string' ? promptSource.prompt_template : ''
+  const contractPrompt = sourcePrompt || (contract?.kind === 'api_doc'
     ? `Call ${contract.method} ${contract.endpoint} with reviewed parameters and validate the response schema.`
     : contract?.kind === 'script'
       ? `Run or adapt ${contract.entrypoint} using the reviewed arguments. Runnable hint: ${contract.runnableHint}.`
-      : String(candidateImplementation.prompt_template || selectedCandidate.prompt_template || unit.summary || description)
+      : String(unit.summary || description))
+  const promptFormat = validatedPromptFormat(promptSource.prompt_format)
+  const requestBodyValidation = validatedRequestBodyValidation(promptSource.request_body_validation)
   const metadataPreconditions = asStringArray(candidateInterface.preconditions)
   const metadataPostconditions = asStringArray(candidateInterface.postconditions)
 
@@ -543,6 +567,8 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
         ? `Entrypoint ${contract.entrypoint} completes and returns ${contract.returns}.`
         : 'The Skill returns a structured result aligned with the reviewed source experience.',
     promptTemplate: contractPrompt,
+    promptFormat,
+    requestBodyValidation,
     provenanceText: toJson(provenance),
     evaluationText: toJson(evaluation),
     dependencyIds,
@@ -555,6 +581,7 @@ function buildCandidateDraft(unit: ExperienceUnit, sourceType: SourceType): Cand
 
 export default function KnowledgeImport() {
   const navigate = useNavigate()
+  const { skillId, setSkillId } = useSkillContext()
   const [activeTab, setActiveTab] = useState<SourceType>('trajectory')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
@@ -569,6 +596,23 @@ export default function KnowledgeImport() {
   const [createdSkill, setCreatedSkill] = useState<CreatedSkill | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
+  const [contextSkill, setContextSkill] = useState<CreatedSkill | null>(null)
+  const [contextError, setContextError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!skillId) return
+    let cancelled = false
+    skillsApi.get(skillId).then(skill => {
+      if (cancelled) return
+      setContextSkill(skill)
+      setContextError(null)
+    }).catch(err => {
+      if (cancelled) return
+      setContextSkill(null)
+      setContextError(getApiErrorMessage(err, 'Selected Skill does not exist or is temporarily unavailable'))
+    })
+    return () => { cancelled = true }
+  }, [skillId])
 
   const currentSource = SOURCE_TYPES.find(s => s.key === activeTab)!
   const selectedUnit = result?.units.find(unit => unit.unit_id === selectedUnitId) ?? result?.units[0] ?? null
@@ -582,8 +626,6 @@ export default function KnowledgeImport() {
   const selectedLayeringReason = typeof selectedMetadata.layering_reason === 'string'
     ? selectedMetadata.layering_reason
     : ''
-
-  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   const resetReviewState = () => {
     setAuditResult(null)
@@ -628,14 +670,10 @@ export default function KnowledgeImport() {
     setPipelineStage(0)
 
     try {
-      const stagePromise = (async () => {
-        for (let i = 0; i < PIPELINE_STAGES.length; i += 1) {
-          setPipelineStage(i)
-          await sleep(300)
-        }
-      })()
-
-      const [res] = await Promise.all([ingestApi.parse(activeTab, content), stagePromise])
+      const res = await ingestApi.parse(activeTab, content)
+      if (!res.success) {
+        throw new Error(res.errors?.join('; ') || 'Backend parsing did not succeed')
+      }
       const nextDrafts = Object.fromEntries(
         res.units.map(unit => [unit.unit_id, buildCandidateDraft(unit, activeTab)]),
       )
@@ -653,6 +691,8 @@ export default function KnowledgeImport() {
 
   const updateDraft = (patch: Partial<CandidateDraft>) => {
     if (!selectedUnit) return
+    setAuditResult(null)
+    setCreatedSkill(null)
     setDrafts(prev => ({
       ...prev,
       [selectedUnit.unit_id]: {
@@ -683,6 +723,8 @@ export default function KnowledgeImport() {
       preconditions: linesFromText(currentDraft.preconditionsText),
       postconditions: linesFromText(currentDraft.postconditionsText),
       prompt_template: currentDraft.promptTemplate,
+      ...(currentDraft.promptFormat === undefined ? {} : { prompt_format: currentDraft.promptFormat }),
+      ...(currentDraft.requestBodyValidation === undefined ? {} : { request_body_validation: currentDraft.requestBodyValidation }),
       provenance,
       evaluation,
       dependency_ids: currentDraft.dependencyIds,
@@ -698,10 +740,11 @@ export default function KnowledgeImport() {
     try {
       setAuditing(true)
       setError(null)
+      setAuditResult(null)
       const audit = await ingestApi.auditCandidate(buildPayload())
       setAuditResult(audit)
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err, 'Audit failed'))
+      setError(getApiErrorMessage(err, 'Audit failed'))
     } finally {
       setAuditing(false)
     }
@@ -711,11 +754,17 @@ export default function KnowledgeImport() {
     try {
       setCreating(true)
       setError(null)
+      setCreatedSkill(null)
       const response = await ingestApi.createCandidate(buildPayload())
+      if (!response.success || !response.created_skill?.skill_id) {
+        throw new Error('Backend did not confirm candidate creation')
+      }
       setCreatedSkill(response.created_skill)
+      setContextSkill(response.created_skill)
+      setSkillId(response.created_skill.skill_id)
       setAuditResult(response.audit)
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err, 'Create candidate failed'))
+      setError(getApiErrorMessage(err, 'Create candidate failed'))
     } finally {
       setCreating(false)
     }
@@ -732,6 +781,7 @@ export default function KnowledgeImport() {
         'Promoted from reviewed import candidate',
       )
       setCreatedSkill({ ...createdSkill, state: promoted.state })
+      setContextSkill(promoted)
     } catch (err) {
       setError(getApiErrorMessage(err, 'Promote draft failed'))
     } finally {
@@ -753,13 +803,20 @@ export default function KnowledgeImport() {
           until a human reviewer audits, creates, and optionally promotes them to Draft (S2).
         </p>
       </motion.div>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} title="Import and audit are static evidence" description="A created Candidate or Draft is not a completed task run. Execution and verifier outcomes must be confirmed separately by the backend." />
+      {skillId && (
+        <Alert type={contextError ? 'error' : 'info'} showIcon style={{ marginBottom: 16 }}
+          title={contextError || (contextSkill?.skill_id === skillId ? `Selected Skill: ${contextSkill.name} · ${contextSkill.state} · v${contextSkill.version}` : 'Loading selected Skill…')}
+          description={<Space wrap><Text code copyable>{skillId}</Text><Link to={skillContextPath('/wiki', skillId)}>Open in Wiki</Link><Link to={skillContextPath('/lifecycle', skillId)}>Candidate review / Lifecycle</Link><Link to={skillContextPath('/versions', skillId)}>Version Governance</Link><Button size="small" onClick={() => { setSkillId(null); setContextSkill(null); setContextError(null) }}>Clear selection</Button></Space>}
+        />
+      )}
 
       {error && (
         <Alert
           type="error"
           showIcon
           closable
-          title="Parse failed"
+          title="Import operation failed"
           description={error}
           style={{ marginBottom: 16 }}
           onClose={() => setError(null)}
@@ -794,6 +851,7 @@ export default function KnowledgeImport() {
               onChange={event => {
                 setContent(event.target.value)
                 setLoadedFileName(null)
+                resetParsedContentState()
               }}
               placeholder={currentSource.placeholder}
               rows={15}
@@ -897,7 +955,7 @@ export default function KnowledgeImport() {
             {(loading || pipelineStage >= 0) && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 16 }}>
                 <Divider style={{ margin: '12px 0' }} />
-                <Text type="secondary" style={{ fontSize: 12 }}>Experience Processing Pipeline</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{loading ? 'Waiting for parse API; individual stages are not reported.' : 'Parse API returned successfully. Pipeline overview:'}</Text>
                 <Steps
                   size="small"
                   current={pipelineStage}
@@ -1226,7 +1284,7 @@ export default function KnowledgeImport() {
                       type={auditResult.passed ? (auditResult.warnings.length ? 'warning' : 'success') : 'error'}
                       showIcon
                       style={{ marginTop: 16 }}
-                      title={`Audit score ${Math.round(auditResult.audit_score * 100)}%`}
+                      title={`Static audit score ${Math.round(auditResult.audit_score * 100)}% — not task verification`}
                       description={
                         <div>
                           <Space wrap style={{ marginBottom: 8 }}>
@@ -1253,6 +1311,8 @@ export default function KnowledgeImport() {
                           <Link to={`/wiki?skill_id=${encodeURIComponent(createdSkill.skill_id)}`}>
                             Open in Wiki
                           </Link>
+                          <Link to={skillContextPath('/lifecycle', createdSkill.skill_id)}>Lifecycle</Link>
+                          <Link to={skillContextPath('/versions', createdSkill.skill_id)}>Version Governance</Link>
                           {createdSkill.state === 'S2' && (
                             <Link to={`/harness?skill_id=${encodeURIComponent(createdSkill.skill_id)}`}>
                               Open Verification Loop

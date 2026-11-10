@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+from copy import deepcopy
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
 from ...layers.skill_management.auditor import SkillAuditorAgent
+from ...layers.skill_governance.implementation_handoff import validate_implementation_binding
+from ...layers.skill_governance.version_evidence import reset_version_evidence
 from ...models.skill_model import (
     MetaSkillCategory,
     Skill,
@@ -54,6 +58,8 @@ class CreatedSkillOut(BaseModel):
     skill_type: str
     state: str
     version: str
+    graph_sync_status: str = "not_configured"
+    graph_sync_errors: List[str] = Field(default_factory=list)
 
 
 class CandidateSkillReviewRequest(BaseModel):
@@ -69,6 +75,8 @@ class CandidateSkillReviewRequest(BaseModel):
     preconditions: List[str] = Field(default_factory=list)
     postconditions: List[str] = Field(default_factory=list)
     prompt_template: str = ""
+    prompt_format: Optional[Literal["literal", "python_format"]] = None
+    request_body_validation: Optional[Dict[str, Any]] = None
     provenance: Optional[SkillProvenance] = None
     evaluation: SkillEvaluation = Field(default_factory=SkillEvaluation)
     dependency_ids: List[str] = Field(default_factory=list)
@@ -96,6 +104,13 @@ class CandidateCreateResponse(BaseModel):
     success: bool
     created_skill: CreatedSkillOut
     audit: CandidateAuditOut
+    errors: List[str] = Field(default_factory=list)
+
+
+class CandidateGraphSyncResponse(BaseModel):
+    success: bool
+    created_skill: CreatedSkillOut
+    errors: List[str] = Field(default_factory=list)
 
 
 class IngestResponse(BaseModel):
@@ -126,7 +141,7 @@ def _unit_to_out(unit: Any) -> ExperienceUnitOut:
     return ExperienceUnitOut(
         unit_id=unit.unit_id,
         source_type=unit.source_type if isinstance(unit.source_type, str) else str(unit.source_type),
-        raw_content=raw_content[:500],
+        raw_content=raw_content,
         extracted_actions=getattr(unit, "extracted_actions", []) or [],
         normalized_actions=getattr(unit, "normalized_actions", []) or [],
         summary=getattr(unit, "summary", "") or "",
@@ -149,7 +164,8 @@ def _build_candidate_skill(req: CandidateSkillReviewRequest) -> Skill:
             detail=f"Unsupported source_type '{req.source_type}'. Expected one of: {allowed}.",
         )
 
-    prompt_template = req.prompt_template.strip() or req.description
+    prompt_template = (req.prompt_template if req.prompt_format == "literal"
+                       else req.prompt_template.strip()) or req.description
     provenance = req.provenance or SkillProvenance(
         source_type=source_type,
         source_ids=[req.unit_id],
@@ -157,13 +173,16 @@ def _build_candidate_skill(req: CandidateSkillReviewRequest) -> Skill:
         creation_context={},
     )
     parent_skill_ids = _unique_ids([*provenance.parent_skill_ids, *req.parent_skill_ids])
-    provenance_context = dict(provenance.creation_context)
+    provenance_context = deepcopy(provenance.creation_context)
     paper_backlog_task = "C-P1-2" if source_type == "agent_execution" else "E-P0-1"
     provenance_context.update(
         {
             "source_type": source_type,
             "unit_id": req.unit_id,
             "raw_content_preview": req.raw_content[:500],
+            "source": {"content": req.raw_content, "source_type": source_type,
+                       "sha256": hashlib.sha256(req.raw_content.encode("utf-8")).hexdigest(),
+                       "character_count": len(req.raw_content)},
             "paper_backlog_task": paper_backlog_task,
             "human_review_required": True,
         }
@@ -176,7 +195,7 @@ def _build_candidate_skill(req: CandidateSkillReviewRequest) -> Skill:
     dependency_ids = _unique_ids(req.dependency_ids)
     component_ids = _unique_ids([*req.component_ids, *sub_skill_ids])
 
-    return Skill(
+    skill = Skill(
         name=req.name,
         description=req.description,
         skill_type=req.skill_type,
@@ -189,17 +208,22 @@ def _build_candidate_skill(req: CandidateSkillReviewRequest) -> Skill:
             preconditions=req.preconditions,
             postconditions=req.postconditions,
         ),
-        implementation=SkillImplementation(
+        implementation=validate_implementation_binding(SkillImplementation(
             language="prompt",
             prompt_template=prompt_template,
+            prompt_format=req.prompt_format,
+            request_body_validation=deepcopy(req.request_body_validation),
             tool_calls=_unique_ids(req.tool_calls),
             sub_skill_ids=sub_skill_ids,
-        ),
+        )),
         evaluation=req.evaluation,
         provenance=provenance,
         dependency_ids=dependency_ids,
         component_ids=component_ids,
     )
+    reset_version_evidence(skill, reason='candidate_import')
+    skill.state = SkillState.SKILL_CANDIDATE
+    return skill
 
 
 def _unique_ids(values: List[str]) -> List[str]:
@@ -239,8 +263,27 @@ async def _sync_candidate_graph(app: AppState, skill: Skill) -> None:
             skills = await app.wiki.list(limit=10000)
             await graph.sync_auto_edges(skill, [item.skill_id for item in skills])
         await _sync_candidate_hetero_graph(app, skill)
+        from ..graph_sync import refresh_repository_graph
+        await refresh_repository_graph(app)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Graph sync failed: {exc}") from exc
+
+
+async def _sync_persisted_candidate(app: AppState, skill: Skill) -> CreatedSkillOut:
+    """Report graph synchronization separately from an already durable creation."""
+    status = "not_configured"
+    errors: List[str] = []
+    graph = getattr(app, "graph", None)
+    if graph is not None and hasattr(graph, "sync_skill"):
+        try:
+            await _sync_candidate_graph(app, skill)
+            status = "synced"
+        except HTTPException as exc:
+            status = "failed"
+            errors.append(str(exc.detail))
+    return CreatedSkillOut(skill_id=skill.skill_id, name=skill.name,
+        skill_type=skill.skill_type.value, state=skill.state.value, version=skill.version,
+        graph_sync_status=status, graph_sync_errors=errors)
 
 
 async def _sync_candidate_hetero_graph(app: AppState, skill: Skill) -> None:
@@ -288,7 +331,7 @@ async def _sync_candidate_hetero_graph(app: AppState, skill: Skill) -> None:
     await graph.add_hetero_node(ExecutionGraphNode(
         node_id=execution_node_id,
         name=f"ingest_review:{skill.name}",
-        description="Candidate creation and audit event used as lightweight execution evidence.",
+        description="Candidate import audit event; this is not task execution evidence.",
         execution_id=execution_node_id,
         status="completed",
         skill_ref=skill_node_id,
@@ -505,23 +548,37 @@ async def create_candidate_skill(
 
     auditor = getattr(app, "auditor", None) or SkillAuditorAgent()
     audit = _audit_to_out(auditor.audit(skill))
+    skill.provenance.creation_context['candidate_import_receipt'] = {
+        'skill_id': skill.skill_id, 'skill_version': skill.version,
+        'audit_status': 'completed', 'audit': audit.model_dump(mode='json'),
+    }
     try:
         created = await app.wiki.create(skill)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    await _sync_candidate_graph(app, created)
+    persisted = await _sync_persisted_candidate(app, created)
     return CandidateCreateResponse(
-        success=True,
-        created_skill=CreatedSkillOut(
-            skill_id=created.skill_id,
-            name=created.name,
-            skill_type=created.skill_type.value,
-            state=created.state.value,
-            version=created.version,
-        ),
+        success=persisted.graph_sync_status != "failed",
+        created_skill=persisted,
         audit=audit,
+        errors=persisted.graph_sync_errors,
     )
+
+
+@router.post("/candidates/{skill_id}/sync-graph", response_model=CandidateGraphSyncResponse)
+async def retry_candidate_graph_sync(
+    skill_id: str, app: AppState = Depends(get_app_state),
+) -> CandidateGraphSyncResponse:
+    """Retry only graph projection of the stored identity, never generation/creation."""
+    if not app.wiki:
+        raise HTTPException(status_code=503, detail="Skill Wiki is not initialized.")
+    skill = await app.wiki.get(skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail="Stored candidate not found.")
+    persisted = await _sync_persisted_candidate(app, skill)
+    return CandidateGraphSyncResponse(success=persisted.graph_sync_status == "synced",
+        created_skill=persisted, errors=persisted.graph_sync_errors)
 
 
 @router.post("/parse-and-create", response_model=IngestResponse)
@@ -554,6 +611,12 @@ async def parse_and_create_skills(
 
     for unit in result.units:
         name = unit.proposed_skill_name or f"skill_from_{source_type}"
+        if source_type in {"document", "script"}:
+            # Candidate evidence IDs and repository (name, version) identities
+            # serve different purposes. Separate sources must coexist at v1.
+            source_hash = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
+            if not name.endswith("_" + source_hash):
+                name = f"{name[:63]}_{source_hash}"
         description = unit.proposed_description or unit.raw_content[:100] or name
         metadata = getattr(unit, "metadata", {}) or {}
         candidate_interface = metadata.get("candidate_interface", {}) if isinstance(metadata, dict) else {}
@@ -576,11 +639,13 @@ async def parse_and_create_skills(
                     preconditions=candidate_interface.get("preconditions") or [],
                     postconditions=candidate_interface.get("postconditions") or [],
                 ),
-                implementation=SkillImplementation(
+                implementation=validate_implementation_binding(SkillImplementation(
                     prompt_template=candidate_impl.get("prompt_template") or unit.summary or description,
+                    prompt_format=candidate_impl.get("prompt_format"),
+                    request_body_validation=deepcopy(candidate_impl.get("request_body_validation")),
                     tool_calls=_unique_ids(candidate_impl.get("tool_calls", [])),
                     sub_skill_ids=_unique_ids(candidate_impl.get("sub_skill_ids", [])),
-                ),
+                )),
                 evaluation=SkillEvaluation(**candidate_evaluation) if isinstance(candidate_evaluation, dict) else SkillEvaluation(),
                 provenance=SkillProvenance(
                     source_type=source_type,
@@ -589,28 +654,34 @@ async def parse_and_create_skills(
                     created_by_agent="ingest_pipeline",
                     creation_context={
                         "source_type": source_type,
+                        "source": deepcopy(metadata.get("source", {
+                            "content": req.content, "source_type": source_type,
+                            "sha256": hashlib.sha256(req.content.encode("utf-8")).hexdigest(),
+                            "character_count": len(req.content)})),
+                        "caller_metadata": deepcopy(metadata.get("caller_metadata", req.metadata or {})),
+                        "generation": deepcopy(metadata.get("generation", {})),
                         "ctx2skill_evidence": metadata.get("ctx2skill_evidence") if isinstance(metadata, dict) else None,
                     },
                 ),
                 dependency_ids=_unique_ids(candidate_relations.get("dependency_ids", [])),
                 component_ids=_unique_ids(candidate_relations.get("component_ids", [])),
             )
+            reset_version_evidence(skill, reason='candidate_import')
+            skill.state = SkillState.SKILL_CANDIDATE
+            skill.provenance.creation_context['candidate_import_receipt'] = {
+                'skill_id': skill.skill_id, 'skill_version': skill.version,
+                'audit_status': 'not_run', 'audit': None,
+            }
             created = await app.wiki.create(skill)
-            await _sync_candidate_graph(app, created)
-            created_skills.append(
-                CreatedSkillOut(
-                    skill_id=created.skill_id,
-                    name=created.name,
-                    skill_type=created.skill_type.value,
-                    state=created.state.value,
-                    version=created.version,
-                )
-            )
+            persisted = await _sync_persisted_candidate(app, created)
+            created_skills.append(persisted)
+            errors.extend(persisted.graph_sync_errors)
         except Exception as exc:
             errors.append(f"Failed to create skill '{name}': {exc}")
 
     return IngestResponse(
-        success=result.success and (len(result.units) == 0 or len(created_skills) > 0),
+        success=result.success and len(created_skills) == len(result.units)
+                and not any(skill.graph_sync_status == "failed" for skill in created_skills),
         source_type=result.source_type,
         unit_count=result.unit_count,
         token_usage=result.token_usage,

@@ -7,10 +7,11 @@
 # DeepSeek/OpenAI-compatible LLM endpoint. The launcher prompts for these
 # values automatically when config.local.ps1 does not exist.
 # $env:LLM_API_URL = "https://api.deepseek.com"
-# $env:LLM_MODEL = "deepseek-v4-flash"
+# Default demo model identifier.
+# $env:LLM_MODEL = "deepseek-flash"
 # $env:LLM_API_KEY = "replace-with-your-own-key"
 
 # Optional: override default behavior.
-# $env:SKILLOS_DEMO_REPOSITORY_BACKEND = "memory"
+# $env:SKILLOS_DEMO_REPOSITORY_BACKEND = "git"
 # $env:SKILLOS_DEMO_BACKEND_PORT = "8001"
 # $env:SKILLOS_DEMO_FRONTEND_PORT = "5174"

@@ -75,7 +75,10 @@ class SkillWikiManager:
             tags=tags,
             domain=domain,
             name_like=name_like,
-            latest_only=True,
+            # State-scoped catalogs include every matching identity, as the
+            # memory backend does. A newer draft must not hide an online
+            # released version referenced by an existing execution plan.
+            latest_only=state is None,
             include_deleted=False,
             limit=limit,
             offset=offset,
@@ -279,7 +282,9 @@ class SkillWikiManager:
             reason=reason,
         )
 
-    async def release(self, skill_id: str) -> Skill:
+    async def release(self, skill_id: str, *, evaluation: Optional[SkillEvaluation] = None) -> Skill:
+        if evaluation is not None:
+            return self._store.release_with_evaluation(skill_id, evaluation, author="repository")
         return await self.transition_state(skill_id, SkillState.RELEASED)
 
     async def deprecate(

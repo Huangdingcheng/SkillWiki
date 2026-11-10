@@ -27,21 +27,21 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def llm():
-    from skillos.config.llm_config import LLMConfig
-    from skillos.utils.llm_client import LLMClient
+    from skillwiki.config.llm_config import LLMConfig
+    from skillwiki.utils.llm_client import LLMClient
     cfg = LLMConfig(api_key=API_KEY, api_url=API_URL, model=MODEL)
     return LLMClient(cfg)
 
 
 @pytest.fixture(scope="module")
 def wiki():
-    from skillos.api.memory_store import MemoryWikiManager
+    from skillwiki.api.memory_store import MemoryWikiManager
     return MemoryWikiManager()
 
 
 @pytest.fixture(scope="module")
 def graph():
-    from skillos.api.memory_store import MemoryGraphManager
+    from skillwiki.api.memory_store import MemoryGraphManager
     return MemoryGraphManager()
 
 
@@ -49,7 +49,7 @@ def graph():
 
 def test_llm_ping(llm):
     """验证 LLM API 可以正常调用。"""
-    from skillos.utils.llm_client import Message
+    from skillwiki.utils.llm_client import Message
     resp = llm.chat([Message.user("请回复：pong")])
     assert resp.content
     assert len(resp.content) > 0
@@ -60,7 +60,7 @@ def test_llm_ping(llm):
 
 def test_skill_builder_from_task(llm):
     """验证 SkillBuilderAgent 能从任务描述生成 Skill。"""
-    from skillos.layers.skill_management.builder import SkillBuilderAgent
+    from skillwiki.layers.skill_management.builder import SkillBuilderAgent
     builder = SkillBuilderAgent(llm)
     draft = builder.build_from_task(
         "在网页上搜索关键词并返回前5个结果的标题",
@@ -77,8 +77,8 @@ def test_skill_builder_from_task(llm):
 
 def test_skill_auditor(llm):
     """验证 SkillAuditorAgent 能审计 Skill。"""
-    from skillos.layers.skill_management.auditor import SkillAuditorAgent
-    from skillos.models.skill_model import Skill, SkillInterface, SkillImplementation, SkillType
+    from skillwiki.layers.skill_management.auditor import SkillAuditorAgent
+    from skillwiki.models.skill_model import Skill, SkillInterface, SkillImplementation, SkillType
     auditor = SkillAuditorAgent(llm)
     skill = Skill(
         name="search_web",
@@ -104,8 +104,8 @@ def test_skill_auditor(llm):
 
 def test_composition_agent(llm):
     """验证 CompositionAgent 能将多个 Skill 组合为 SkillGraph。"""
-    from skillos.layers.skill_runtime.composition import CompositionAgent
-    from skillos.models.skill_model import Skill, SkillInterface, SkillType
+    from skillwiki.layers.skill_runtime.composition import CompositionAgent
+    from skillwiki.models.skill_model import Skill, SkillInterface, SkillType
     composer = CompositionAgent(llm)
     skills = [
         Skill(
@@ -141,7 +141,7 @@ def test_composition_agent(llm):
 
 def test_verifier_agent(llm):
     """验证 VerifierAgent 能验证执行结果。"""
-    from skillos.layers.skill_runtime.verifier import VerifierAgent
+    from skillwiki.layers.skill_runtime.verifier import VerifierAgent
     verifier = VerifierAgent(llm)
     result = verifier.verify(
         goal="在网页上找到并点击登录按钮",
@@ -158,8 +158,8 @@ def test_verifier_agent(llm):
 
 def test_reflection_agent(llm):
     """验证 ReflectionAgent 能分析失败并生成反馈。"""
-    from skillos.layers.skill_runtime.reflection import ReflectionAgent
-    from skillos.layers.skill_runtime.verifier import VerificationResult
+    from skillwiki.layers.skill_runtime.reflection import ReflectionAgent
+    from skillwiki.layers.skill_runtime.verifier import VerificationResult
     reflector = ReflectionAgent(llm)
     verify_result = VerificationResult(
         passed=False,
@@ -185,7 +185,7 @@ def test_reflection_agent(llm):
 
 def test_experience_pipeline(llm):
     """验证 ExperiencePipeline 能处理轨迹输入。"""
-    from skillos.layers.input_knowledge.pipeline import ExperiencePipeline
+    from skillwiki.layers.input_knowledge.pipeline import ExperiencePipeline
     pipeline = ExperiencePipeline(llm)
     trajectory = """
     步骤1: 打开浏览器，导航到 https://example.com
@@ -212,10 +212,10 @@ def test_experience_pipeline(llm):
 @pytest.mark.asyncio
 async def test_full_execution_flow(llm, wiki, graph):
     """验证完整的 Planner → Executor 流程（使用 prompt Skill）。"""
-    from skillos.api.memory_store import MemorySearchEngine
-    from skillos.layers.skill_runtime.planner import SkillPlanner
-    from skillos.layers.skill_runtime.executor import SkillExecutor
-    from skillos.models.skill_model import (
+    from skillwiki.api.memory_store import MemorySearchEngine
+    from skillwiki.layers.skill_runtime.planner import SkillPlanner
+    from skillwiki.layers.skill_runtime.executor import SkillExecutor
+    from skillwiki.models.skill_model import (
         Skill, SkillInterface, SkillImplementation, SkillType, SkillState, SkillProvenance,
     )
 
@@ -257,9 +257,9 @@ async def test_full_execution_flow(llm, wiki, graph):
 @pytest.mark.asyncio
 async def test_meta_skill_execution(llm, wiki, graph):
     """验证 Meta-Skill（Strategic）可以通过执行器调用 LLM。"""
-    from skillos.api.memory_store import MemoryWikiManager
-    from skillos.layers.skill_runtime.executor import SkillExecutor
-    from skillos.models.skill_model import (
+    from skillwiki.api.memory_store import MemoryWikiManager
+    from skillwiki.layers.skill_runtime.executor import SkillExecutor
+    from skillwiki.models.skill_model import (
         Skill, SkillInterface, SkillImplementation, SkillType, SkillState, SkillProvenance,
     )
 

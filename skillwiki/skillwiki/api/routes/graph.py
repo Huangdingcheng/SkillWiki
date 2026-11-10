@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import AppState, get_app_state
+from ..graph_sync import refresh_repository_graph
 from ..schemas import (
     AddEdgeRequest,
     GraphData,
@@ -246,6 +247,11 @@ def _collect_view_validation_evidence(
             "validation_node_id": validation.id,
             "outcome": validation.metadata.get("outcome", ""),
             "validator": validation.metadata.get("validator", ""),
+            'event_type': validation.metadata.get('event_type'),
+            'receipt_ref': validation.metadata.get('receipt_ref'),
+            'artifact_binding': validation.metadata.get('artifact_binding'),
+            'recorded_outcome': validation.metadata.get('recorded_outcome'),
+            'qualification_proof': False,
             "confidence": min(float(execution["execution_weight"]), edge.weight),
             "source_edge_ids": [execution["execution_edge_id"], edge.id],
         })
@@ -319,7 +325,8 @@ async def get_full_graph(
     limit: int = Query(200, ge=1, le=500),
     app: AppState = Depends(get_app_state),
 ) -> GraphData:
-    skills = await app.wiki.list(state=None, limit=limit)
+    skills = (await refresh_repository_graph(app))[:limit]
+    node_ids = {skill.skill_id for skill in skills}
     nodes = [_skill_to_node(skill) for skill in skills]
     edges: List[GraphEdgeData] = []
     try:
@@ -327,7 +334,8 @@ async def get_full_graph(
             skill_ids=[skill.skill_id for skill in skills],
             depth=1,
         )
-        edges = [_edge_to_data(edge) for edge in subgraph.edges]
+        edges = [_edge_to_data(edge) for edge in subgraph.edges
+                 if edge.source_id in node_ids and edge.target_id in node_ids]
     except Exception:
         edges = []
 
@@ -343,6 +351,7 @@ async def get_full_graph(
 async def get_heterogeneous_graph(
     app: AppState = Depends(get_app_state),
 ) -> HeterogeneousGraphData:
+    await refresh_repository_graph(app)
     getter = getattr(app.graph, "get_hetero_graph", None)
     if callable(getter):
         hetero_graph = await getter()
@@ -354,7 +363,8 @@ async def get_heterogeneous_graph(
     return HeterogeneousGraphData(
         nodes=[_hetero_node_to_data(node) for node in hetero_graph.nodes.values()],
         edges=[_hetero_edge_to_data(edge) for edge in hetero_graph.edges],
-        stats=hetero_graph.get_stats(),
+        stats={**hetero_graph.get_stats(),
+               'evidence_sync': hetero_graph.metadata.get('evidence_sync', {})},
     )
 
 
@@ -362,6 +372,7 @@ async def get_heterogeneous_graph(
 async def get_skill_only_projection(
     app: AppState = Depends(get_app_state),
 ) -> SkillGraphProjectionData:
+    await refresh_repository_graph(app)
     projector = getattr(app.graph, "project_hetero_to_skill_graph", None)
     if not callable(projector):
         raise HTTPException(status_code=501, detail="Skill-only projection is not available")
@@ -467,6 +478,7 @@ async def get_subgraph(
     req: SubgraphRequest,
     app: AppState = Depends(get_app_state),
 ) -> GraphData:
+    await refresh_repository_graph(app)
     skill = await app.wiki.get(req.skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {req.skill_id} does not exist")
@@ -481,15 +493,18 @@ async def get_subgraph(
     }
     skill_ids.add(req.skill_id)
     skill_map = await app.wiki.get_many(list(skill_ids))
+    valid_ids = {key for key, value in skill_map.items() if value}
+    edges = [_edge_to_data(edge) for edge in subgraph.edges
+             if edge.source_id in valid_ids and edge.target_id in valid_ids]
 
     return GraphData(
         nodes=[_skill_to_node(skill) for skill in skill_map.values() if skill],
-        edges=[_edge_to_data(edge) for edge in subgraph.edges],
+        edges=edges,
         stats={
             "center_skill_id": req.skill_id,
             "depth": req.depth,
             "node_count": len(skill_map),
-            "edge_count": len(subgraph.edges),
+            "edge_count": len(edges),
         },
     )
 

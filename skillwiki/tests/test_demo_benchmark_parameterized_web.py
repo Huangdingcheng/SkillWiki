@@ -7,7 +7,7 @@ from benchmarks.run_demo_benchmark import load_tasks, run_task
 
 
 def _task_by_id(task_id: str) -> dict:
-    tasks = load_tasks(Path(__file__).resolve().parents[1] / "benchmarks" / "skillos_demo_tasks.json")
+    tasks = load_tasks(Path(__file__).resolve().parents[1] / "benchmarks" / "skillwiki_demo_tasks.json")
     return next(task for task in tasks if task["task_id"] == task_id)
 
 

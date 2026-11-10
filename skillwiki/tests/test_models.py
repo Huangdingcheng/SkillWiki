@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import pytest
 
-from skillos.models import (
+from skillwiki.models import (
     EdgeType,
     ExecutionStatus,
     ExperienceSourceType,
@@ -532,7 +532,7 @@ class TestSkillExecutionRecord:
 class TestORMMappers:
 
     def test_skill_to_orm_and_back(self):
-        from skillos.storage.postgres_db import orm_to_skill, skill_to_orm
+        from skillwiki.storage.postgres_db import orm_to_skill, skill_to_orm
 
         original = Skill(
             name="test_skill",
@@ -570,14 +570,14 @@ class TestORMMappers:
         assert restored.implementation.code == "print('test')"
 
     def test_skill_to_orm_no_implementation(self):
-        from skillos.storage.postgres_db import skill_to_orm
+        from skillwiki.storage.postgres_db import skill_to_orm
 
         skill = Skill(name="no_impl_skill")
         orm = skill_to_orm(skill)
         assert orm.implementation_json is None
 
     def test_skill_to_orm_with_metrics(self):
-        from skillos.storage.postgres_db import orm_to_skill, skill_to_orm
+        from skillwiki.storage.postgres_db import orm_to_skill, skill_to_orm
 
         skill = Skill(name="metrics_skill")
         skill.record_execution(success=True, latency_ms=150.0)
