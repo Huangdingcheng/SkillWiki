@@ -46,6 +46,7 @@ operations use the configured provider and may incur charges.
 | Setting | Purpose |
 |---|---|
 | `LLM_API_KEY`, `LLM_API_URL`, `LLM_MODEL` | Server model credentials, endpoint and model |
+| `LLM_MAX_TOKENS` | Per-call output ceiling; API/Compose default 16384. Must fit the provider/model output limit; see [token configuration](USER_GUIDE.md#output-tokens-and-truncated-responses) |
 | `skillwiki serve --storage-dir` | Persistent skill store |
 | `skillwiki serve --governance-repo` | Existing Git repository for snapshots and releases |
 | `skillwiki serve --llm-retries` | Provider retry count; CLI default 0 |

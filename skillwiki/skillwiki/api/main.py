@@ -765,6 +765,7 @@ def create_app(
     }
     llm_cfg = LLMConfig(
         api_key=api_key, api_url=api_url, model=model,
+        max_tokens=int(os.getenv("LLM_MAX_TOKENS", "16384")),
         retry_count=llm_retry_count, **budget_config,
     )
 

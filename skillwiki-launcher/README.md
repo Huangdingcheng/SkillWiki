@@ -70,9 +70,16 @@ Then fill:
 $env:LLM_API_URL = "https://api.deepseek.com"
 $env:LLM_MODEL = "deepseek-flash"
 $env:LLM_API_KEY = "your-api-key"
+$env:LLM_MAX_TOKENS = "16384"
 ```
 
 `config.local.ps1` is ignored by Git. Do not commit or share it.
+
+The API defaults to 16,384 output tokens per model call; old explicit local
+overrides still win. This is a ceiling, not actual usage or the context window.
+Use a value supported by your provider (local range: 1–128,000); one million
+is not accepted. Restart after changing it. For `incomplete response (length)`,
+see [token configuration and recovery](../USER_GUIDE.md#output-tokens-and-truncated-responses).
 
 For non-interactive offline smoke checks only, advanced users may pass `-AllowPlaceholderLlm` to `Start-SkillWikiDemo.ps1` or set `SKILLOS_ALLOW_PLACEHOLDER_LLM=1`. Normal demos should use a real key.
 
@@ -84,6 +91,7 @@ For non-interactive offline smoke checks only, advanced users may pass `-AllowPl
 - Governance snapshots: `runtime/governance-git` unless `SKILLOS_GOVERNANCE_REPO` is set
 - Synthetic demo fixtures: disabled; use `-SeedDemo` to add them explicitly
 - Suggested LLM model identifier: `deepseek-flash`; configure a model your account supports; retries: `0`
+- API output ceiling: `16384` tokens per call unless `LLM_MAX_TOKENS` overrides it; independent budget caps still apply
 - WebSocket: disabled by default for a more stable Windows local demo
 - Open page: `/wiki`
 

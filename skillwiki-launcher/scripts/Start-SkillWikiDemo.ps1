@@ -146,6 +146,8 @@ function Ensure-DeepSeekConfig {
         ("`$env:LLM_API_URL = '" + (Escape-SingleQuotedPowerShellString $apiUrl) + "'"),
         ("`$env:LLM_MODEL = '" + (Escape-SingleQuotedPowerShellString $model) + "'"),
         ("`$env:LLM_API_KEY = '" + (Escape-SingleQuotedPowerShellString $apiKey) + "'"),
+        "# Per-call output ceiling; the API defaults to 16384 when unset.",
+        "# `$env:LLM_MAX_TOKENS = '16384'",
         "",
         "# Optional launch overrides:",
         "# `$env:SKILLOS_DEMO_REPOSITORY_BACKEND = 'git'",

@@ -128,13 +128,35 @@ async def test_explicit_demo_seed_preserves_existing_identity_and_content():
     assert [skill.version for skill in await wiki.list() if skill.name == original.name] == ["2.0.0"]
 
 
-def test_create_app_defaults_to_no_seed_and_deepseek(tmp_path):
+def test_create_app_defaults_to_no_seed_and_deepseek(tmp_path, monkeypatch):
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
     app = create_app(api_key="test-key", skill_storage_dir=tmp_path)
     assert app.state.repository_backend == "git"
     assert app.state.seed_demo is False
     assert app.state.llm_cfg.model == "deepseek-flash"
     assert app.state.llm_cfg.api_url == "https://api.deepseek.com"
     assert app.state.llm_cfg.budget_limit_cny is None
+    assert app.state.llm_cfg.max_tokens == 16384
+
+
+@pytest.mark.parametrize("limit", ["0", "1000000", "invalid"])
+def test_create_app_rejects_invalid_output_limits(tmp_path, monkeypatch, limit):
+    monkeypatch.setenv("LLM_MAX_TOKENS", limit)
+    with pytest.raises(ValueError):
+        create_app(api_key="test-key", skill_storage_dir=tmp_path)
+
+
+def test_create_app_respects_output_limit_without_disabling_budget(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+    monkeypatch.setenv("SKILLWIKI_LLM_BUDGET_MAX_OUTPUT_TOKENS", "2048")
+    monkeypatch.setenv("SKILLWIKI_LLM_BUDGET_LIMIT_CNY", "1")
+    monkeypatch.setenv("SKILLWIKI_LLM_BUDGET_TOTAL_LIMIT_CNY", "1")
+    monkeypatch.setenv("SKILLWIKI_LLM_BUDGET_LEDGER_PATH", str(tmp_path / "budget.jsonl"))
+    monkeypatch.setenv("SKILLWIKI_LLM_BUDGET_SCOPE", "config-test")
+    app = create_app(api_key="test-key", skill_storage_dir=tmp_path, llm_retry_count=0)
+    assert app.state.llm_cfg.max_tokens == 8192
+    assert app.state.llm_cfg.budget_max_output_tokens == 2048
+    assert app.state.llm_cfg.retry_count == 0
 
 
 def test_explicit_demo_seed_populates_demo_graph(tmp_path):

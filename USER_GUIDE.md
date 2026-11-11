@@ -30,6 +30,44 @@ a particular installed Python environment. Do not put credentials into request
 JSON or source control. Ingestion, audit, model-backed execution and repair can
 incur provider costs. Browsing existing records does not need a model call.
 
+## Output tokens and truncated responses
+
+The API server defaults to **16,384 output tokens per model call**. This applies
+to both `skillwiki serve` and the Windows launcher. Override it in the backend
+terminal or, for the launcher, its ignored `config.local.ps1`:
+
+```powershell
+$env:LLM_MAX_TOKENS = "16384"
+```
+
+```bash
+export LLM_MAX_TOKENS=16384
+```
+
+Restart the backend after changing this value. Existing local overrides take
+precedence over the new default. The server reads the process environment; it
+does not automatically load `skillwiki/.env.example` or a copied `.env` file.
+Docker Compose forwards `LLM_MAX_TOKENS` from the shell/root `.env` to the API.
+
+This is an **output ceiling**, not the amount always consumed, an input allowance,
+or the model context window. A million-token context window does not imply a
+million-token answer. Local configuration accepts 1–128,000; the provider/model
+may impose a lower output limit. Check that limit before changing models or
+raising the ceiling. One million is rejected locally. Independent budget output
+caps can reduce the effective ceiling and are not bypassed by this setting.
+
+Ingestion contains several model stages, including context, challenges and Skill
+candidates. Total pipeline token usage sums multiple calls and can exceed one
+call’s output ceiling; it is not a provider bill. Input/output token counts and
+provider pricing determine actual costs. A higher configured ceiling can also
+increase budget reservations or allow longer, more expensive answers.
+
+If import reports `ctx2skill: incomplete response (length)`, the provider marked
+that answer as truncated. Check the effective output and budget caps, choose a
+supported larger value, restart, and explicitly retry once. Do not treat the
+truncated answer as a valid Skill. Provider limits or very long responses can
+still cause truncation at 16,384; automatic retries are not enabled by this change.
+
 ## Web workflow
 
 The quick start uses <http://127.0.0.1:5174/wiki>. The launcher prints its actual
