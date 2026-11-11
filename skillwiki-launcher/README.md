@@ -71,6 +71,7 @@ $env:LLM_API_URL = "https://api.deepseek.com"
 $env:LLM_MODEL = "deepseek-flash"
 $env:LLM_API_KEY = "your-api-key"
 $env:LLM_MAX_TOKENS = "16384"
+$env:LLM_TIMEOUT = "120"
 ```
 
 `config.local.ps1` is ignored by Git. Do not commit or share it.
@@ -92,6 +93,7 @@ For non-interactive offline smoke checks only, advanced users may pass `-AllowPl
 - Synthetic demo fixtures: disabled; use `-SeedDemo` to add them explicitly
 - Suggested LLM model identifier: `deepseek-flash`; configure a model your account supports; retries: `0`
 - API output ceiling: `16384` tokens per call unless `LLM_MAX_TOKENS` overrides it; independent budget caps still apply
+- API provider timeout: `120` seconds per request unless `LLM_TIMEOUT` overrides it (range 1–600); multi-stage import may take longer overall
 - WebSocket: disabled by default for a more stable Windows local demo
 - Open page: `/wiki`
 

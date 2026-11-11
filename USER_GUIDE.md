@@ -70,6 +70,18 @@ still cause truncation at 16,384; automatic retries are not enabled by this chan
 
 ## Web workflow
 
+The API also reads `LLM_TIMEOUT` (default **120 seconds**, accepted range 1–600)
+for each provider request. Set `$env:LLM_TIMEOUT = "120"` in PowerShell or
+`export LLM_TIMEOUT=120` in Bash before starting; the launcher local config can
+contain the same setting. Restart after changes. Multi-stage import can take
+longer overall. A timeout does not imply zero provider usage; inspect records
+before explicitly retrying. Increasing output capacity alone does not increase
+the waiting time. For a local smoke check, try each source type separately:
+Trajectory expects recorded task steps, Document expects prose instructions,
+API Doc expects endpoint documentation, Script expects source code, and Past
+Skills expects an existing skill description or JSON. Each parse produces an
+editable candidate; it does not automatically verify or release it.
+
 The quick start uses <http://127.0.0.1:5174/wiki>. The launcher prints its actual
 URL if it selects a different free port. Keep one selected Skill ID and version
 through each step; pages can carry the ID in `?skill_id=...`.

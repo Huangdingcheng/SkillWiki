@@ -14,6 +14,7 @@
 # Per-call output ceiling, not the context window or actual token usage.
 # Confirm your provider supports this value; local supported range is 1..128000.
 $env:LLM_MAX_TOKENS = "16384"
+$env:LLM_TIMEOUT = "120"
 
 # Optional: override default behavior.
 # $env:SKILLOS_DEMO_REPOSITORY_BACKEND = "git"

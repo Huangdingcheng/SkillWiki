@@ -8,6 +8,7 @@ services:
       LLM_API_URL: ${LLM_API_URL:-https://api.deepseek.com}
       LLM_MODEL: ${LLM_MODEL:-deepseek-flash}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-16384}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
     volumes:
       - skillwiki-data:/data
       - skillwiki-receipts:/artifacts
