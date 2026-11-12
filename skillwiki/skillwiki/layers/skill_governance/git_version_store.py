@@ -118,6 +118,11 @@ class GitVersionStore:
         self._require_repo()
         return self._run(["rev-parse", "HEAD"]).strip()
 
+    def resolve_commit(self, ref: str) -> str:
+        """Resolve a Git reference without checking out or changing history."""
+        self._require_repo()
+        return self._run(["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"]).strip()
+
     def commit_paths(
         self,
         paths: Sequence[str | Path],

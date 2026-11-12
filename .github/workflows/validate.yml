@@ -16,6 +16,8 @@ jobs:
       - run: python -m pip install -e "./skillwiki[api,dev]"
       - run: python -m pytest skillwiki/tests/test_cli_contract.py skillwiki/tests/test_report_skillsbench_mapping.py skillwiki/tests/test_portable_configuration.py -o addopts= -q
       - run: python public-experiments/verify.py
+      - run: python -m pytest skillwiki/tests/test_evolution_repair_persistence.py skillwiki/tests/test_new_version_metadata.py skillwiki/tests/test_skill_governance_branch_review.py -o addopts= -q
+      - run: python -m unittest discover -s deploy/huggingface -p 'test_*.py'
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -30,7 +32,31 @@ jobs:
           cache-dependency-path: skillwiki-frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: node scripts/test-maintenance-proposal.mjs
       - run: npm run build
+  space:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Export public deployment package
+        run: python deploy/huggingface/prepare_space.py ../space-upload
+      - name: Build reviewed Space package
+        run: docker build -t skillwiki-space-ci ../space-upload
+      - name: Native smoke and restart readback
+        run: |
+          docker run -d --name skillwiki-space-ci -p 127.0.0.1:17860:7860 -e LLM_API_KEY=offline-smoke-not-a-real-key -e SPACE_MODEL_BUDGET_CNY=1 -v space-ci-data:/data skillwiki-space-ci
+          python deploy/huggingface/smoke.py --output /tmp/space-smoke.json
+          docker restart skillwiki-space-ci
+          python deploy/huggingface/smoke.py --readback /tmp/space-smoke.json
+      - name: Container logs
+        if: failure()
+        run: docker logs --tail 100 skillwiki-space-ci
+      - name: Clean isolated Space
+        if: always()
+        run: docker rm -f skillwiki-space-ci; docker volume rm space-ci-data
   containers:
     runs-on: ubuntu-latest
     env:

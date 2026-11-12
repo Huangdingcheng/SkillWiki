@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -64,6 +65,7 @@ def propose_skill_change(
     new_skill: Skill,
     store: Optional[GitVersionStore] = None,
     author_name: str = "SkillWiki",
+    reuse_identical: bool = False,
 ) -> SkillChangeReviewBundle:
     """Create a Git branch and snapshot commit for a proposed Skill change."""
     version_store = store or GitVersionStore(repo_path)
@@ -88,6 +90,18 @@ def propose_skill_change(
         )
 
     if version_store.branch_exists(branch_name):
+        if reuse_identical:
+            try:
+                existing = json.loads(version_store.read_file_at_ref(branch_name, snapshot_path))
+                if existing == skill_to_snapshot(new_skill):
+                    return SkillChangeReviewBundle(
+                        branch_name=branch_name, base_commit=version_store.resolve_commit(branch_name + "^"),
+                        head_commit=version_store.resolve_commit(branch_name), snapshot_path=snapshot_path,
+                        commit_message=commit_message, diffs=diffs, has_breaking_changes=breaking,
+                        suggested_review_status=review_recommendation_for_diffs(diffs),
+                    )
+            except (GitVersionStoreError, ValueError):
+                pass
         raise GitVersionStoreError(f"Git branch already exists: {branch_name}")
 
     with version_store.lock():

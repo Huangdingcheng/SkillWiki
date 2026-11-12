@@ -34,15 +34,17 @@ import {
   TagOutlined,
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { skillContextPath, useSkillContext } from '@/hooks/useSkillContext'
 import { recoveryDraftId } from '@/utils/recoveryDraft'
-import { lifecycleApi, skillsApi } from '@/api/client'
+import { evolutionApi, lifecycleApi, skillsApi } from '@/api/client'
+import { acceptedRepairPatch } from '@/utils/maintenanceProposal'
 import { getApiErrorMessage } from '@/api/errors'
 import type {
   BusinessDiffEntry,
   BusinessDiffSummary,
   NewVersionRequest,
+  MaintenanceProposal,
   SkillReleaseRecord,
   SkillRollbackRecord,
   SkillSummary,
@@ -326,9 +328,12 @@ function BusinessDiffView({ diff, summary }: { diff: BusinessDiffEntry[]; summar
 
 export default function VersionControl() {
   const location = useLocation()
+  const navigate = useNavigate()
   const queryCompareTo = new URLSearchParams(location.search).get('compare_to') || undefined
+  const queryProposalId = new URLSearchParams(location.search).get('proposal_id')
   const { skillId: querySkillId, setSkillId } = useSkillContext()
   const activeSelection = useRef<string | null>(null)
+  const activeProposal = useRef<string | null>(null)
   const [form] = Form.useForm<VersionLabForm>()
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -353,6 +358,8 @@ export default function VersionControl() {
   const [lastRestore, setLastRestore] = useState<SkillRollbackRecord | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [reviewProposal, setReviewProposal] = useState<MaintenanceProposal | null>(null)
+  const [proposalError, setProposalError] = useState<string | null>(null)
 
   useEffect(() => {
     skillsApi.list({ limit: 200 }).then(items => setSkills(previous => [...new Map([...items, ...previous].map(skill => [skill.skill_id, skill])).values()])).catch(err => {
@@ -404,12 +411,27 @@ export default function VersionControl() {
         implementation_json: jsonText(full.implementation ?? { language: 'python', prompt_template: '' }),
         evaluation_json: jsonText(full.evaluation),
       })
+      setReviewProposal(null)
+      setProposalError(null)
+      if (queryProposalId) {
+        try {
+          const queue = await evolutionApi.proposals()
+          if (activeSelection.current !== id) return
+          const proposal = queue.proposals.find(item => item.proposal_id === queryProposalId)
+          if (!proposal) throw new Error('The maintenance proposal is no longer available.')
+          const patch = acceptedRepairPatch(proposal, full)
+          form.setFieldsValue({ interface_json: jsonText(patch.interface), implementation_json: jsonText(patch.implementation) })
+          setReviewProposal(proposal)
+        } catch (err) {
+          if (activeSelection.current === id) setProposalError(getApiErrorMessage(err, 'Load maintenance patch failed'))
+        }
+      }
     } catch (err) {
       if (activeSelection.current !== id) return
       setSelectedFull(null)
       setSelectionError(getApiErrorMessage(err, 'Selected Skill does not exist or is temporarily unavailable'))
     }
-  }, [form])
+  }, [form, queryProposalId])
 
   const loadSnapshotHistory = useCallback(async (id: string, options: { silent?: boolean } = {}) => {
     setHistoryLoading(true)
@@ -435,6 +457,7 @@ export default function VersionControl() {
 
   const handleSelect = useCallback((id: string, options: { loadCurrentDiff?: boolean; compareTo?: string } = {}) => {
     activeSelection.current = id
+    activeProposal.current = queryProposalId
     setSelectedId(id)
     setSkillId(id)
     setSelectedFull(null)
@@ -456,7 +479,7 @@ export default function VersionControl() {
     if (options.loadCurrentDiff) {
       void loadDiff(id, options.compareTo)
     }
-  }, [loadDiff, loadSelectedFull, loadSnapshotHistory, loadVersions, setSkillId])
+  }, [loadDiff, loadSelectedFull, loadSnapshotHistory, loadVersions, queryProposalId, setSkillId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -472,11 +495,11 @@ export default function VersionControl() {
         setHistoryError(null)
         return
       }
-      if (selectedId === querySkillId) return
+      if (activeSelection.current === querySkillId && activeProposal.current === queryProposalId) return
       handleSelect(querySkillId, { loadCurrentDiff: true, compareTo: queryCompareTo })
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [handleSelect, queryCompareTo, querySkillId, selectedId])
+  }, [handleSelect, queryCompareTo, queryProposalId, querySkillId])
 
   const handleBump = async (bump: 'major' | 'minor' | 'patch') => {
     if (!selectedId || selectedFull?.skill_id !== selectedId) return
@@ -486,6 +509,7 @@ export default function VersionControl() {
       message.success(`Created version v${newSkill.version}`)
       setSkills(previous => [newSkill, ...previous.filter(skill => skill.skill_id !== newSkill.skill_id)])
       handleSelect(newSkill.skill_id, { loadCurrentDiff: true })
+      navigate(skillContextPath('/versions', newSkill.skill_id), { replace: true })
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Create version failed'))
     } finally {
@@ -500,6 +524,22 @@ export default function VersionControl() {
       const nextInterface = parseJsonField(values.interface_json, 'Interface')
       const nextImplementation = parseJsonField(values.implementation_json, 'Implementation')
       const nextEvaluation = parseJsonField(values.evaluation_json, 'Evaluation')
+      if (queryProposalId && !reviewProposal) throw new Error(proposalError || 'Wait for the accepted maintenance patch to load.')
+      let reviewMetadata: Record<string, unknown> | undefined
+      if (reviewProposal) {
+        const [freshParent, queue] = await Promise.all([skillsApi.getFull(selectedId), evolutionApi.proposals()])
+        const freshProposal = queue.proposals.find(item => item.proposal_id === reviewProposal.proposal_id)
+        if (!freshProposal) throw new Error('The maintenance proposal is no longer available.')
+        acceptedRepairPatch(freshProposal, freshParent)
+        const review = await lifecycleApi.proposeMaintenanceChange(selectedId, {
+          proposal_id: freshProposal.proposal_id,
+          patched_skill: { interface: nextInterface, implementation: nextImplementation },
+          reason: freshProposal.patch_hint, author: 'human_reviewer',
+        })
+        reviewMetadata = { maintenance_proposal_id: freshProposal.proposal_id,
+          maintenance_parent_id: freshParent.skill_id, maintenance_parent_version: freshParent.version,
+          maintenance_parent_hash: freshProposal.metadata.parent_hash, maintenance_review: review }
+      }
       const request: NewVersionRequest = {
         bump: values.bump,
         description: values.description,
@@ -508,11 +548,13 @@ export default function VersionControl() {
         implementation: nextImplementation,
         evaluation: nextEvaluation,
         author: 'version_lab',
+        ...(reviewMetadata ? { metadata: reviewMetadata } : {}),
       }
       const newSkill = await lifecycleApi.newVersion(selectedId, request)
       message.success(`Created draft version v${newSkill.version}`)
       setSkills(previous => [newSkill, ...previous.filter(skill => skill.skill_id !== newSkill.skill_id)])
       handleSelect(newSkill.skill_id, { loadCurrentDiff: true })
+      navigate(skillContextPath('/versions', newSkill.skill_id), { replace: true })
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Create editable version failed'))
     } finally {
@@ -524,7 +566,10 @@ export default function VersionControl() {
     try {
       await lifecycleApi.release(id)
       message.success('Released')
-      if (selectedId) void loadVersions(selectedId)
+      if (selectedId) {
+        await loadVersions(selectedId)
+        if (selectedId === id) await loadSelectedFull(id)
+      }
     } catch (err) {
       message.error(getApiErrorMessage(err, 'Release failed'))
     }
@@ -613,7 +658,6 @@ export default function VersionControl() {
   const selectedSkill = selectedId ? skills.find(skill => skill.skill_id === selectedId) : null
   const currentDiffHistory = diffData?.history ?? []
   const currentBusinessDiff = diffData?.business_diff ?? []
-  const queryProposalId = new URLSearchParams(location.search).get('proposal_id')
 
   const versionColumns: TableColumnsType<SkillSummary> = [
     {
@@ -731,17 +775,17 @@ export default function VersionControl() {
 
       {queryProposalId && (
         <Alert
-          type="info"
+          type={proposalError ? 'warning' : 'info'}
           showIcon
           style={{ marginBottom: 16 }}
-          message="Accepted maintenance proposal"
+          message={proposalError ? 'Maintenance proposal needs review' : 'Accepted maintenance proposal'}
           description={(
             <Space direction="vertical" size={2}>
               <Text>
-                Proposal <Text code>{queryProposalId.slice(0, 8)}</Text> is ready for B-side review.
+                Proposal <Text code>{queryProposalId.slice(0, 8)}</Text> {reviewProposal ? 'is loaded into the existing editor.' : 'is being checked against the selected parent.'}
               </Text>
               <Text type="secondary">
-                Submit a patched Skill through the maintenance review endpoint before creating any live Skill change.
+                {proposalError || 'Review the interface and implementation below. Create draft version saves a Git review bundle and a separate S2 draft; verification and release remain separate steps.'}
               </Text>
             </Space>
           )}

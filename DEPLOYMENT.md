@@ -70,3 +70,13 @@ examples there describe separate integrations, not additional CLI storage choice
 The [test guide](TESTING.md) lists offline checks and CI coverage. The container
 build job validates Compose and builds both images; live provider calls are kept
 separate from packaging checks.
+
+## Hugging Face Docker Space
+
+For a single-port hosted preview, use the root Dockerfile and the
+[maintainer handoff](deploy/huggingface/HANDOFF.md). The package retains the
+existing UI, serves UI/API/WebSocket traffic on port 7860, runs as UID 1000,
+starts with an empty Git-backed store, and keeps skills, governance, receipts
+and the cost ledger under one configured data root. The handoff explains
+Secrets, explicit spending authorization, persistent storage and the initial
+private access scope. Deployment is performed by the repository maintainer.
