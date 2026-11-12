@@ -91,6 +91,30 @@ CLI 全局参数应放在子命令前，例如：
 证据包，两者请求格式不同。网页没有为每一个研究用的证据字段增加编辑器。
 需要精确提交这些内容时，用 CLI/API，不能复制旧技能的通过结论给新技能。
 
+## 检索依赖与评估页
+
+规划所用的 SkillNet-Fabric 检索核心已随 SkillWiki 打包，固定版本、许可证和
+文件校验值见 `skillwiki/skillwiki/_vendor/skillfabric/PROVENANCE.json`，不再
+依赖本机历史实验目录。默认使用本地确定性向量通道；远程向量服务需要明确
+配置并授权预算。任务规划和执行仍由 SkillWiki 负责。
+
+Evaluation 读取已有结果文件，启动服务不会自动运行实验。在仓库根目录执行：
+
+```powershell
+python skillwiki/scripts/prepare_evaluation_dashboard.py --output-dir skillwiki-launcher/runtime/evaluation-results
+$env:SKILLWIKI_EVALUATION_RESULTS_DIR = (Resolve-Path skillwiki-launcher/runtime/evaluation-results).Path
+./skillwiki-launcher/scripts/Start-SkillWikiDemo.ps1 -NoOpen
+```
+
+输出目录必须为空或不存在，原记录不会被覆盖。后续启动可将该环境变量写入
+忽略提交的 `config.local.ps1`；已运行的服务需要重启。此命令不调用模型，只运行
+现有演示夹具、本地搜索和规则规划检查，页面会标明用途。这些数字与论文结果
+分开，也不代表新模型实验或真实浏览器操作。已有结果可通过同一变量加载，
+保留其来源记录；Docker 中需挂载目录并使用容器内路径。
+
+Harness 链接按 `skill_id` 精确选中技能，包括恢复草稿及历史版本；最新验证结果
+只对应选中身份。链接无效时显示错误，不会悄悄换成另一个技能。
+
 ## 3. 图里展示的是什么
 
 - **Skill-only**：技能和真实依赖、组合、演化关系，可同时出现多个历史版本。

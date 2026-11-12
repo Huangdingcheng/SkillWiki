@@ -41,6 +41,18 @@ def test_fabric_core_retrieval_is_pinned_and_deterministic() -> None:
     assert first.candidates[0]["skill_id"] == "skill-a"
 
 
+def test_packaged_fabric_files_match_recorded_provenance() -> None:
+    import hashlib
+    import json
+
+    source = fabric_adapter._fabric_source()
+    manifest = json.loads((source / "PROVENANCE.json").read_text(encoding="utf-8"))
+    assert manifest["commit"] == fabric_adapter.FABRIC_COMMIT
+    assert (source / "LICENSE").is_file()
+    for row in manifest["files"] + manifest["package_initializers"]:
+        assert hashlib.sha256((source / row["path"]).read_bytes()).hexdigest() == row["packaged_sha256"]
+
+
 def test_released_prompt_skill_is_runtime_eligible():
     skill = Skill(name="dialogue_instruction", state=SkillState.RELEASED,
         implementation=SkillImplementation(prompt_template="Return a dialogue graph"))

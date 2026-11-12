@@ -1,6 +1,6 @@
 """Thin SkillNet-Fabric retrieval adapter for the SkillWiki demo.
 
-Fabric is loaded from the pinned source snapshot in this repository. SkillWiki
+Fabric is loaded from the pinned retrieval modules packaged with SkillWiki. SkillWiki
 remains authoritative for lifecycle state, versions, and execution.
 """
 
@@ -11,7 +11,6 @@ import json
 import math
 import os
 import re
-import sys
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -51,8 +50,8 @@ def _remote_embedding_provider() -> tuple[Any, str]:
     available to a deliberate smoke run.
     """
     _fabric_source()
-    from skillfabric.indexing.embeddings import ApiEmbeddingProvider
-    from skillfabric.runtime.llm import read_env_file
+    from ..._vendor.skillfabric.indexing.embeddings import ApiEmbeddingProvider
+    from ..._vendor.skillfabric.runtime.llm import read_env_file
 
     env_path = _paperqa_env_path()
     values = read_env_file(env_path)
@@ -261,12 +260,9 @@ class _LocalHashEmbedding:
 
 
 def _fabric_source() -> Path:
-    root = Path(__file__).resolve().parents[4]
-    source = root / "artifacts" / "20260927-content-vertical-slice" / "SkillNet-REF-02" / "source" / "src"
-    if not (source / "skillfabric" / "router" / "retrieval.py").is_file():
-        raise RuntimeError("pinned SkillNet-Fabric source is missing")
-    if str(source) not in sys.path:
-        sys.path.insert(0, str(source))
+    source = Path(__file__).resolve().parents[2] / "_vendor" / "skillfabric"
+    if not (source / "router" / "retrieval.py").is_file():
+        raise RuntimeError("packaged SkillNet-Fabric retrieval modules are missing; reinstall SkillWiki")
     return source
 
 
@@ -310,13 +306,13 @@ def retrieve_with_fabric(
         return FabricRetrievalResult(candidates=(), alternatives=())
 
     _fabric_source()
-    from skillfabric.graph.models import Edge
-    from skillfabric.indexing.bm25 import build_bm25_index
-    from skillfabric.indexing.embeddings import write_binary_embedding_store
-    from skillfabric.registry.models import SkillNode
-    from skillfabric.router.expansion import expand_semantic_candidates
-    from skillfabric.router.retrieval import retrieve_seed_candidates
-    from skillfabric.storage import Workspace
+    from ..._vendor.skillfabric.graph.models import Edge
+    from ..._vendor.skillfabric.indexing.bm25 import build_bm25_index
+    from ..._vendor.skillfabric.indexing.embeddings import write_binary_embedding_store
+    from ..._vendor.skillfabric.registry.models import SkillNode
+    from ..._vendor.skillfabric.router.expansion import expand_semantic_candidates
+    from ..._vendor.skillfabric.router.retrieval import retrieve_seed_candidates
+    from ..._vendor.skillfabric.storage import Workspace
 
     nodes: dict[str, SkillNode] = {}
     vectors, embedding_mode = _embedding_provider()

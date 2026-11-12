@@ -29,6 +29,7 @@ dependencies = [
     "python-json-logger>=2.0",
     "python-dotenv>=1.0",
     "jsonschema>=4.18,<5",
+    "numpy>=1.26,<3",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +74,9 @@ Issues = "https://github.com/Huangdingcheng/SkillWiki/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["skillwiki*"]
+
+[tool.setuptools.package-data]
+"skillwiki._vendor.skillfabric" = ["LICENSE", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

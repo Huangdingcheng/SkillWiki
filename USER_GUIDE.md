@@ -111,6 +111,37 @@ evidence bundle to `/release-with-evidence`. The web interface does not provide
 an editor for every research manifest or evidence-bundle field. Use the native
 API/CLI for those contracts; the two release requests are not interchangeable.
 
+## Retrieval and the Evaluation dashboard
+
+The planner's SkillNet-Fabric retrieval core is included in the installed SkillWiki
+package, pinned to the commit and MIT license in
+`skillwiki/skillwiki/_vendor/skillfabric/PROVENANCE.json`. No historical experiment
+directory or separate agent CLI is needed. Its default embedding channel is local
+and deterministic; remote embeddings require explicit configuration and budget
+authorization. SkillWiki's planner and runtime remain responsible for execution.
+
+The Evaluation page reads saved files; starting the server does not run benchmarks.
+From the repository root, prepare its local checks in a **new** directory:
+
+```powershell
+python skillwiki/scripts/prepare_evaluation_dashboard.py --output-dir skillwiki-launcher/runtime/evaluation-results
+$env:SKILLWIKI_EVALUATION_RESULTS_DIR = (Resolve-Path skillwiki-launcher/runtime/evaluation-results).Path
+./skillwiki-launcher/scripts/Start-SkillWikiDemo.ps1 -NoOpen
+```
+
+For later launches, save that environment variable in the ignored
+`skillwiki-launcher/config.local.ps1`. Existing services need a restart. The helper
+makes **zero model calls** and runs the existing deterministic demo fixtures,
+local search checks and fallback planner checks. The page labels their scope;
+these figures are separate from paper results and do not measure fresh LLM quality
+or live browser actions. An existing/imported results directory can be selected
+with the same variable; keep its provenance and do not overwrite it. In Docker,
+mount the results directory and set the variable to its container path.
+
+Harness links resolve the exact `skill_id`, including recovery drafts and older
+versions. The latest verification panel belongs to the selected identity. An
+invalid ID produces an error rather than selecting a different Skill.
+
 ## Reading the graph
 
 - **Skill-only** shows stored Skill versions and their actual dependency,

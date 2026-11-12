@@ -390,23 +390,32 @@ export default function HarnessVerification() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<HarnessVerifyLoopResponse | null>(null)
   const [recentLoops, setRecentLoops] = useState<HarnessVerifyLoopResponse[]>([])
+  const loadSequence = useRef(0)
 
   const querySkillId = useMemo(() => new URLSearchParams(location.search).get('skill_id'), [location.search])
 
-  const draftSkills = useMemo(() => skills.filter(skill => skill.state === 'S2'), [skills])
   const selectedSkill = useMemo(
     () => skills.find(skill => skill.skill_id === selectedId) || null,
     [selectedId, skills],
   )
 
   const loadData = useCallback(async (preferredId?: string | null) => {
+    const sequence = ++loadSequence.current
     setLoading(true)
     setError(null)
     try {
-      const [skillList, loopList] = await Promise.all([
-        skillsApi.list({ limit: 200 }),
+      const [draftList, loopList] = await Promise.all([
+        skillsApi.list({ state: 'S2', limit: 200 }),
         harnessApi.list(20),
       ])
+      const explicitId = preferredId || querySkillId
+      // Recovery drafts and older identities are intentionally absent from the
+      // default latest-only catalog. Resolve the linked identity explicitly.
+      const linkedSkill = explicitId && !draftList.some(skill => skill.skill_id === explicitId)
+        ? await skillsApi.get(explicitId)
+        : null
+      const skillList = linkedSkill ? [linkedSkill, ...draftList] : draftList
+      if (sequence !== loadSequence.current) return
       setSkills(skillList)
       setRecentLoops(loopList.loops || [])
       const preferred = preferredId || querySkillId || 'demo_draft_extract_email'
@@ -419,9 +428,13 @@ export default function HarnessVerification() {
         return demoDraft?.skill_id || firstDraft?.skill_id || null
       })
     } catch (err) {
+      if (sequence !== loadSequence.current) return
+      setSelectedId(null)
+      setSkills([])
+      setResult(null)
       setError(getApiErrorMessage(err, 'Load harness data failed'))
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
   }, [querySkillId])
 
@@ -429,7 +442,10 @@ export default function HarnessVerification() {
     const timer = window.setTimeout(() => {
       void loadData()
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      loadSequence.current += 1
+    }
   }, [loadData])
 
   const runVerification = async () => {
@@ -455,7 +471,8 @@ export default function HarnessVerification() {
     }
   }
 
-  const latest = result || recentLoops[0] || null
+  const selectedLoops = recentLoops.filter(loop => loop.skill_id === selectedId)
+  const latest = (result?.skill_id === selectedId ? result : null) || selectedLoops[0] || null
   const overall = scoreNumber(latest?.score, 'overall')
   const passRate = scoreNumber(latest?.score, 'verifier_pass_rate')
 
@@ -546,7 +563,7 @@ export default function HarnessVerification() {
                     optionFilterProp="label"
                     style={{ width: '100%', marginTop: 8 }}
                     onChange={setSelectedId}
-                    options={draftSkills.map(skill => ({
+                    options={skills.filter(skill => skill.state === 'S2' || skill.skill_id === selectedId).map(skill => ({
                       value: skill.skill_id,
                       label: `${skill.name} · ${skill.version}`,
                     }))}

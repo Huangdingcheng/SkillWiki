@@ -1,0 +1,2 @@
+# Preserve the byte hashes recorded in the vendored component manifest.
+skillwiki/skillwiki/_vendor/skillfabric/** text eol=lf

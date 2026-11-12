@@ -20,3 +20,6 @@ $env:LLM_TIMEOUT = "120"
 # $env:SKILLOS_DEMO_REPOSITORY_BACKEND = "git"
 # $env:SKILLOS_DEMO_BACKEND_PORT = "8001"
 # $env:SKILLOS_DEMO_FRONTEND_PORT = "5174"
+
+# Optional: Evaluation dashboard results, generated with the documented helper.
+# $env:SKILLWIKI_EVALUATION_RESULTS_DIR = "C:\path\to\evaluation-results"

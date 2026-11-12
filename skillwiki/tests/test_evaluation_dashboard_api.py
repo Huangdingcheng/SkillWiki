@@ -20,6 +20,21 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def test_configured_results_directory_keeps_fixture_scope_visible(tmp_path: Path, monkeypatch) -> None:
+    results = tmp_path / "external-results"
+    results.mkdir()
+    monkeypatch.setenv("SKILLWIKI_EVALUATION_RESULTS_DIR", str(results))
+    _write_json(results / "dashboard_context.json", {
+        "evidence_kind": "local_fixture_checks", "model_calls": 0, "status": "completed",
+    })
+    client = _client(tmp_path / "absent-default", monkeypatch)
+    data = client.get("/api/v1/evaluation/dashboard").json()
+    assert data["results_dir_present"] is True
+    assert data["context"]["model_calls"] == 0
+    assert any("separate from paper" in warning for warning in data["warnings"])
+    assert data["artifacts"]["demo_benchmark"]["available"] is False
+
+
 def test_evaluation_dashboard_merges_demo_summary_with_detail_results(tmp_path: Path, monkeypatch) -> None:
     _write_json(
         tmp_path / "latest_summary.json",
