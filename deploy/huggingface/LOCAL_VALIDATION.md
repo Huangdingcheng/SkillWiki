@@ -50,9 +50,24 @@ and UI algorithms were not changed by this packaging work.
 
 ## Final integrated product
 
-Pending the integration owner's final reviewed source. Rebuild that revision,
-repeat the isolated smoke and restart readback once, and export its file-hash
-manifest. The baseline above is not evidence for changes made afterward.
+Reviewed source branch: `codex/import-output-limit` (PR #17), commit
+`50dbe7d9` (`Prepare governed demo for Hugging Face Space handoff`).
+
+The final integrated image was rebuilt from that reviewed source and passed the
+isolated smoke plus restart readback:
+
+- Image: `sha256:7f36beb77a733182f946178159c032bc853a00811cb1b53f8899487d4eee57b5`
+- Smoke result: exit 0; frontend/API/WebSocket/empty-store checks passed;
+  native verifier passed; no provider request was made.
+- Skill identity: `50170ce2-40fa-4cca-8118-409839499cf9`, version `1.0.0`.
+- Verification loop: `verify_loop_83e7be55153c`.
+- Snapshot: `d9b96c8460d8fa18303d61429c051f28d7260633`.
+- Restart readback: passed with the same skill, loop and snapshot identities.
+
+The final smoke receipt is kept outside the source checkout in the private
+predeploy evidence directory. The baseline above remains historical evidence;
+the final image and identity above are the acceptance record for the reviewed
+candidate.
 
 ## Maintainer's hosted acceptance
 

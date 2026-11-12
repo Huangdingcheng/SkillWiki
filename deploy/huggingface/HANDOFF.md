@@ -4,6 +4,20 @@ This package serves the existing UI and native SkillWiki API on one port. It
 does not seed private skills, copy experiment stores, or publish a Space.
 The maintainer creates and deploys the Space after reviewing this package.
 
+## Reviewed handoff candidate
+
+Use branch `codex/import-output-limit`, commit `50dbe7d9`, currently carried by
+PR #17: `https://github.com/Huangdingcheng/SkillWiki/pull/17`. The local final
+Docker image built from this commit is
+`sha256:7f36beb77a733182f946178159c032bc853a00811cb1b53f8899487d4eee57b5`.
+Its isolated acceptance created skill
+`50170ce2-40fa-4cca-8118-409839499cf9` v1.0.0, passed
+`verify_loop_83e7be55153c`, wrote Git snapshot
+`d9b96c8460d8fa18303d61429c051f28d7260633`, and read the same identities back
+after restart. This was an offline native smoke; it did not spend provider
+budget or prove hosted network access. Hosted provider acceptance remains the
+maintainer's final step below.
+
 ## 1. Prepare the reviewed source
 
 Use the reviewed Git commit containing the deployment files. From a clean
