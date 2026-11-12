@@ -269,6 +269,18 @@ model calls. They do not guarantee a successful repair or publication.
 
 ## Storage, errors and troubleshooting
 
+Source checks ship with pinned AREX-Skill assets inside the Python package;
+the upstream commit, Apache-2.0 license and byte hashes are recorded in
+`skillwiki/skillwiki/_vendor/arex_skill/PROVENANCE.json`. No historical developer
+checkout is required. Checking a source still requires its repository and Git.
+
+A complete recovery walkthrough is: snapshot, create a recovery draft, verify
+the new ID, release it when qualified, execute it, and read back the saved trace.
+Passing verification does not bypass the release audit. Simulation/fixture Skills
+may return `success` without interacting with a browser; use a reviewed concrete
+Skill for an application demo. A request-builder Skill constructs request JSON
+and does not fetch live weather from a remote service.
+
 | Symptom | Action |
 |---|---|
 | Empty library/graph | Check the configured Git storage directory. New stores are empty by default; restart with the same directory to reuse saved data |

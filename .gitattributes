@@ -1,2 +1,5 @@
 # Preserve the byte hashes recorded in the vendored component manifest.
 skillwiki/skillwiki/_vendor/skillfabric/** text eol=lf
+
+# Preserve exact bytes of pinned upstream evidence.
+skillwiki/skillwiki/_vendor/arex_skill/** -text

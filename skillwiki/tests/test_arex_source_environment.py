@@ -14,6 +14,21 @@ from skillwiki.layers.skill_governance.arex_skillguard_adapter import (
 from skillwiki.layers.skill_governance.component_checks import arex_source_receipts
 
 
+def test_source_check_assets_are_packaged_and_hash_bound():
+    import skillwiki
+    from skillwiki.layers.skill_governance import component_checks
+
+    assets = component_checks._ASSETS
+    assert assets.is_relative_to(Path(skillwiki.__file__).resolve().parent / "_vendor")
+    manifest = json.loads((assets / "PROVENANCE.json").read_text(encoding="utf-8"))
+    assert manifest["commit"] == component_checks.AREX_PINNED_COMMIT
+    assert manifest["license"] == "Apache-2.0"
+    assert {row["upstream_path"]: row["sha256"] for row in manifest["files"]} == component_checks._HASHES
+    for row in manifest["files"]:
+        assert hashlib.sha256((assets / row["packaged_path"]).read_bytes()).hexdigest() == row["sha256"]
+    assert len(arex_source_receipts()) == len(manifest["files"])
+
+
 def git(repo, *args):
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 

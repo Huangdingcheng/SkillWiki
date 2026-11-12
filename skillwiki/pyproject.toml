@@ -76,6 +76,8 @@ where = ["."]
 include = ["skillwiki*"]
 
 [tool.setuptools.package-data]
+"skillwiki._vendor" = ["arex_skill/*"]
+
 "skillwiki._vendor.skillfabric" = ["LICENSE", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]

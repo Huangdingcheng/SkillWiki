@@ -23,7 +23,7 @@ from .arex_skillguard_adapter import (
 
 _PREFIX = "cli/packages/coding-agent/src/disco/skills/"
 _REFRESH = _PREFIX + "refresh-repo-skill/"
-_ASSETS = Path(__file__).resolve().parents[4] / "third_party/arex_skill" / AREX_PINNED_COMMIT
+_ASSETS = Path(__file__).resolve().parents[2] / "_vendor/arex_skill"
 _HASHES = {
     "LICENSE": "53ec4f1fc089929231324592f7cb091c5ed66c242a1083610f27e4d7304d16c9",
     _REFRESH + "SKILL.md": "b5202fcad19b1b3ee70dcdb7f3943605485ba73fc47b4e3b5cb6409a5bb3ca78",
@@ -43,7 +43,7 @@ def arex_source_receipts() -> list[dict[str, Any]]:
     """Verify pinned raw bytes before either execution or prompt construction."""
     rows = []
     for rel, expected in _HASHES.items():
-        data = (_ASSETS / rel).read_bytes()
+        data = (_ASSETS / Path(rel).name).read_bytes()
         actual = _sha(data)
         if actual != expected:
             raise ValueError(f"pinned AREX asset hash mismatch: {rel}")
@@ -139,7 +139,7 @@ def observe_arex_source_refresh(*, repo_path: str | Path, baseline_commit: str,
             (skill / "SKILL.md").write_text("# Source observation only\n", encoding="utf-8")
             (skill / "references/repo-provenance.md").write_text(
                 "```json\n" + json.dumps(provenance) + "\n```\n", encoding="utf-8")
-            command = [sys.executable, "-I", str(_ASSETS / (_REFRESH + "scripts/check_repo_provenance.py")),
+            command = [sys.executable, "-I", str(_ASSETS / "check_repo_provenance.py"),
                        "--skill-dir", str(skill), "--repo-path", str(repo)]
             upstream = _run(command, cwd=skill)
             try:
@@ -208,7 +208,7 @@ def build_arex_refresh_prompt(*, observation: Mapping[str, Any], current_skill_c
     docs = []
     for path in _HASHES:
         if path.endswith(".md"):
-            docs.append(f"\n--- PINNED UPSTREAM {path} ---\n" + (_ASSETS / path).read_text(encoding="utf-8"))
+            docs.append(f"\n--- PINNED UPSTREAM {path} ---\n" + (_ASSETS / Path(path).name).read_text(encoding="utf-8"))
     payload = {"observation": observation, "environment": environment_report,
                "current_skill_content": current_skill_content}
     return (

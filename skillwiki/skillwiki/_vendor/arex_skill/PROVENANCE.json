@@ -1,0 +1,43 @@
+{
+  "repository": "VectorSpaceLab/AREX-Skill",
+  "commit": "ac3fe1afa80fb9a09775ecfb2b6cc3ba850a2db6",
+  "license": "Apache-2.0",
+  "changes": "File content unchanged; filenames flattened to avoid Windows path-length limits.",
+  "files": [
+    {
+      "upstream_path": "LICENSE",
+      "packaged_path": "LICENSE",
+      "sha256": "53ec4f1fc089929231324592f7cb091c5ed66c242a1083610f27e4d7304d16c9"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/refresh-repo-skill/SKILL.md",
+      "packaged_path": "SKILL.md",
+      "sha256": "b5202fcad19b1b3ee70dcdb7f3943605485ba73fc47b4e3b5cb6409a5bb3ca78"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/refresh-repo-skill/references/change-detection-and-staleness-audit.md",
+      "packaged_path": "change-detection-and-staleness-audit.md",
+      "sha256": "7e3646f3f685aa7cd6e7fd288f24f349c821c105f88d62450845bd9a2d08a077"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/refresh-repo-skill/references/refresh-editing.md",
+      "packaged_path": "refresh-editing.md",
+      "sha256": "c1476369eb2fe0a00883a8feae8911b400336b99f798c154568663a803a9a556"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/refresh-repo-skill/references/verification-and-handoff.md",
+      "packaged_path": "verification-and-handoff.md",
+      "sha256": "7abff080adf9e0153f2cf527776e63e6fd464207376bdc8c4a6db4225875a949"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/refresh-repo-skill/scripts/check_repo_provenance.py",
+      "packaged_path": "check_repo_provenance.py",
+      "sha256": "20a92393328146067630bd62de77016c17f95b353421ee5e3a41a09ccfa48ef8"
+    },
+    {
+      "upstream_path": "cli/packages/coding-agent/src/disco/skills/verify-repo-skill/scripts/run_native_cases.py",
+      "packaged_path": "run_native_cases.py",
+      "sha256": "2ad119a09ec61ecb245ba9fef9bc145c42cb8ad40a8d7a1b293b5a5b61cfbd76"
+    }
+  ]
+}
