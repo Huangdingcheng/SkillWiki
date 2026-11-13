@@ -47,3 +47,18 @@ Optional SkillNet-Fabric adapter tests require the pinned source at
 `artifacts/20260927-content-vertical-slice/SkillNet-REF-02/source/src`.
 Without that snapshot, the three retrieval/provider tests report a missing-source
 error; they do not belong to the self-contained command above.
+
+## Hugging Face packaging acceptance
+
+Run the focused no-model checks after installing the backend API dependencies:
+
+~~~bash
+python -m unittest discover -s deploy/huggingface -p 'test_*.py' -v
+docker build -t skillwiki-space .
+~~~
+
+The [Space handoff](deploy/huggingface/HANDOFF.md) provides isolated-container
+smoke commands for frontend assets, same-origin API/WebSocket routing, native
+execution/verification, Git snapshots and persistence after restart. These
+checks use an empty store and zero model calls. The hosted maintainer acceptance
+adds a real provider import and authorized lifecycle walkthrough in the Space.

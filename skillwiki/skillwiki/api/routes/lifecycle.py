@@ -323,9 +323,18 @@ async def create_new_version(
         overrides["evaluation"] = evaluation
     if req.test_cases is not None:
         overrides["test_cases"] = req.test_cases
+    parent = await _get_skill_or_404(skill_id, app)
     if req.metadata is not None:
-        overrides["metadata"] = req.metadata
-    await _get_skill_or_404(skill_id, app)
+        # Skill has no free-standing metadata field. Preserve the public
+        # request contract using the existing durable provenance container.
+        provenance = parent.provenance.model_copy(deep=True) if parent.provenance else SkillProvenance(source_type="adapt")
+        provenance.source_type = "adapt"
+        provenance.parent_skill_ids = list(dict.fromkeys([*provenance.parent_skill_ids, parent.skill_id]))
+        provenance.creation_context.update({
+            "source_version": parent.version,
+            "version_request_metadata": req.metadata,
+        })
+        overrides["provenance"] = provenance
     try:
         skill = await app.wiki.create_new_version(skill_id, req.bump, **overrides)
     except ValueError as exc:
@@ -793,6 +802,7 @@ async def propose_maintenance_change(
             patched_skill,
             store,
             author_name=req.author,
+            reuse_identical=True,
         )
     except (GitVersionStoreError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))

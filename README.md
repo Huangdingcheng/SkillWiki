@@ -124,6 +124,11 @@ Set `LLM_API_KEY`, `LLM_API_URL` and `LLM_MODEL` in this terminal using your own
 provider configuration. See the [user guide](USER_GUIDE.md#model-configuration)
 for shell examples. Keep this terminal running:
 
+The API allows up to **16,384 output tokens per call** by default. Confirm your
+model supports this output limit, or set `LLM_MAX_TOKENS` to a supported value
+before starting. See [token configuration](USER_GUIDE.md#output-tokens-and-truncated-responses)
+for usage, costs and truncated-response recovery.
+
 ```bash
 git init ./governance
 skillwiki serve --host 127.0.0.1 --port 8001 --backend git --storage-dir ./skillwiki-data --governance-repo ./governance --llm-retries 0
@@ -280,6 +285,8 @@ skillwiki run "summarize the attached PDF and extract action items" [--verbose]
 | `LLM_API_KEY` | — | LLM API key *(required)* |
 | `LLM_API_URL` | `https://api.deepseek.com` (API server) | OpenAI-compatible provider base URL; set explicitly |
 | `LLM_MODEL` | `deepseek-flash` (API server) | Provider model identifier; set one available to your account |
+| `LLM_MAX_TOKENS` | `16384` (API server) | Per-call output ceiling; must fit the model/provider output limit. Local accepted range: 1–128000. See [token configuration](USER_GUIDE.md#output-tokens-and-truncated-responses) |
+| `LLM_TIMEOUT` | `120` seconds (API server) | Per-provider-request timeout; range 1–600. Multi-stage import can take longer overall |
 | `SKILLOS_API_TARGET` | `http://127.0.0.1:8000` (bare Vite) | Set to `http://127.0.0.1:8001` for the commands above; launcher sets its actual port |
 | `VITE_SKILLOS_DISABLE_WS` | unset | Set `1` for the local polling experience; launcher does this by default |
 

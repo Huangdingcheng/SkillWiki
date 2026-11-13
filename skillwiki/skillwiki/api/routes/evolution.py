@@ -16,6 +16,8 @@ from ...layers.feedback_evolution import (
     SkillHealthReport,
     SystemHealthReport,
 )
+from ...layers.skill_governance import canonical_skill_artifact_hash
+from ...layers.skill_governance.artifact_identity import artifact_identity_projection
 from ...models.maintenance_model import (
     MaintenanceProposal,
     MaintenanceProposalStatus,
@@ -633,8 +635,72 @@ async def repair_skill(
     skill = await app.wiki.get(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} does not exist")
+    parent_version = skill.version
+    parent_hash = canonical_skill_artifact_hash(skill)
+    parent_content = artifact_identity_projection(skill)
     health = app.monitor.evaluate_skill(skill)
     result = await app.repair.repair(skill, health)
+    proposal = None
+    if result.success:
+        if result.skill_id != skill_id or (
+            result.repaired_skill and result.repaired_skill.skill_id != skill_id
+        ):
+            raise HTTPException(status_code=409, detail="Repair candidate parent identity mismatch")
+        if not result.should_deprecate and result.repaired_skill is None:
+            raise HTTPException(status_code=502, detail="Repair succeeded without a candidate patch")
+        # A repair is a proposed edit, not a persisted or verified Skill identity.
+        # Keep only editable content: inherited release state and proof cannot
+        # authorize the candidate. The existing B review/new-version flow owns
+        # materialization, fresh validation, and any later human release.
+        patched_skill = None
+        if result.repaired_skill is not None and not result.should_deprecate:
+            patched_skill = {
+                "implementation": result.repaired_skill.implementation.model_dump(mode="json")
+                if result.repaired_skill.implementation else None,
+                "interface": result.repaired_skill.interface.model_dump(mode="json"),
+            }
+        candidate_hash = "sha256:" + hashlib.sha256(json.dumps(
+            {"parent_id": skill_id, "parent_version": parent_version,
+             "parent_hash": parent_hash, "patched_skill": patched_skill,
+             "should_deprecate": result.should_deprecate},
+            sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        proposal = _store_proposal(MaintenanceProposal(
+            skill_id=skill_id,
+            trigger=MaintenanceTrigger.MANUAL,
+            recommended_action=MaintenanceRecommendedAction.DEPRECATE
+            if result.should_deprecate else MaintenanceRecommendedAction.REPAIR,
+            evidence=list(health.issues) + [f"parent_hash={parent_hash}",
+                                         f"candidate_hash={candidate_hash}"],
+            root_cause=result.root_cause,
+            patch_hint=result.repair_notes or "Review the saved repair patch before creating a new version.",
+            feedback_sources=["manual_repair", "skill_health"],
+            invariants_to_preserve=["Keep the current Skill unchanged until governed review."],
+            validation_plan=["Review the saved patch against its parent version and artifact hash.",
+                             "Create a new identity and obtain fresh validation before release."],
+            confidence=result.confidence,
+            source="manual_repair",
+            metadata={
+                "parent_version": parent_version, "parent_hash": parent_hash,
+                "parent_content": parent_content,
+                "candidate_hash": candidate_hash, "patched_skill": patched_skill,
+                "fix_type": result.fix_type, "candidate_status": "pending_review",
+                "auto_publish": False, "live_skill_updated": False,
+            },
+        ))
+        # The generic queue tolerates unavailable storage for monitoring. This
+        # explicit user action must not report success when its patch was lost.
+        persisted = _load_model_map(_proposal_store_path, MaintenanceProposal, "proposal_id")
+        if proposal.proposal_id not in persisted:
+            # Never expose an unpersisted repair as an acceptable queue item.
+            # Removing it also lets a later explicit retry persist normally
+            # after storage becomes available, rather than deduplicating to a
+            # lost in-memory proposal forever.
+            _proposal_queue.pop(proposal.proposal_id, None)
+            raise HTTPException(status_code=503, detail={
+                "message": "Repair proposal could not be persisted; no Skill was changed.",
+                "proposal_id": proposal.proposal_id, "live_skill_updated": False,
+            })
     return {
         "skill_id": result.skill_id,
         "success": result.success,
@@ -643,7 +709,10 @@ async def repair_skill(
         "repair_notes": result.repair_notes,
         "confidence": result.confidence,
         "should_deprecate": result.should_deprecate,
-        "repaired_skill_id": result.repaired_skill.skill_id if result.repaired_skill else None,
+        "repaired_skill_id": None,
+        "proposal_id": proposal.proposal_id if proposal else None,
+        "proposal_status": proposal.status.value if proposal else None,
+        "live_skill_updated": False,
         "error": result.error,
     }
 

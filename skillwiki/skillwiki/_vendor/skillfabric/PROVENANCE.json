@@ -1,0 +1,117 @@
+{
+  "upstream": "https://github.com/zjunlp/SkillNet-Fabric.git",
+  "commit": "e0bc52856e8244ef6eecc0fe8c1b5f481b4190a3",
+  "license": "MIT",
+  "scope": "Retrieval, graph expansion, embedding storage and their support modules only. No external agent engines.",
+  "packaging_changes": [
+    "Import prefix skillfabric is relocated to skillwiki._vendor.skillfabric.",
+    "Package initializers expose only retrieval dependencies, avoiding optional upstream SDK imports.",
+    "Algorithm bodies are unchanged. Remote embedding retains explicit opt-in and budget gates."
+  ],
+  "files": [
+    {
+      "path": "graph/contracts/models.py",
+      "upstream_sha256": "a66e8a2e086e6d655818f9be1c4b2c83874dfe27c77ee3092d804ec14707d252",
+      "packaged_sha256": "7b8006949afe14a6251e7bdbe4f839d03ef08f085c4751dcba670be6fe881fff"
+    },
+    {
+      "path": "graph/models.py",
+      "upstream_sha256": "8278f813b02217be6ff7cd825c5489e2a97fc3ffafa4ef1cd1b01d6a3d2488c7",
+      "packaged_sha256": "42181c44699d5a5f9188285e65315c14ff432ba67ec142ef0f4587c1d11a4dd3"
+    },
+    {
+      "path": "indexing/bm25.py",
+      "upstream_sha256": "b1a2f2616677a5819dae56d69efc8641bfc65907a06e22bc289e9334264dc6a8",
+      "packaged_sha256": "8d0d336b5be99e658ec147aa4f17d7f33dbb4f4cf793f737c23bef7fb28526a9"
+    },
+    {
+      "path": "indexing/canonical.py",
+      "upstream_sha256": "8b8962a53f928f7d231967dbfd34df7928f8f9488065f8bdfdeb6375ebbe2987",
+      "packaged_sha256": "b9e5e882912684bbe3734a2441bd49bc880d4c768f4d912b635513d0dcec7ce3"
+    },
+    {
+      "path": "indexing/embeddings.py",
+      "upstream_sha256": "4a43e709201850e4d199ddee6cc675ff57372501c95a0caeb5735dcf29004944",
+      "packaged_sha256": "d1b0ffd9288604c7b590c9ac4de593a98252419158237b0af55430c721506075"
+    },
+    {
+      "path": "indexing/ranking.py",
+      "upstream_sha256": "4a388e7d2f37a3c0b7efed4060fb6af80a21795a07fcdaed26a17a02286413c2",
+      "packaged_sha256": "4a388e7d2f37a3c0b7efed4060fb6af80a21795a07fcdaed26a17a02286413c2"
+    },
+    {
+      "path": "registry/models.py",
+      "upstream_sha256": "979a7d74eb6e6a43f5156f3b49eead434a12b4cf40b061d6f9564fee22175bbd",
+      "packaged_sha256": "979a7d74eb6e6a43f5156f3b49eead434a12b4cf40b061d6f9564fee22175bbd"
+    },
+    {
+      "path": "router/expansion.py",
+      "upstream_sha256": "28b1fbafc3a4436392d4d53f68aa061744b93ec272ebf2259f70c4723350bf58",
+      "packaged_sha256": "5123be16c00dcf8720d588528744c04420223cb283a9b6ad0b42e90ec1d35276"
+    },
+    {
+      "path": "router/models.py",
+      "upstream_sha256": "91ae315fe808bc4d683b684607bc2874f6c5eb75b1fe066c4fd804d611d4be01",
+      "packaged_sha256": "d2b5d91e49d3355ffc70baf7f53c62ef5ab39c81e82a23467d9c5152e80e5051"
+    },
+    {
+      "path": "router/retrieval.py",
+      "upstream_sha256": "d7a5edfb646041f320068163025a8b6d45b1768bbc4bf6d22982b7900bc36578",
+      "packaged_sha256": "b8d8a351cbbeb8dac13612724adb5e9aaac2267ff57b01cff88127e69ad98f60"
+    },
+    {
+      "path": "runtime/llm.py",
+      "upstream_sha256": "e68c1c9ce8be6684ebb8039f79a0adc5ef92d35cd814cd9d5664feaebb8bcf1e",
+      "packaged_sha256": "a961e6766e7c1b3729a5065ba82e2ee6783a51883c29e5bf2f1942dc9d9932fe"
+    },
+    {
+      "path": "runtime/tokens.py",
+      "upstream_sha256": "5e589770002f873506c601bc78d7723d5ba95b00f9171f87e4d5dc8fe74e7f11",
+      "packaged_sha256": "5e589770002f873506c601bc78d7723d5ba95b00f9171f87e4d5dc8fe74e7f11"
+    },
+    {
+      "path": "runtime/usage.py",
+      "upstream_sha256": "b765f24c63a11d9e1b7a3acf9799760a8742b38be5a8e92bd5ab6e1853d28e5f",
+      "packaged_sha256": "1662251d8828b1c26eabee4de3ca46a4ff40475517d8a57c3cbbda008701147f"
+    },
+    {
+      "path": "storage/workspace.py",
+      "upstream_sha256": "ca75246175d9fd52cff89d5c5b938f9b4e50a4d33319ea909ead003de7a56c00",
+      "packaged_sha256": "ca75246175d9fd52cff89d5c5b938f9b4e50a4d33319ea909ead003de7a56c00"
+    }
+  ],
+  "package_initializers": [
+    {
+      "path": "__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "graph/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "graph/contracts/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "indexing/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "registry/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "router/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "runtime/__init__.py",
+      "packaged_sha256": "72a6fbfa99b709a321cd5870d34a848070f92bd209f5b881791b80716e646081"
+    },
+    {
+      "path": "storage/__init__.py",
+      "packaged_sha256": "d91aa46dab334a0f8b4907ef3358083066562be4eb7ec4b15b718d1f1085da6a"
+    }
+  ]
+}

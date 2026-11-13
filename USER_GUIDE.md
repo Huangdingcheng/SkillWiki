@@ -30,7 +30,57 @@ a particular installed Python environment. Do not put credentials into request
 JSON or source control. Ingestion, audit, model-backed execution and repair can
 incur provider costs. Browsing existing records does not need a model call.
 
+## Output tokens and truncated responses
+
+The API server defaults to **16,384 output tokens per model call**. This applies
+to both `skillwiki serve` and the Windows launcher. Override it in the backend
+terminal or, for the launcher, its ignored `config.local.ps1`:
+
+```powershell
+$env:LLM_MAX_TOKENS = "16384"
+```
+
+```bash
+export LLM_MAX_TOKENS=16384
+```
+
+Restart the backend after changing this value. Existing local overrides take
+precedence over the new default. The server reads the process environment; it
+does not automatically load `skillwiki/.env.example` or a copied `.env` file.
+Docker Compose forwards `LLM_MAX_TOKENS` from the shell/root `.env` to the API.
+
+This is an **output ceiling**, not the amount always consumed, an input allowance,
+or the model context window. A million-token context window does not imply a
+million-token answer. Local configuration accepts 1–128,000; the provider/model
+may impose a lower output limit. Check that limit before changing models or
+raising the ceiling. One million is rejected locally. Independent budget output
+caps can reduce the effective ceiling and are not bypassed by this setting.
+
+Ingestion contains several model stages, including context, challenges and Skill
+candidates. Total pipeline token usage sums multiple calls and can exceed one
+call’s output ceiling; it is not a provider bill. Input/output token counts and
+provider pricing determine actual costs. A higher configured ceiling can also
+increase budget reservations or allow longer, more expensive answers.
+
+If import reports `ctx2skill: incomplete response (length)`, the provider marked
+that answer as truncated. Check the effective output and budget caps, choose a
+supported larger value, restart, and explicitly retry once. Do not treat the
+truncated answer as a valid Skill. Provider limits or very long responses can
+still cause truncation at 16,384; automatic retries are not enabled by this change.
+
 ## Web workflow
+
+The API also reads `LLM_TIMEOUT` (default **120 seconds**, accepted range 1–600)
+for each provider request. Set `$env:LLM_TIMEOUT = "120"` in PowerShell or
+`export LLM_TIMEOUT=120` in Bash before starting; the launcher local config can
+contain the same setting. Restart after changes. Multi-stage import can take
+longer overall. A timeout does not imply zero provider usage; inspect records
+before explicitly retrying. Increasing output capacity alone does not increase
+the waiting time. For a local smoke check, try each source type separately:
+Trajectory expects recorded task steps, Document expects prose instructions,
+API Doc expects endpoint documentation, Script expects source code, and Past
+Skills expects an existing skill description or JSON. Each parse produces an
+editable candidate; it does not automatically verify or release it.
 
 The quick start uses <http://127.0.0.1:5174/wiki>. The launcher prints its actual
 URL if it selects a different free port. Keep one selected Skill ID and version
@@ -60,6 +110,37 @@ stored qualification checks. The CLI's `lifecycle release` submits a complete
 evidence bundle to `/release-with-evidence`. The web interface does not provide
 an editor for every research manifest or evidence-bundle field. Use the native
 API/CLI for those contracts; the two release requests are not interchangeable.
+
+## Retrieval and the Evaluation dashboard
+
+The planner's SkillNet-Fabric retrieval core is included in the installed SkillWiki
+package, pinned to the commit and MIT license in
+`skillwiki/skillwiki/_vendor/skillfabric/PROVENANCE.json`. No historical experiment
+directory or separate agent CLI is needed. Its default embedding channel is local
+and deterministic; remote embeddings require explicit configuration and budget
+authorization. SkillWiki's planner and runtime remain responsible for execution.
+
+The Evaluation page reads saved files; starting the server does not run benchmarks.
+From the repository root, prepare its local checks in a **new** directory:
+
+```powershell
+python skillwiki/scripts/prepare_evaluation_dashboard.py --output-dir skillwiki-launcher/runtime/evaluation-results
+$env:SKILLWIKI_EVALUATION_RESULTS_DIR = (Resolve-Path skillwiki-launcher/runtime/evaluation-results).Path
+./skillwiki-launcher/scripts/Start-SkillWikiDemo.ps1 -NoOpen
+```
+
+For later launches, save that environment variable in the ignored
+`skillwiki-launcher/config.local.ps1`. Existing services need a restart. The helper
+makes **zero model calls** and runs the existing deterministic demo fixtures,
+local search checks and fallback planner checks. The page labels their scope;
+these figures are separate from paper results and do not measure fresh LLM quality
+or live browser actions. An existing/imported results directory can be selected
+with the same variable; keep its provenance and do not overwrite it. In Docker,
+mount the results directory and set the variable to its container path.
+
+Harness links resolve the exact `skill_id`, including recovery drafts and older
+versions. The latest verification panel belongs to the selected identity. An
+invalid ID produces an error rather than selecting a different Skill.
 
 ## Reading the graph
 
@@ -187,6 +268,18 @@ evolution are explicit actions that can create proposals/candidates and consume
 model calls. They do not guarantee a successful repair or publication.
 
 ## Storage, errors and troubleshooting
+
+Source checks ship with pinned AREX-Skill assets inside the Python package;
+the upstream commit, Apache-2.0 license and byte hashes are recorded in
+`skillwiki/skillwiki/_vendor/arex_skill/PROVENANCE.json`. No historical developer
+checkout is required. Checking a source still requires its repository and Git.
+
+A complete recovery walkthrough is: snapshot, create a recovery draft, verify
+the new ID, release it when qualified, execute it, and read back the saved trace.
+Passing verification does not bypass the release audit. Simulation/fixture Skills
+may return `success` without interacting with a browser; use a reviewed concrete
+Skill for an application demo. A request-builder Skill constructs request JSON
+and does not fetch live weather from a remote service.
 
 | Symptom | Action |
 |---|---|

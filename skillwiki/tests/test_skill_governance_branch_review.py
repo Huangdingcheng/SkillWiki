@@ -147,3 +147,17 @@ def test_workflow_failure_restores_base_branch(git_repo: Path) -> None:
         propose_skill_change(git_repo, old_skill, new_skill, failing_store)
 
     assert store.current_branch() == base_branch
+
+
+def test_identical_review_retry_reuses_commit_but_rejects_changed_patch(git_repo: Path) -> None:
+    old_skill = _skill()
+    patched = _skill(version="1.0.1", description="Reviewed change")
+    store = GitVersionStore(git_repo)
+    before = store.head_commit()
+    first = propose_skill_change(git_repo, old_skill, patched, store, reuse_identical=True)
+    retried = propose_skill_change(git_repo, old_skill, patched, store, reuse_identical=True)
+    assert first == retried
+    assert store.head_commit() == before
+    patched.description = "A different edit"
+    with pytest.raises(GitVersionStoreError, match="already exists"):
+        propose_skill_change(git_repo, old_skill, patched, store, reuse_identical=True)

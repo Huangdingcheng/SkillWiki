@@ -11,7 +11,15 @@
 # $env:LLM_MODEL = "deepseek-flash"
 # $env:LLM_API_KEY = "replace-with-your-own-key"
 
+# Per-call output ceiling, not the context window or actual token usage.
+# Confirm your provider supports this value; local supported range is 1..128000.
+$env:LLM_MAX_TOKENS = "16384"
+$env:LLM_TIMEOUT = "120"
+
 # Optional: override default behavior.
 # $env:SKILLOS_DEMO_REPOSITORY_BACKEND = "git"
 # $env:SKILLOS_DEMO_BACKEND_PORT = "8001"
 # $env:SKILLOS_DEMO_FRONTEND_PORT = "5174"
+
+# Optional: Evaluation dashboard results, generated with the documented helper.
+# $env:SKILLWIKI_EVALUATION_RESULTS_DIR = "C:\path\to\evaluation-results"

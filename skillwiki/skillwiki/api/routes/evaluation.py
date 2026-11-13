@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -16,6 +17,11 @@ DEMO_SUMMARY_FILE = "latest_summary.json"
 DEMO_RESULTS_FILE = "demo_benchmark_latest.json"
 SEARCH_EVAL_FILE = "search_eval_latest.json"
 LLM_EVAL_FILE = "llm_eval_latest.json"
+
+
+def _results_dir() -> Path:
+    configured = os.environ.get("SKILLWIKI_EVALUATION_RESULTS_DIR")
+    return Path(configured).expanduser().resolve() if configured else RESULTS_DIR
 
 
 def _now_iso() -> str:
@@ -42,7 +48,7 @@ def _read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
 
 
 def _artifact_base(source_file: str, payload: Optional[Dict[str, Any]], warning: Optional[str]) -> Dict[str, Any]:
-    path = RESULTS_DIR / source_file
+    path = _results_dir() / source_file
     return {
         "available": payload is not None,
         "source_file": source_file,
@@ -218,10 +224,18 @@ def _summarize_llm_artifact(payload: Optional[Dict[str, Any]], warning: Optional
 async def get_latest_evaluation() -> Dict[str, Any]:
     """Return the latest local benchmark artifacts in a UI-friendly shape."""
     warnings: List[str] = []
-    demo_summary, demo_warning = _read_json(RESULTS_DIR / DEMO_SUMMARY_FILE)
-    demo_results, demo_results_warning = _read_json(RESULTS_DIR / DEMO_RESULTS_FILE)
-    search_eval, search_warning = _read_json(RESULTS_DIR / SEARCH_EVAL_FILE)
-    llm_eval, llm_warning = _read_json(RESULTS_DIR / LLM_EVAL_FILE)
+    results_dir = _results_dir()
+    demo_summary, demo_warning = _read_json(results_dir / DEMO_SUMMARY_FILE)
+    demo_results, demo_results_warning = _read_json(results_dir / DEMO_RESULTS_FILE)
+    search_eval, search_warning = _read_json(results_dir / SEARCH_EVAL_FILE)
+    llm_eval, llm_warning = _read_json(results_dir / LLM_EVAL_FILE)
+
+    context_file = results_dir / "dashboard_context.json"
+    context, context_error = _read_json(context_file) if context_file.exists() else (None, None)
+    if context_error:
+        warnings.append(context_error)
+    if context and context.get("evidence_kind") == "local_fixture_checks":
+        warnings.append("Local demo checks: deterministic fixtures and fallback planning; separate from paper experiment results.")
 
     for warning in [demo_warning, demo_results_warning, search_warning, llm_warning]:
         if warning:
@@ -229,7 +243,8 @@ async def get_latest_evaluation() -> Dict[str, Any]:
 
     return {
         "generated_at": _now_iso(),
-        "results_dir_present": RESULTS_DIR.exists(),
+        "results_dir_present": results_dir.exists(),
+        "context": context,
         "warnings": warnings,
         "artifacts": {
             "demo_benchmark": _summarize_demo_artifact(demo_summary, demo_results, demo_warning),
