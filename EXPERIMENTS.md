@@ -12,7 +12,7 @@ The evaluation uses 60 task inputs, 60 governance states in 30 pairs, and 12 rel
 source-change events with eight target and eight retention inputs each. Changes
 cover routes, required request fields and enumeration values.
 
-Model-backed execution uses `deepseek-flash`, temperature 0, output limits of 2,048
+Model-backed execution uses DeepSeek-V4.1-Flash-1017 (API alias `deepseek-flash`), temperature 0, output limits of 2,048
 tokens for tasks and 4,096 for proposals, and zero automatic retries. The main
 harness is `local_skillwiki`. One model proposal per update attempt is checked for
 source identity and modification scope before native version creation. Native
@@ -94,3 +94,8 @@ de-identified call index. The [Chinese account](EXPERIMENTS.zh-CN.md) and
 [LaTeX evaluation section](public-experiments/paper/evaluation.tex) use the same
 counts. Materials are development/regression and related extensions within one
 API family. Current product usage is documented in the [user guide](USER_GUIDE.md).
+
+The [reproducibility README](public-experiments/reproduction/README.md) provides
+every admitted model request, original answer, task-final output, scorer and
+revision-specific evidence, with commands for independent scoring and table
+reconstruction. Development revisions and original failed batches remain separate.

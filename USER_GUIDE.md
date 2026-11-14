@@ -311,8 +311,9 @@ tests describe local checks. Some historical tests require research-workspace
 fixtures that are not part of this source export. The product snapshot and
 follow-up integration are recorded in [source provenance](integration-provenance/README.md).
 
-This guide reproduces product operations. It does not deliver the paper's full
-frozen experiment package. Verifying the reported tables requires the original
-inputs, candidate identities, model responses, scorers and analysis scripts;
-rerunning models produces a new experiment. Demo fixtures and historical
-evaluation cards must not be presented as fresh paper runs.
+This guide reproduces product operations. The [paper reproducibility README](public-experiments/reproduction/README.md)
+provides archived requests, raw/final answers, frozen implementation and evidence,
+plus independent scoring and table-reconstruction commands. Optional request replay
+produces new raw model answers; it does not replay every historical native product
+state transition. Demo fixtures and historical evaluation cards must not be
+presented as fresh paper runs.
