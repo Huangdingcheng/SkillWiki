@@ -58,7 +58,7 @@ The evaluation covers **60 task inputs, 60 paired governance states and 12 sourc
 | Evidence governance | Decisions agree with an independent Git/CI+ workflow; main and supplementary sets have no false accepts or state inconsistencies |
 | Version evolution | 11 events have successful lifecycle chains at their recorded revisions, including revalidated recovery; one remains unqualified |
 
-See [materials, methods and results](EXPERIMENTS.md), [中文实验说明](EXPERIMENTS.zh-CN.md), and the [public data companion](public-experiments/README.md) for denominators, revision identities and reusable materials.
+See [materials, methods and results](EXPERIMENTS.md), [中文实验说明](EXPERIMENTS.zh-CN.md), and the [reproducibility README](public-experiments/reproduction/README.md) for all original/final answers, revision-specific evidence, independent re-scoring and table reconstruction.
 
 ---
 

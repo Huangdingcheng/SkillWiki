@@ -4,6 +4,11 @@ Read the [results](../EXPERIMENTS.md) or [中文结果](../EXPERIMENTS.zh-CN.md)
 This package contains public task materials and result tables for the completed
 evaluation. It is an offline companion; verification does not make model calls.
 
+For independent re-scoring of every original and final answer, reconstruction of
+the paper tables, revision-specific evidence and optional new model requests, see
+the [reproducibility README](reproduction/README.md) or [中文说明](reproduction/README.zh-CN.md).
+The original consistency check below remains available.
+
 | Material | Contents |
 |---|---|
 | `materials/use-inputs.json` | 60 synthetic use cases and expected outputs; original retained/extended partitions |
@@ -46,11 +51,14 @@ The last experiment product manifest digest is recorded in `data/summary.json`.
 The current product integration descends from that source export and includes
 later CLI/frontend work. Its Git revision does not reassign historical scores.
 
-The public package supports inspection of materials and reported counts. Complete
-historical runtime packages, candidate/proof bundles, prompts, raw model outputs,
-scorers and execution receipts remain in the research archive; this package alone
-is not a full end-to-end rerun kit. Current product operations can be exercised
-using the [user guide](../USER_GUIDE.md).
+The original companion supports inspection of materials and reported counts.
+The added reproducibility directory provides all 4,590 admitted model calls,
+complete requests and original answers, system-final outputs for 4,572 tasks,
+scorers, candidates, frozen source and revision-specific proof/state evidence.
+Its offline entrypoints independently re-score the answers and reconstruct the
+reported tables. Optional request replay produces new raw model answers; it does
+not replay every native product state transition. Current product operations can
+be exercised using the [user guide](../USER_GUIDE.md).
 
 ## Manuscript use
 
