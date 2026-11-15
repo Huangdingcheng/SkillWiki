@@ -6,7 +6,8 @@ We evaluated skill utility, governance, and source adaptation using Petstore/Ope
 creation, lookup, and deletion tasks. The materials comprised 60 task inputs,
 60 governance states in 30 pairs, and 12 related source changes spanning routes,
 required request fields, and enumeration values. Each change contained eight target
-and eight retention inputs. Model-backed execution used deepseek-flash at
+and eight retention inputs. Model-backed execution used DeepSeek-V4.1-Flash-1017
+(API alias 	exttt{deepseek-flash}) at
 temperature~0, with zero automatic retries and output limits of 2,048 task tokens
 and 4,096 proposal tokens. SkillWiki's local harness processed requests and supplied
 responses without contacting the business API. The archived evaluation contains
@@ -72,5 +73,6 @@ implemented governance baseline, and executable evidence-gated adaptation and
 recovery. The materials comprise development/regression cases and related
 extensions within one API family. Results retain their runtime and candidate
 revisions; cross-revision coverage is not a single-version success rate. The
-public companion provides synthetic inputs, expected answers, source snapshots,
-governance states, result tables, and a de-identified call index.
+reproducibility README in 	exttt{public-experiments/reproduction/} provides all
+inputs, prompts, original and final outputs, revision-specific evidence, and
+commands for independent re-scoring and table reconstruction.

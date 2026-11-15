@@ -1,0 +1,26 @@
+name: Paper reproduction
+on:
+  push:
+    paths:
+      - 'public-experiments/**'
+      - '.github/workflows/paper-reproduction.yml'
+  pull_request:
+    paths:
+      - 'public-experiments/**'
+      - '.github/workflows/paper-reproduction.yml'
+permissions:
+  contents: read
+jobs:
+  offline-reproduction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify original companion
+        run: python public-experiments/verify.py
+      - name: Independently rescore and reconstruct all reported results
+        run: python public-experiments/reproduction/verify.py
+      - name: Check optional request replay without model calls
+        run: python public-experiments/reproduction/replay_requests.py --call-index 1

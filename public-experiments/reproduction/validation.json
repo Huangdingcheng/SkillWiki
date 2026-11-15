@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "scope": "All admitted original and revised evidence; offline independent answer grading and paper table reconstruction.",
+  "model_calls_made": 0,
+  "calls": 4590,
+  "task_answers": 4572,
+  "proposals": 18,
+  "raw_final_grade_mismatches": 0,
+  "assets": 34299,
+  "qualification_batches": 85,
+  "effective_governance_positions": 120,
+  "privacy_pattern_findings": 0,
+  "missing_referenced_files": 0,
+  "largest_compressed_file_bytes": 2480532,
+  "live_request_replay_tested": "dry-run and argument caps only; no paid request executed",
+  "native_stateful_full_rerun": "Historical source/evidence supplied; not executed as a new full study."
+}
